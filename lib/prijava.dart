@@ -44,11 +44,28 @@ class Prijava extends ChangeNotifier {
   Future<void> odjavi() async {
     await _gsi.signOut();
     racun = null;
+    _zeton = null;
     notifyListeners();
   }
 
-  /// Svež ID žeton za klic na strežnik.
-  Future<String> zeton() async {
+  // ID žeton velja eno uro; isti uporabimo 45 minut, da vsak klic ne čaka na osvežitev.
+  Future<String>? _zeton;
+  DateTime _zetonVeljaDo = DateTime(0);
+
+  /// Veljaven ID žeton za klic na strežnik. Sočasni klici si delijo isto osvežitev.
+  Future<String> zeton() {
+    if (_zeton == null || DateTime.now().isAfter(_zetonVeljaDo)) {
+      _zetonVeljaDo = DateTime.now().add(const Duration(minutes: 45));
+      _zeton = _osveziZeton()
+        ..catchError((_) {
+          _zeton = null;
+          return '';
+        });
+    }
+    return _zeton!;
+  }
+
+  Future<String> _osveziZeton() async {
     final osvezen = await _gsi.attemptLightweightAuthentication();
     if (osvezen != null) racun = osvezen;
     final t = racun?.authentication.idToken;

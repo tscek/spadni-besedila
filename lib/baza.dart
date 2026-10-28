@@ -20,6 +20,8 @@ class Baza extends ChangeNotifier {
   List<Vloga> vloge = [];
   DateTime? zadnjaOsvezitev;
 
+  static const hkratniPrenosi = 6;
+
   bool osvezujem = false;
   String? stanje;
   String? napaka;
@@ -80,24 +82,32 @@ class Baza extends ChangeNotifier {
       for (final p in vsi) {
         if (!await (await datotekaPdf(p.driveId)).exists()) manjkajo.add(p);
       }
-      var i = 0;
+      var koncanih = 0;
       final neuspeli = <String>[];
-      for (final p in manjkajo) {
-        i++;
-        stanje = 'Prenašam PDF $i od ${manjkajo.length} …';
-        notifyListeners();
-        try {
-          final bytes = await api.pdf(p.driveId);
-          final cilj = await datotekaPdf(p.driveId);
-          await cilj.parent.create(recursive: true);
-          // Najprej začasna datoteka, da prekinjen prenos ne pusti pokvarjenega PDF-ja.
-          final zacasna = File('${cilj.path}.del');
-          await zacasna.writeAsBytes(bytes, flush: true);
-          await zacasna.rename(cilj.path);
-        } catch (e) {
-          neuspeli.add(p.driveId);
+      final vrsta = List.of(manjkajo);
+
+      // Več hkratnih prenosov, ker vsak PDF posebej čaka na odziv skripte.
+      Future<void> delavec() async {
+        while (vrsta.isNotEmpty) {
+          final p = vrsta.removeLast();
+          try {
+            final bytes = await api.pdf(p.driveId);
+            final cilj = await datotekaPdf(p.driveId);
+            await cilj.parent.create(recursive: true);
+            // Najprej začasna datoteka, da prekinjen prenos ne pusti pokvarjenega PDF-ja.
+            final zacasna = File('${cilj.path}.del');
+            await zacasna.writeAsBytes(bytes, flush: true);
+            await zacasna.rename(cilj.path);
+          } catch (e) {
+            neuspeli.add(p.driveId);
+          }
+          koncanih++;
+          stanje = 'Prenašam PDF-je: $koncanih od ${manjkajo.length} …';
+          notifyListeners();
         }
       }
+
+      await Future.wait(List.generate(hkratniPrenosi, (_) => delavec()));
       stanje = neuspeli.isEmpty ? null : '${neuspeli.length} PDF-jev ni bilo mogoče prenesti. Poskusi znova.';
     } catch (e) {
       napaka = e.toString();
