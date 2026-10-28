@@ -65,3 +65,31 @@ jobs:
           name: Različica ${{ github.run_number }}
           body: Samodejna gradnja iz ${{ github.sha }}.
           files: spadni-besedila-${{ github.run_number }}.apk
+
+      # Posodobitev v aplikaciji: manjši APK samo za arm64 (vse novejše tablice) gre prek skripte na Drive.
+      - name: Naloži posodobitev na Drive
+        env:
+          UPLOAD_KLJUC: ${{ secrets.UPLOAD_KLJUC }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$UPLOAD_KLJUC" ]; then
+            echo "::warning::Ni skrivnosti UPLOAD_KLJUC, posodobitev ni naložena na Drive."
+            exit 0
+          fi
+          flutter build apk --release --target-platform android-arm64 \
+            --build-number=${{ github.run_number }} \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+          python3 - <<'PY'
+          import base64, json, os
+          with open('build/app/outputs/flutter-apk/app-release.apk', 'rb') as f:
+              apk = base64.b64encode(f.read()).decode()
+          telo = {'akcija': 'naloziApk', 'kljuc': os.environ['UPLOAD_KLJUC'],
+                  'verzija': int(os.environ['GITHUB_RUN_NUMBER']),
+                  'ime': f"spadni-besedila-{os.environ['GITHUB_RUN_NUMBER']}.apk", 'base64': apk}
+          with open('telo.json', 'w') as f:
+              json.dump(telo, f)
+          PY
+          url=$(grep -o "https://script.google.com/macros/s/[^']*/exec" lib/config.dart)
+          odgovor=$(curl -sS -L --max-time 300 -H "Content-Type: text/plain" --data-binary @telo.json "$url")
+          echo "$odgovor" | head -c 300; echo
+          echo "$odgovor" | grep -q '"verzija"' || { echo "::error::Nalaganje na Drive ni uspelo"; exit 1; }

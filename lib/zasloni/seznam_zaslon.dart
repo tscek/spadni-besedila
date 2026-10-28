@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../models.dart';
+import '../posodobitev.dart';
 import '../prijava.dart';
 import 'pesem_zaslon.dart';
 
 class SeznamZaslon extends StatefulWidget {
-  const SeznamZaslon({super.key, required this.prijava, required this.baza});
+  const SeznamZaslon({super.key, required this.prijava, required this.baza, required this.posodobitev});
 
   final Prijava prijava;
   final Baza baza;
+  final Posodobitev posodobitev;
 
   @override
   State<SeznamZaslon> createState() => _SeznamZaslonState();
@@ -32,11 +34,17 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         context,
       ).showSnackBar(const SnackBar(content: Text('Za osvežitev se prijavi z Google računom (potreben je internet).')));
       widget.prijava.prijavi().then((_) {
-        if (widget.prijava.racun != null) widget.baza.osvezi(Api(widget.prijava.zeton));
+        if (widget.prijava.racun != null) _osveziZApi();
       });
       return;
     }
-    widget.baza.osvezi(Api(widget.prijava.zeton));
+    _osveziZApi();
+  }
+
+  void _osveziZApi() {
+    final api = Api(widget.prijava.zeton);
+    widget.baza.osvezi(api);
+    widget.posodobitev.preveri(api);
   }
 
   @override
@@ -112,6 +120,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       ),
       body: Column(
         children: [
+          ..._posodobitev(),
           if (baza.stanje != null || baza.napaka != null)
             MaterialBanner(
               content: Text(baza.napaka ?? baza.stanje!),
@@ -126,6 +135,28 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         ],
       ),
     );
+  }
+
+  List<Widget> _posodobitev() {
+    final p = widget.posodobitev;
+    if (!p.naVoljo) return const [];
+    final napredek = p.napredek;
+    return [
+      MaterialBanner(
+        leading: const Icon(Icons.system_update),
+        content: Text(
+          p.napaka ??
+              (napredek != null ? 'Prenašam posodobitev … $napredek %' : 'Na voljo je nova različica (${p.nova}).'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: napredek != null ? null : p.namesti,
+            child: Text(p.napaka != null ? 'Poskusi znova' : 'Posodobi'),
+          ),
+        ],
+      ),
+      if (napredek != null) LinearProgressIndicator(value: napredek / 100),
+    ];
   }
 
   Widget _vrstica(BuildContext context, Pesem p) {
