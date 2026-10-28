@@ -28,6 +28,12 @@ class Api {
     return base64Decode(odg['base64'] as String);
   }
 
+  /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.
+  Future<Map<String, dynamic>> risbe() => _get({'akcija': 'risbe'});
+
+  /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
+  Future<void> risba(String pesem, String vsebina) => _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina});
+
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
   Future<Map<String, dynamic>> _get(Map<String, String> parametri) async {

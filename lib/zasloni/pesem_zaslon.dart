@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../models.dart';
+import 'pdf_risanje.dart';
 
 class PesemZaslon extends StatefulWidget {
   const PesemZaslon({super.key, required this.pesem, required this.baza});
@@ -22,6 +22,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
   static const _kljucPisave = 'velikost_pisave';
   double _pisava = 22;
   bool _prikaziBesedilo = true;
+  File? _pdf;
 
   List<BesediloPesmi> get _besedila => widget.baza.besedilaPesmi[widget.pesem.id] ?? const [];
   List<PdfDatoteka> get _pdfji => widget.baza.pdfjiPesmi[widget.pesem.id] ?? const [];
@@ -30,6 +31,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
   void initState() {
     super.initState();
     _prikaziBesedilo = _besedila.isNotEmpty;
+    if (_pdfji.isNotEmpty) {
+      widget.baza.datotekaPdf(_pdfji.first.driveId).then((f) {
+        if (mounted) setState(() => _pdf = f);
+      });
+    }
     SharedPreferences.getInstance().then((p) {
       final v = p.getDouble(_kljucPisave);
       if (v != null && mounted) setState(() => _pisava = v);
@@ -78,17 +84,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
       return BesediloPogled(vsebina: _besedila.first.vsebina, velikost: _pisava);
     }
     if (_pdfji.isNotEmpty) {
-      return FutureBuilder<File>(
-        future: widget.baza.datotekaPdf(_pdfji.first.driveId),
-        builder: (context, snap) {
-          final f = snap.data;
-          if (f == null) return const Center(child: CircularProgressIndicator());
-          if (!f.existsSync()) {
-            return const Center(child: Text('PDF še ni prenesen. Osveži iz baze, ko imaš internet.'));
-          }
-          return PdfViewer.file(f.path);
-        },
-      );
+      final f = _pdf;
+      if (f == null) return const Center(child: CircularProgressIndicator());
+      if (!f.existsSync()) {
+        return const Center(child: Text('PDF še ni prenesen. Osveži iz baze, ko imaš internet.'));
+      }
+      return PdfZRisanjem(pot: f.path, pesem: widget.pesem.id, risbe: widget.baza.risbe);
     }
     return const Center(child: Text('Ta pesem še nima besedila ali PDF-ja.'));
   }

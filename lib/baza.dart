@@ -6,10 +6,13 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api.dart';
 import 'models.dart';
+import 'risbe.dart';
 
 /// Lokalna kopija baze: podatki v baza.json, PDF-ji v mapi pdf/. Na špilu se bere samo od tu.
 class Baza extends ChangeNotifier {
-  Baza({this.mapa});
+  Baza({this.mapa}) {
+    risbe = Risbe(_koren);
+  }
 
   /// Mapa za lokalno kopijo; privzeto podatkovna mapa aplikacije.
   Directory? mapa;
@@ -19,6 +22,9 @@ class Baza extends ChangeNotifier {
   List<Skupina> skupine = [];
   List<Vloga> vloge = [];
   DateTime? zadnjaOsvezitev;
+
+  /// Osebne risbe prijavljenega člana.
+  late final Risbe risbe;
 
   static const hkratniPrenosi = 6;
 
@@ -108,7 +114,24 @@ class Baza extends ChangeNotifier {
       }
 
       await Future.wait(List.generate(hkratniPrenosi, (_) => delavec()));
-      stanje = neuspeli.isEmpty ? null : '${neuspeli.length} PDF-jev ni bilo mogoče prenesti. Poskusi znova.';
+
+      stanje = 'Usklajujem risbe …';
+      notifyListeners();
+      var risbeNapaka = false;
+      try {
+        await risbe.sinhroniziraj(api);
+      } catch (e) {
+        risbeNapaka = true;
+      }
+      stanje = [
+        if (neuspeli.isNotEmpty) '${neuspeli.length} PDF-jev ni bilo mogoče prenesti.',
+        if (risbeNapaka) 'Risb ni bilo mogoče uskladiti.',
+      ].join(' ');
+      if (stanje!.isEmpty) {
+        stanje = null;
+      } else {
+        stanje = '$stanje Poskusi znova.';
+      }
     } catch (e) {
       napaka = e.toString();
       stanje = null;

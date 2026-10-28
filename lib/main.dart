@@ -11,6 +11,8 @@ Future<void> main() async {
   final prijava = Prijava();
   final baza = Baza();
   await baza.nalozi();
+  // Risbe se pošiljajo na strežnik sproti, kadar je član prijavljen.
+  prijava.addListener(() => baza.risbe.api = prijava.racun != null ? Api(prijava.zeton) : null);
   runApp(SpadniBesedila(prijava: prijava, baza: baza));
   // Prijava se preveri v ozadju; seznam pesmi iz lokalne kopije je takoj na voljo tudi brez interneta.
   prijava.zacni();
