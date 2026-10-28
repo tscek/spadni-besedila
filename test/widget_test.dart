@@ -153,7 +153,7 @@ void main() {
     expect(baza.pesmi.map((p) => p.koda), ['1002', '2001']);
     expect(baza.besedilaPesmi['b']!.single.vsebina, '[C]La');
     expect(await (await baza.datotekaPdf('drive1')).readAsBytes(), pdfBytes);
-    expect(baza.smeUrejati('ea98d692'), isTrue);
+    expect(baza.urednikSkupine, ['ea98d692']);
 
     final ponovno = Baza(mapa: mapa);
     await ponovno.nalozi();

@@ -6,13 +6,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../models.dart';
+import '../prijava.dart';
 import 'pdf_risanje.dart';
+import 'urejanje_besedila.dart';
+import 'urejanje_pesmi.dart';
 
 class PesemZaslon extends StatefulWidget {
-  const PesemZaslon({super.key, required this.pesem, required this.baza});
+  const PesemZaslon({super.key, required this.pesem, required this.baza, required this.prijava});
 
   final Pesem pesem;
   final Baza baza;
+  final Prijava prijava;
 
   @override
   State<PesemZaslon> createState() => _PesemZaslonState();
@@ -24,6 +28,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   bool _prikaziBesedilo = true;
   File? _pdf;
 
+  /// Trenutni podatki pesmi iz baze (po urejanju se spremenijo).
+  Pesem get _pesem => widget.baza.pesmi.where((p) => p.id == widget.pesem.id).firstOrNull ?? widget.pesem;
   List<BesediloPesmi> get _besedila => widget.baza.besedilaPesmi[widget.pesem.id] ?? const [];
   List<PdfDatoteka> get _pdfji => widget.baza.pdfjiPesmi[widget.pesem.id] ?? const [];
 
@@ -47,9 +53,35 @@ class _PesemZaslonState extends State<PesemZaslon> {
     (await SharedPreferences.getInstance()).setDouble(_kljucPisave, _pisava);
   }
 
+  Future<void> _urediPesem() async {
+    final api = apiZaUrejanje(context, widget.prijava);
+    if (api == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<Pesem>(
+        builder: (_) => UrejanjePesmiZaslon(baza: widget.baza, api: api, pesem: _pesem),
+      ),
+    );
+  }
+
+  Future<void> _urediBesedilo() async {
+    final api = apiZaUrejanje(context, widget.prijava);
+    if (api == null) return;
+    final shranjeno = await Navigator.of(context).push(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            UrejanjeBesedilaZaslon(baza: widget.baza, api: api, pesem: _pesem, besedilo: _besedila.firstOrNull),
+      ),
+    );
+    if (shranjeno ?? false) setState(() => _prikaziBesedilo = _besedila.isNotEmpty);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final p = widget.pesem;
+    return ListenableBuilder(listenable: widget.baza, builder: (context, _) => _zaslon(context));
+  }
+
+  Widget _zaslon(BuildContext context) {
+    final p = _pesem;
     final imaOboje = _besedila.isNotEmpty && _pdfji.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
@@ -73,6 +105,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
               onPressed: () => _spremeniPisavo(2),
             ),
           ],
+          if (widget.baza.smeUrejatiPesem(p))
+            PopupMenuButton<String>(
+              tooltip: 'Urejanje',
+              icon: const Icon(Icons.edit),
+              onSelected: (v) => v == 'pesem' ? _urediPesem() : _urediBesedilo(),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'pesem', child: Text('Uredi podatke pesmi')),
+                PopupMenuItem(value: 'besedilo', child: Text(_besedila.isEmpty ? 'Dodaj besedilo' : 'Uredi besedilo')),
+              ],
+            ),
         ],
       ),
       body: _vsebina(context),
@@ -90,6 +132,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
         return const Center(child: Text('PDF še ni prenesen. Osveži iz baze, ko imaš internet.'));
       }
       return PdfZRisanjem(pot: f.path, pesem: widget.pesem.id, risbe: widget.baza.risbe);
+    }
+    if (widget.baza.smeUrejatiPesem(_pesem)) {
+      return Center(
+        child: FilledButton.icon(
+          onPressed: _urediBesedilo,
+          icon: const Icon(Icons.add),
+          label: const Text('Dodaj besedilo'),
+        ),
+      );
     }
     return const Center(child: Text('Ta pesem še nima besedila ali PDF-ja.'));
   }

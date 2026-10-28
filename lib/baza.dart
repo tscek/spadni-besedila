@@ -22,6 +22,7 @@ class Baza extends ChangeNotifier {
   List<Skupina> skupine = [];
   List<Vloga> vloge = [];
   DateTime? zadnjaOsvezitev;
+  Map<String, dynamic> _podatki = {};
 
   /// Osebne risbe prijavljenega člana.
   late final Risbe risbe;
@@ -45,6 +46,7 @@ class Baza extends ChangeNotifier {
   }
 
   void _uporabi(Map<String, dynamic> podatki) {
+    _podatki = podatki;
     final tabele = (podatki['tabele'] as Map<String, dynamic>?) ?? {};
     List<Zapis> t(String ime) => ((tabele[ime] as List?) ?? []).cast<Map<String, dynamic>>();
 
@@ -141,6 +143,57 @@ class Baza extends ChangeNotifier {
     }
   }
 
-  bool smeUrejati(String skupina) =>
-      vloge.any((v) => v.skupina == skupina && (v.vloga == 'Administrator' || v.vloga == 'Urejevalec'));
+  static const _urednikeVloge = {'Administrator', 'Urejevalec'};
+
+  /// Skupine, v katerih sme prijavljeni član urejati pesmi.
+  List<String> get urednikSkupine => {
+    for (final v in vloge)
+      if (_urednikeVloge.contains(v.vloga)) v.skupina,
+  }.toList();
+
+  bool get smeUrejati => urednikSkupine.isNotEmpty;
+
+  bool smeUrejatiPesem(Pesem p) => smeUrejati && (p.skupine.isEmpty || p.skupine.any(urednikSkupine.contains));
+
+  /// Različne vrednosti stolpca med pesmimi, za predloge pri vnosu.
+  List<String> vrednosti(String stolpec) =>
+      pesmi.map((p) => besedilo(p.vrstica[stolpec])).where((v) => v.isNotEmpty).toSet().toList()..sort();
+
+  /// Shrani pesem na strežnik in v lokalno kopijo. Vrne shranjeno pesem.
+  Future<Pesem> shraniPesem(Api api, Zapis podatki) async {
+    final odg = await api.shraniPesem(podatki);
+    final vrstica = (odg['vrstica'] as Map).cast<String, dynamic>();
+    await _zamenjajVrstico('Pesmi', vrstica);
+    return Pesem.izVrstice(vrstica);
+  }
+
+  Future<void> shraniBesedilo(Api api, Zapis podatki) async {
+    final odg = await api.shraniBesedilo(podatki);
+    if (odg['izbrisano'] != null) {
+      await _zamenjajVrstico('Besedila', null, izbrisi: odg['izbrisano'].toString());
+    } else {
+      await _zamenjajVrstico('Besedila', (odg['vrstica'] as Map).cast<String, dynamic>());
+    }
+  }
+
+  /// Zamenja (ali doda) vrstico po ID-ju v lokalni kopiji tabele, da ni treba čakati na celotno osvežitev.
+  Future<void> _zamenjajVrstico(String tabela, Zapis? vrstica, {String? izbrisi}) async {
+    final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? (_podatki['tabele'] = <String, dynamic>{});
+    final vrstice = ((tabele[tabela] as List?) ?? []).cast<Map<String, dynamic>>().toList();
+    final id = izbrisi ?? besedilo(vrstica!['ID']);
+    final i = vrstice.indexWhere((r) => besedilo(r['ID']) == id);
+    if (vrstica == null) {
+      if (i >= 0) vrstice.removeAt(i);
+    } else if (i >= 0) {
+      vrstice[i] = vrstica;
+    } else {
+      vrstice.add(vrstica);
+    }
+    tabele[tabela] = vrstice;
+    final f = await _datotekaPodatkov();
+    await f.parent.create(recursive: true);
+    await f.writeAsString(jsonEncode(_podatki));
+    _uporabi(_podatki);
+    notifyListeners();
+  }
 }

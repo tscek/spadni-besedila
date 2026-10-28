@@ -6,6 +6,7 @@ import '../models.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
 import 'pesem_zaslon.dart';
+import 'urejanje_pesmi.dart';
 
 class SeznamZaslon extends StatefulWidget {
   const SeznamZaslon({super.key, required this.prijava, required this.baza, required this.posodobitev});
@@ -54,6 +55,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     final pesmi = baza.pesmi.where((p) => (_zvrst.isEmpty || p.zvrst == _zvrst) && p.ustreza(_iskanje.text)).toList();
 
     return Scaffold(
+      floatingActionButton: baza.smeUrejati
+          ? FloatingActionButton.extended(
+              onPressed: _novaPesem,
+              icon: const Icon(Icons.add),
+              label: const Text('Nova pesem'),
+            )
+          : null,
       appBar: AppBar(
         title: const Text('Pesmi'),
         actions: [
@@ -137,6 +145,24 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     );
   }
 
+  Future<void> _novaPesem() async {
+    final api = apiZaUrejanje(context, widget.prijava);
+    if (api == null) return;
+    final navigator = Navigator.of(context);
+    final pesem = await navigator.push(
+      MaterialPageRoute<Pesem>(
+        builder: (_) => UrejanjePesmiZaslon(baza: widget.baza, api: api),
+      ),
+    );
+    if (pesem != null) {
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PesemZaslon(pesem: pesem, baza: widget.baza, prijava: widget.prijava),
+        ),
+      );
+    }
+  }
+
   List<Widget> _posodobitev() {
     final p = widget.posodobitev;
     if (!p.naVoljo) return const [];
@@ -181,7 +207,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => PesemZaslon(pesem: p, baza: widget.baza),
+          builder: (_) => PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava),
         ),
       ),
     );

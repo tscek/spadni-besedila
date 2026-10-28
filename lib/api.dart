@@ -37,6 +37,14 @@ class Api {
   /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
   Future<void> risba(String pesem, String vsebina) => _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina});
 
+  /// Shrani pesem (brez ID = nova). Vrne zapisano vrstico lista Pesmi.
+  Future<Map<String, dynamic>> shraniPesem(Map<String, dynamic> pesem) => _post({'akcija': 'pesem', 'pesem': pesem});
+
+  /// Shrani besedilo pesmi (brez ID = novo, prazno besedilo = izbriši).
+  /// Vrne {vrstica} ali {izbrisano: ID}.
+  Future<Map<String, dynamic>> shraniBesedilo(Map<String, dynamic> besedilo) =>
+      _post({'akcija': 'besedilo', 'besedilo': besedilo});
+
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
   Future<Map<String, dynamic>> _get(Map<String, String> parametri) async {

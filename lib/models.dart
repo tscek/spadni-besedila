@@ -24,6 +24,7 @@ class Pesem {
     this.makro = '',
     this.aktivna = true,
     this.skupine = const [],
+    this.vrstica = const {},
   });
 
   factory Pesem.izVrstice(Zapis r) => Pesem(
@@ -40,6 +41,7 @@ class Pesem {
     makro: besedilo(r['Makro ob odprtju']),
     aktivna: r['Aktivna'] == null || r['Aktivna'] == '' || daNe(r['Aktivna']),
     skupine: besedilo(r['Skupine']).split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
+    vrstica: r,
   );
 
   final String id;
@@ -55,6 +57,9 @@ class Pesem {
   final String makro;
   final bool aktivna;
   final List<String> skupine;
+
+  /// Celotna vrstica iz lista Pesmi, za urejanje stolpcev, ki jih prikaz ne potrebuje.
+  final Zapis vrstica;
 
   int get kodaStevilka => int.tryParse(koda) ?? 1 << 30;
 
@@ -85,19 +90,23 @@ class PdfDatoteka {
 }
 
 class BesediloPesmi {
-  BesediloPesmi({required this.id, required this.pesem, required this.vrsta, required this.vsebina});
+  BesediloPesmi({required this.id, required this.pesem, required this.vrsta, required this.vsebina, this.opombe = ''});
 
   factory BesediloPesmi.izVrstice(Zapis r) => BesediloPesmi(
     id: besedilo(r['ID']),
     pesem: besedilo(r['Pesem']),
     vrsta: besedilo(r['Vrsta']),
     vsebina: r['Besedilo']?.toString() ?? '',
+    opombe: besedilo(r['Opombe']),
   );
+
+  static const vrste = ['Besedilo z akordi', 'Besedilo'];
 
   final String id;
   final String pesem;
   final String vrsta;
   final String vsebina;
+  final String opombe;
 }
 
 class Skupina {
