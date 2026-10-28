@@ -67,6 +67,29 @@ void main() {
       );
     });
 
+    test('HTML namesto JSON: napaka pove naslov strani', () async {
+      final api = Api(
+        () async => 'zeton',
+        url: 'https://example.com/exec',
+        client: MockClient(
+          (_) async => http.Response(
+            '<html><head><title>Sign in</title><style>x{}</style></head><body>Prijava</body></html>',
+            200,
+          ),
+        ),
+      );
+      expect(
+        api.podatki(),
+        throwsA(
+          isA<ApiNapaka>().having(
+            (e) => e.sporocilo,
+            'sporocilo',
+            allOf(startsWith('Strežnik ni vrnil'), contains('Sign in |'), contains('Prijava')),
+          ),
+        ),
+      );
+    });
+
     test('POST sledi preusmeritvi Apps Scripta', () async {
       final klici = <String>[];
       final api = Api(

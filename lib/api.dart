@@ -58,10 +58,24 @@ class Api {
     try {
       json = jsonDecode(utf8.decode(odg.bodyBytes));
     } on FormatException {
-      throw ApiNapaka('Strežnik ni vrnil podatkov (preveri naslov skripte in uvedbo)');
+      throw ApiNapaka(
+        'Strežnik ni vrnil podatkov (preveri naslov skripte in uvedbo). Odgovor: ${povzetekHtml(odg.body)}',
+      );
     }
     if (json is! Map<String, dynamic>) throw ApiNapaka('Nepričakovan odgovor strežnika');
     if (json['napaka'] != null) throw ApiNapaka(json['napaka'].toString());
     return json;
   }
+}
+
+/// Kratek berljiv povzetek HTML strani (naslov ali začetek besedila), za sporočilo o napaki.
+String povzetekHtml(String html) {
+  final naslov = RegExp(r'<title[^>]*>([^<]*)</title>', caseSensitive: false).firstMatch(html)?.group(1)?.trim();
+  final besedilo = html
+      .replaceAll(RegExp(r'<(script|style)[^>]*>.*?</\1>', caseSensitive: false, dotAll: true), ' ')
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final kratko = besedilo.length > 160 ? '${besedilo.substring(0, 160)} …' : besedilo;
+  return [if (naslov != null && naslov.isNotEmpty) naslov, kratko].join(' | ');
 }
