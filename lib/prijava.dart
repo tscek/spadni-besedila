@@ -3,14 +3,17 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config.dart';
+import 'prijava_namizje_web.dart' if (dart.library.io) 'prijava_namizje.dart';
 
 /// Google prijava. ID žeton velja eno uro, zato se pred iztekom osveži brez interakcije.
 ///
 /// Na Androidu prijava teče prek sistemskega okna, v brskalniku prek Googlovega gumba
 /// (glej `gumb_prijave_web.dart`) in samodejne prijave One Tap; v obeh primerih
-/// rezultat pride po toku [GoogleSignIn.authenticationEvents].
+/// rezultat pride po toku [GoogleSignIn.authenticationEvents]. Na računalniku (Windows) Googlove knjižnice ni,
+/// zato prijava teče prek brskalnika ([PrijavaNamizje]), osvežilni žeton pa ostane shranjen.
 class Prijava extends ChangeNotifier {
   final _gsi = GoogleSignIn.instance;
   GoogleSignInAccount? racun;
@@ -20,14 +23,32 @@ class Prijava extends ChangeNotifier {
   String? _idZeton;
   Completer<void>? _cakamZeton;
 
-  bool get nastavljena => Config.googleServerClientId.isNotEmpty;
+  static bool get _namizje =>
+      !kIsWeb && {TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS}.contains(defaultTargetPlatform);
+
+  static const _kljucOsvezilnega = 'namizje_osvezilni';
+  static const _kljucEmaila = 'namizje_email';
+  String? _osvezilni;
+  String? _namiznaEmail;
+
+  bool get nastavljena => _namizje ? PrijavaNamizje.nastavljena : Config.googleServerClientId.isNotEmpty;
 
   /// Ali sme aplikacija klicati strežnik. Na špilu (prek vodje) prijava ni potrebna.
-  bool get prijavljen => racun != null || Config.prekoVodje;
+  bool get prijavljen => racun != null || _namiznaEmail != null || Config.prekoVodje;
+
+  /// E-naslov prijavljenega računa.
+  String? get email => racun?.email ?? _namiznaEmail;
 
   Future<void> zacni() => _priprava ??= _zacni();
 
   Future<void> _zacni() async {
+    if (_namizje) {
+      final p = await SharedPreferences.getInstance();
+      _osvezilni = p.getString(_kljucOsvezilnega);
+      _namiznaEmail = _osvezilni == null ? null : p.getString(_kljucEmaila);
+      notifyListeners();
+      return;
+    }
     if (!nastavljena || Config.prekoVodje) return;
     // V brskalniku je isti "Web application" client ID clientId, na Androidu serverClientId.
     await _gsi.initialize(
@@ -73,6 +94,7 @@ class Prijava extends ChangeNotifier {
   /// Prijava s sistemskim oknom (Android). V brskalniku se uporabi Googlov gumb.
   Future<void> prijavi() async {
     napaka = null;
+    if (_namizje) return _prijaviNamizje();
     try {
       await zacni();
       _prijavljen(await _gsi.authenticate());
@@ -87,7 +109,32 @@ class Prijava extends ChangeNotifier {
     }
   }
 
+  Future<void> _prijaviNamizje() async {
+    try {
+      final r = await PrijavaNamizje.prijavi();
+      _idZeton = r.idZeton;
+      _osvezilni = r.osvezilni ?? _osvezilni;
+      _namiznaEmail = poljeZetona(r.idZeton, 'email') ?? '';
+      final p = await SharedPreferences.getInstance();
+      if (_osvezilni != null) await p.setString(_kljucOsvezilnega, _osvezilni!);
+      await p.setString(_kljucEmaila, _namiznaEmail!);
+    } catch (e) {
+      napaka = '$e';
+    }
+    notifyListeners();
+  }
+
   Future<void> odjavi() async {
+    if (_namizje) {
+      final p = await SharedPreferences.getInstance();
+      await p.remove(_kljucOsvezilnega);
+      await p.remove(_kljucEmaila);
+      _osvezilni = null;
+      _namiznaEmail = null;
+      _idZeton = null;
+      notifyListeners();
+      return;
+    }
     await _gsi.signOut();
     racun = null;
     _idZeton = null;
@@ -99,6 +146,11 @@ class Prijava extends ChangeNotifier {
     if (Config.prekoVodje) return '';
     final z = _idZeton;
     if (z != null && veljaVsaj(z, const Duration(minutes: 5))) return z;
+    if (_namizje) {
+      final o = _osvezilni;
+      if (o == null) throw StateError('Nisi prijavljen');
+      return _idZeton = await PrijavaNamizje.osvezi(o);
+    }
     final prvi = _cakamZeton == null;
     final cakam = _cakamZeton ??= Completer<void>();
     if (prvi) {
@@ -132,6 +184,17 @@ class Prijava extends ChangeNotifier {
     final nov = _idZeton;
     if (nov == null) throw StateError('Nisi prijavljen');
     return nov;
+  }
+}
+
+/// Polje iz vsebine JWT žetona (npr. email).
+String? poljeZetona(String jwt, String polje) {
+  try {
+    final deli = jwt.split('.');
+    final vsebina = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(deli[1])))) as Map<String, dynamic>;
+    return vsebina[polje]?.toString();
+  } catch (_) {
+    return null;
   }
 }
 

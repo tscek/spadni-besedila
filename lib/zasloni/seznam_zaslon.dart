@@ -162,10 +162,10 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               }
             },
             itemBuilder: (_) => [
-              PopupMenuItem(enabled: false, child: Text(widget.prijava.racun?.email ?? 'Ni prijave')),
+              PopupMenuItem(enabled: false, child: Text(widget.prijava.email ?? 'Ni prijave')),
               if (baza.zadnjaOsvezitev != null)
                 PopupMenuItem(enabled: false, child: Text('Osveženo: ${_datum(baza.zadnjaOsvezitev!)}')),
-              if (widget.prijava.racun != null)
+              if (widget.prijava.email != null)
                 const PopupMenuItem(value: 'odjava', child: Text('Odjava'))
               else
                 const PopupMenuItem(value: 'prijava', child: Text('Prijava')),

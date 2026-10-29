@@ -1,0 +1,67 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.8"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Spletna različica v aplikaciji: računalnik kot vodja na špilu jo streže iPadom.
+      - name: Spletna različica za vodjo
+        shell: bash
+        run: |
+          rm -f assets/splet/splet.zip
+          flutter build web --release --no-web-resources-cdn \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+          cd build/web
+          7z a -tzip -mx=9 ../../assets/splet/splet.zip . \
+            '-xr!*.symbols' '-xr!chromium' '-xr!skwasm*' '-xr!wimp*' '-xr!webparagraph' \
+            '-x!assets/NOTICES' '-x!sw.js' '-x!assets/assets/splet'
+          ls -l ../../assets/splet/splet.zip
+
+      # Prijava z Google na računalniku: odjemalec vrste "Desktop app" (spremenljivka in skrivnost na GitHubu).
+      - name: Gradnja
+        shell: bash
+        run: |
+          if [ -z "${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}" ]; then
+            echo "::warning::Ni spremenljivke GOOGLE_DESKTOP_CLIENT_ID, prijava na računalniku ne bo delovala."
+          fi
+          flutter build windows --release --build-number=${{ github.run_number }} \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }} \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID=${{ vars.GOOGLE_DESKTOP_CLIENT_ID }} \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+
+      - name: Zip
+        shell: bash
+        run: |
+          mv build/windows/x64/runner/Release spadni-besedila
+          7z a -tzip "spadni-besedila-windows-${{ github.run_number }}.zip" spadni-besedila
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: spadni-besedila-windows-${{ github.run_number }}
+          path: spadni-besedila-windows-${{ github.run_number }}.zip
+
+      - name: Objava na strani Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-${{ github.run_number }}
+          name: Windows ${{ github.run_number }}
+          body: Samodejna gradnja za Windows iz ${{ github.sha }}. Razpakiraj in zaženi spadni_besedila.exe.
+          files: spadni-besedila-windows-${{ github.run_number }}.zip

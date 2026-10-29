@@ -11,6 +11,11 @@ class Config {
   /// OAuth "Web application" client ID iz Google Cloud. Brez njega prijava ne deluje.
   static const googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
+  /// OAuth "Desktop app" client ID in skrivnost za prijavo na računalniku (Windows).
+  /// Skrivnost pri namiznih aplikacijah po Googlovih pravilih ni zaupna (je v vsaki namestitvi).
+  static const googleDesktopClientId = String.fromEnvironment('GOOGLE_DESKTOP_CLIENT_ID');
+  static const googleDesktopClientSecret = String.fromEnvironment('GOOGLE_DESKTOP_CLIENT_SECRET');
+
   /// Vrata strežnika, ki ga na špilu zažene vodja.
   static const vrataVodje = 8765;
 
