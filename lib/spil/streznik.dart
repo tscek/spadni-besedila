@@ -13,6 +13,8 @@ abstract class StreznikVodje {
 /// Strežnik za to platformo ali null, kjer ga ni mogoče zagnati (brskalnik).
 StreznikVodje? ustvariStreznik() => izvedba.ustvariStreznik();
 
-/// Naslovi vodij (npr. http://192.168.1.5:8765), ki se oglašajo na lokalnem omrežju.
-/// V brskalniku iskanje ni mogoče (prazen tok).
-Stream<String> isciVodjo() => izvedba.isciVodjo();
+/// Vodja, ki se oglaša na lokalnem omrežju: naslov (npr. http://192.168.1.5:8765) in ime člana, ki vodi.
+typedef NajdenVodja = ({String naslov, String ime});
+
+/// Vodje, ki se oglašajo na lokalnem omrežju. V brskalniku iskanje ni mogoče (prazen tok).
+Stream<NajdenVodja> isciVodjo() => izvedba.isciVodjo();

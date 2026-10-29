@@ -197,6 +197,9 @@ class Baza extends ChangeNotifier {
 
   Pesem? pesem(String id) => _poId[id];
 
+  /// Ime prijavljenega člana (npr. za oglašanje vodje na omrežju).
+  String get imeClana => ((_podatki['clan'] as Map?)?['Ime'] ?? '').toString();
+
   /// Ali sme prijavljeni član na špilu voditi (stolpec Sme voditi na listu Vloge).
   bool get smeVoditi => vloge.any((v) => v.smeVoditi);
 

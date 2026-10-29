@@ -156,7 +156,7 @@ void main() {
   test('sledilec sam najde vodjo in dobi tudi pesmi izven setliste', () async {
     final baza = await _baza();
     final vodja = Spil();
-    final oglasi = StreamController<String>();
+    final oglasi = StreamController<NajdenVodja>();
     final sledilec = Spil(iskalec: () => oglasi.stream);
     addTearDown(() async {
       await sledilec.ustavi();
@@ -169,9 +169,15 @@ void main() {
 
     vodja.prikazujem(const StanjeSpila(pesem: 'a'));
     await vodja.zacniVoditi(baza);
-    oglasi.add('http://127.0.0.1:${Config.vrataVodje}');
+    oglasi.add((naslov: 'http://127.0.0.1:${Config.vrataVodje}', ime: 'Tomaž'));
     await _pocakaj(() => sledilec.povezan && sledilec.stanje?.pesem == 'a');
     expect(sledilec.naslovVodje, '127.0.0.1:${Config.vrataVodje}');
+
+    // Drug vodja na istem WiFi-ju: sledilec ostane pri svojem, drugega le ponudi za izbiro.
+    oglasi.add((naslov: 'http://127.0.0.2:${Config.vrataVodje}', ime: 'Matej'));
+    await _pocakaj(() => sledilec.najdeniVodje.length == 2);
+    expect(sledilec.naslovVodje, '127.0.0.1:${Config.vrataVodje}');
+    expect(sledilec.najdeniVodje.values, ['Tomaž', 'Matej']);
 
     // Pesem izven setliste: vodja jo samo odpre.
     vodja.prikazujem(const StanjeSpila(pesem: 'b'));
@@ -185,7 +191,7 @@ void main() {
     final baza = await _baza();
     final vodja = Spil();
     addTearDown(vodja.ustavi);
-    final najdeni = <String>[];
+    final najdeni = <NajdenVodja>[];
     final p = isciVodjo().listen(najdeni.add);
     addTearDown(p.cancel);
     await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -198,7 +204,8 @@ void main() {
       markTestSkipped('oddajanje v tem okolju ne doseže sprejemnika');
       return;
     }
-    expect(najdeni.first, endsWith(':${Config.vrataVodje}'));
+    expect(najdeni.first.naslov, endsWith(':${Config.vrataVodje}'));
+    expect(najdeni.first.ime, baza.imeClana);
   });
 
   test('vodja: risbe članov s špila gredo na strežnik, nato se prenesejo vse', () async {

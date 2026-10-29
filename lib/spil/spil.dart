@@ -44,12 +44,12 @@ enum VlogaSpila { nic, vodja, sledilec }
 /// Vodja zažene strežnik ([StreznikVodje]) in pošilja [StanjeSpila]; sledilci ga prek WebSocketa
 /// prejemajo in pokažejo isto pesem iz svoje lokalne kopije.
 class Spil extends ChangeNotifier {
-  Spil({StreznikVodje? Function()? streznik, Stream<String> Function()? iskalec})
+  Spil({StreznikVodje? Function()? streznik, Stream<NajdenVodja> Function()? iskalec})
     : _ustvariStreznik = streznik ?? ustvariStreznik,
       _isciVodjo = iskalec ?? isciVodjo;
 
   final StreznikVodje? Function() _ustvariStreznik;
-  final Stream<String> Function() _isciVodjo;
+  final Stream<NajdenVodja> Function() _isciVodjo;
 
   VlogaSpila vloga = VlogaSpila.nic;
   StanjeSpila? stanje;
@@ -70,10 +70,16 @@ class Spil extends ChangeNotifier {
   StreamSubscription<dynamic>? _poslusam;
   Timer? _ponovnaPovezava;
   Uri? _naslovVodje;
-  StreamSubscription<String>? _iskanje;
+  StreamSubscription<NajdenVodja>? _iskanje;
+
+  /// Sledilec: vodje, ki se oglašajo na omrežju (naslov WebSocket → ime), za izbiro, ko jih je več.
+  final Map<Uri, String> najdeniVodje = {};
 
   /// Kar ta naprava trenutno kaže; ko začne voditi, to takoj pošlje sledilcem.
   StanjeSpila? _prikazano;
+
+  /// Sledilec: naslov WebSocket vodje, ki mu sledi.
+  Uri? get vodja => _naslovVodje;
 
   /// Sledilec: naslov vodje, s katerim se povezuje (npr. 192.168.1.5:8765).
   String? get naslovVodje => _naslovVodje == null ? null : '${_naslovVodje!.host}:${_naslovVodje!.port}';
@@ -123,9 +129,15 @@ class Spil extends ChangeNotifier {
       notifyListeners();
     }
     _iskanje ??= _isciVodjo().listen(
-      (naslov) {
-        final ws = naslovWebSocket(naslov);
-        if (ws != null && ws != _naslovVodje && vloga == VlogaSpila.sledilec) sledi(ws);
+      (v) {
+        final ws = naslovWebSocket(v.naslov);
+        if (ws == null) return;
+        if (najdeniVodje[ws] != v.ime) {
+          najdeniVodje[ws] = v.ime;
+          notifyListeners();
+        }
+        // Samodejno samo, dokler ni povezave; z izbranim vodjo ostane povezan, tudi če se oglaša še kdo.
+        if (ws != _naslovVodje && vloga == VlogaSpila.sledilec && !povezan) sledi(ws);
       },
       onError: (Object e) {
         napaka = 'Iskanje vodje ne deluje: $e';
@@ -207,6 +219,7 @@ class Spil extends ChangeNotifier {
   Future<void> ustavi() async {
     await _iskanje?.cancel();
     _iskanje = null;
+    najdeniVodje.clear();
     _ustaviSledenje();
     _naslovVodje = null;
     await _streznik?.ustavi();

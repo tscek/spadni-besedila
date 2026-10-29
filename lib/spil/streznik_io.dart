@@ -43,18 +43,18 @@ class StreznikIo implements StreznikVodje {
         } catch (_) {}
       }
     });
-    await _zacniOddajati();
+    await _zacniOddajati(baza.imeClana);
     return 'http://${await lokalniNaslov() ?? 'localhost'}:${Config.vrataVodje}';
   }
 
   /// Vsaki 2 s pošlje na lokalno omrežje kratko sporočilo, po katerem sledilci najdejo vodjo.
   /// Sledilec naslov vzame iz pošiljatelja paketa, zato velja tudi, če vodja zamenja WiFi.
-  Future<void> _zacniOddajati() async {
+  Future<void> _zacniOddajati(String ime) async {
     try {
       final u = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       u.broadcastEnabled = true;
       _oddajnik = u;
-      final sporocilo = utf8.encode(jsonEncode({'spadni': 1, 'vrata': Config.vrataVodje}));
+      final sporocilo = utf8.encode(jsonEncode({'spadni': 1, 'vrata': Config.vrataVodje, 'ime': ime}));
       Future<void> oddaj() async {
         // Splošni naslov in še naslov vsakega omrežja posebej (dostopna točka telefona splošnega ne prepusti vedno).
         final cilji = {'255.255.255.255'};
@@ -229,11 +229,11 @@ class StreznikIo implements StreznikVodje {
   }
 }
 
-/// Posluša oddajanje vodij na lokalnem omrežju in vrača njihove naslove.
-Stream<String> isciVodjo() {
+/// Posluša oddajanje vodij na lokalnem omrežju in vrača njihove naslove in imena.
+Stream<NajdenVodja> isciVodjo() {
   RawDatagramSocket? vticnica;
-  late final StreamController<String> tok;
-  tok = StreamController<String>(
+  late final StreamController<NajdenVodja> tok;
+  tok = StreamController<NajdenVodja>(
     onListen: () async {
       await _multicast(true);
       try {
@@ -246,7 +246,10 @@ Stream<String> isciVodjo() {
           try {
             final j = jsonDecode(utf8.decode(d.data));
             if (j is Map && j['spadni'] == 1) {
-              tok.add('http://${d.address.address}:${(j['vrata'] as num?)?.toInt() ?? Config.vrataVodje}');
+              tok.add((
+                naslov: 'http://${d.address.address}:${(j['vrata'] as num?)?.toInt() ?? Config.vrataVodje}',
+                ime: j['ime']?.toString() ?? '',
+              ));
             }
           } catch (_) {}
         });

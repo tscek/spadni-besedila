@@ -252,6 +252,19 @@ class SpilGumb extends StatelessWidget {
           ),
         ],
         if (spil.vloga == VlogaSpila.sledilec) ...[
+          // Več vodij na istem WiFi-ju: izbereš, komu slediš.
+          if (spil.najdeniVodje.length > 1)
+            for (final MapEntry(key: ws, value: ime) in spil.najdeniVodje.entries)
+              ListTile(
+                leading: Icon(ws == spil.vodja ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                title: Text(ime.isEmpty ? 'Vodja' : 'Vodi $ime'),
+                subtitle: Text('${ws.host}:${ws.port}'),
+                onTap: () async {
+                  zapri();
+                  spil.sledi(ws);
+                  (await SharedPreferences.getInstance()).setString(_kljucVodje, '${ws.host}:${ws.port}');
+                },
+              ),
           if (spil.stanje != null)
             ListTile(
               leading: const Icon(Icons.music_note),
