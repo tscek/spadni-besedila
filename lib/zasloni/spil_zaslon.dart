@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../baza.dart';
@@ -119,8 +120,14 @@ class SpilGumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Spletna različica z interneta se z vodjo na WiFi-ju ne more povezati (iPad odpre naslov vodje).
-    if (kIsWeb && !Config.prekoVodje) return const SizedBox.shrink();
+    // Spletna različica z interneta (https) se z vodjo na WiFi-ju ne sme povezati: ponudi prehod na naslov vodje.
+    if (kIsWeb && !Config.prekoVodje) {
+      return TextButton.icon(
+        onPressed: () => _odpriVodjo(context),
+        icon: const Icon(Icons.cast),
+        label: const Text('Špil'),
+      );
+    }
     return ListenableBuilder(
       listenable: spil,
       builder: (context, _) {
@@ -138,6 +145,45 @@ class SpilGumb extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _odpriVodjo(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
+    final c = TextEditingController(text: prefs.getString(_kljucVodje) ?? '');
+    final vnos = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sledi vodji'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Ta stran se z vodjo ne more povezati. Odpri naslov, ki ga vodja vidi pod '
+              'Špil → Pokaži kodo za iPade (ali skeniraj kodo). Biti moraš na istem WiFi-ju.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: c,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(labelText: 'Naslov vodje', hintText: '192.168.1.5'),
+              onSubmitted: (s) => Navigator.pop(context, s),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          TextButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Odpri')),
+        ],
+      ),
+    );
+    c.dispose();
+    final ws = naslovWebSocket(vnos ?? '');
+    if (ws == null) return;
+    await prefs.setString(_kljucVodje, vnos!.trim());
+    await launchUrl(Uri.parse('http://${ws.host}:${ws.port}/'), webOnlyWindowName: '_self');
   }
 
   Future<void> _meni(BuildContext context) => showModalBottomSheet<void>(
