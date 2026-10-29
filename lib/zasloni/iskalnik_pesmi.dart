@@ -4,10 +4,13 @@ import '../models.dart';
 
 /// Seznam pesmi z izbrano vrstico, po katerem se premikaš tudi z nožnim stikalom (gor, dol, potrdi).
 class IzbiraPesmi extends StatefulWidget {
-  const IzbiraPesmi({super.key, required this.pesmi, required this.odpri, this.zacetna, this.vrstica});
+  const IzbiraPesmi({super.key, required this.pesmi, required this.odpri, this.pridrzi, this.zacetna, this.vrstica});
 
   final List<Pesem> pesmi;
   final void Function(Pesem) odpri;
+
+  /// Pridržana vrstica (privzeta vrstica).
+  final void Function(Pesem)? pridrzi;
 
   /// Pesem, ki je na začetku izbrana.
   final Pesem? zacetna;
@@ -90,6 +93,7 @@ class IzbiraPesmiState extends State<IzbiraPesmi> {
     selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
     title: Text('${p.koda}  ${p.naslov}', overflow: TextOverflow.ellipsis),
     onTap: () => widget.odpri(p),
+    onLongPress: widget.pridrzi == null ? null : () => widget.pridrzi!(p),
   );
 
   @override
@@ -107,10 +111,18 @@ class IzbiraPesmiState extends State<IzbiraPesmi> {
 
 /// Plavajoče okno z iskalnikom pesmi (spodaj desno na zaslonu pesmi).
 class IskalnikPesmi extends StatefulWidget {
-  const IskalnikPesmi({super.key, required this.pesmi, required this.odpri, required this.zapri, this.trenutna});
+  const IskalnikPesmi({
+    super.key,
+    required this.pesmi,
+    required this.odpri,
+    required this.zapri,
+    this.pridrzi,
+    this.trenutna,
+  });
 
   final List<Pesem> pesmi;
   final void Function(Pesem) odpri;
+  final void Function(Pesem)? pridrzi;
   final VoidCallback zapri;
   final Pesem? trenutna;
 
@@ -163,7 +175,13 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
           Expanded(
             child: pesmi.isEmpty
                 ? const Center(child: Text('Ni zadetkov.'))
-                : IzbiraPesmi(key: _izbira, pesmi: pesmi, odpri: widget.odpri, zacetna: widget.trenutna),
+                : IzbiraPesmi(
+                    key: _izbira,
+                    pesmi: pesmi,
+                    odpri: widget.odpri,
+                    pridrzi: widget.pridrzi,
+                    zacetna: widget.trenutna,
+                  ),
           ),
         ],
       ),

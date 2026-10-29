@@ -144,8 +144,10 @@ class Spil extends ChangeNotifier {
     }
   }
 
-  /// Doda pesem med naslednje (lahko vsak). Sledilec jo pošlje vodji, ta pa seznamček vsem.
-  void dodajNaslednjo(Naslednja n) => _spremeni({'ukaz': 'dodaj', ...n.vJson()});
+  /// Doda pesem v čakalno vrsto (lahko vsak): na konec ali z [naPrvo] na prvo mesto.
+  /// Pesem, ki je že v vrsti, se premakne. Sledilec jo pošlje vodji, ta pa vrsto vsem.
+  void dodajNaslednjo(Naslednja n, {bool naPrvo = false}) =>
+      _spremeni({'ukaz': 'dodaj', ...n.vJson(), if (naPrvo) 'naPrvo': true});
 
   /// Odstrani [i]-to pesem s seznamčka.
   void odstraniNaslednjo(int i) => _spremeni({'ukaz': 'odstrani', 'i': i, 'pesem': naslednje[i].pesem});
@@ -198,7 +200,9 @@ class Spil extends ChangeNotifier {
 
     switch (u['ukaz']) {
       case 'dodaj' when pesem.isNotEmpty:
-        _nastaviNaslednje([...naslednje, Naslednja.izJson(u)]);
+        final ostale = naslednje.where((n) => n.pesem != pesem);
+        final nova = Naslednja.izJson(u);
+        _nastaviNaslednje(u['naPrvo'] == true ? [nova, ...ostale] : [...ostale, nova]);
       case 'odstrani':
         final i = indeks();
         if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));

@@ -15,6 +15,7 @@ import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/prijava.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/midi_zaslon.dart';
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
@@ -313,6 +314,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('3  TRETJA'), findsOneWidget);
     expect(find.byType(IskalnikPesmi), findsNothing);
+
+    // Na špilu iskalnik pesem doda v čakalno vrsto (dotik na konec, pridržanje na prvo mesto),
+    // podrsaj levo odpre naslednjo iz vrste.
+    final spil = Spil();
+    await tester.pumpWidget(
+      MaterialApp(
+        key: const ValueKey('spil'),
+        home: PesemZaslon(pesem: pesmi.first, baza: baza, prijava: Prijava(), spil: spil, seznam: pesmi),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Finder vIskalniku(String t) => find.descendant(of: find.byType(IskalnikPesmi), matching: find.text(t));
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    await tester.tap(vIskalniku('2  DRUGA'));
+    await tester.pumpAndSettle();
+    expect(find.byType(IskalnikPesmi), findsNothing);
+    expect(find.text('1  PRVA'), findsOneWidget); // pesem ostane odprta
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    await tester.longPress(vIskalniku('3  TRETJA'));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), [pesmi[2].id, pesmi[1].id]);
+    await tester.flingFrom(const Offset(600, 300), const Offset(-400, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('3  TRETJA'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), [pesmi[1].id]);
 
     // Setlista: naslednja gre po setlisti, ne po seznamu.
     await tester.pumpWidget(

@@ -61,6 +61,13 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
   }
 }
 
+/// Obvestilo zaslonu okoli prikaza, da se je risanje vklopilo ali izklopilo (med risanjem ni gest).
+class RisanjeObvestilo extends Notification {
+  RisanjeObvestilo(this.risem);
+
+  final bool risem;
+}
+
 /// Risanje in opombe na eni ali več straneh (PDF ali besedilo). Koordinate so relativne:
 /// x glede na širino strani, y glede na [enotaY] (višino strani pri PDF-ju, širino pri besedilu).
 mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
@@ -253,7 +260,10 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       child: FloatingActionButton(
         heroTag: null,
         tooltip: risem ? 'Končaj risanje' : 'Riši in piši opombe',
-        onPressed: () => setState(() => risem = !risem),
+        onPressed: () {
+          setState(() => risem = !risem);
+          RisanjeObvestilo(risem).dispatch(context);
+        },
         child: Icon(risem ? Icons.check : Icons.edit),
       ),
     ),

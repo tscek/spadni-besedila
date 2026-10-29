@@ -60,6 +60,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
   Uint8List? _pdf;
   bool _pdfPrebran = false;
   bool _iskalnik = false;
+
+  /// Med risanjem ni gest (podrsaj, pridržanje).
+  bool _risem = false;
   final _iskalnikKljuc = GlobalKey<IskalnikPesmiState>();
 
   /// Trenutni podatki pesmi iz baze (po urejanju se spremenijo).
@@ -119,6 +122,21 @@ class _PesemZaslonState extends State<PesemZaslon> {
             PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil, seznam: widget.seznam),
       ),
     );
+  }
+
+  /// Iskalnik: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto); brez špila se odpre.
+  void _izIskalnika(Pesem p, {bool naPrvo = false}) {
+    final spil = widget.spil;
+    if (spil == null) return _odpri(p);
+    setState(() => _iskalnik = false);
+    vCakalnoVrsto(context, spil, widget.baza, p, naPrvo: naPrvo);
+  }
+
+  /// Podrsaj levo: naslednja pesem (čakalna vrsta, setlista ali seznam); desno: prejšnja.
+  void _podrsaj(DragEndDetails d) {
+    final hitrost = d.primaryVelocity ?? 0;
+    if (_iskalnik || hitrost.abs() < 300) return;
+    Midi.aplikacija.sprozi(hitrost < 0 ? DejanjeMidi.naslednja : DejanjeMidi.prejsnja);
   }
 
   List<MidiGumb> get _gumbi => widget.baza.midi.gumbiZa(widget.pesem.id);
@@ -207,12 +225,31 @@ class _PesemZaslonState extends State<PesemZaslon> {
     );
   }
 
+  /// Vsebina z gestami: podrsaj na naslednjo ali prejšnjo pesem, pridržanje odpre urejanje.
+  Widget _vsebinaZGestami(BuildContext context) {
+    final sme = widget.baza.smeUrejatiPesem(_pesem);
+    return NotificationListener<RisanjeObvestilo>(
+      onNotification: (o) {
+        setState(() => _risem = o.risem);
+        return true;
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: _risem ? null : _podrsaj,
+        onLongPress: _risem || !sme
+            ? null
+            : () => _uredi(zavihek: _prikaziBesedilo && _besedila.isNotEmpty ? UrejanjePesmiZaslon.zavihekBesedila : 0),
+        child: _vsebina(context),
+      ),
+    );
+  }
+
   Widget _telo(BuildContext context) {
-    if (!_iskalnik) return _vsebina(context);
+    if (!_iskalnik) return _vsebinaZGestami(context);
     return LayoutBuilder(
       builder: (context, meje) => Stack(
         children: [
-          _vsebina(context),
+          _vsebinaZGestami(context),
           Positioned(
             right: 16,
             bottom: 16,
@@ -222,7 +259,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
               key: _iskalnikKljuc,
               pesmi: widget.baza.pesmi,
               trenutna: widget.pesem,
-              odpri: _odpri,
+              odpri: _izIskalnika,
+              pridrzi: (p) => _izIskalnika(p, naPrvo: true),
               zapri: () => setState(() => _iskalnik = false),
             ),
           ),
@@ -254,7 +292,10 @@ class _PesemZaslonState extends State<PesemZaslon> {
             IconButton(
               tooltip: _prikaziBesedilo ? 'Pokaži PDF' : 'Pokaži besedilo',
               icon: Icon(_prikaziBesedilo ? Icons.picture_as_pdf : Icons.notes),
-              onPressed: () => setState(() => _prikaziBesedilo = !_prikaziBesedilo),
+              onPressed: () => setState(() {
+                _prikaziBesedilo = !_prikaziBesedilo;
+                _risem = false;
+              }),
             ),
           if (_prikaziBesedilo && _besedila.isNotEmpty) ...[
             IconButton(

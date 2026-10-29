@@ -29,12 +29,18 @@ Future<void> dodajMedNaslednje(BuildContext context, Spil spil, Baza baza, Pesem
           ListTile(
             leading: const Icon(Icons.playlist_add),
             title: const Text('Dodaj kot naslednjo'),
-            subtitle: const Text('Pride na vrsto pred naslednjo pesmijo (tudi v setlisti)'),
-            onTap: () => Navigator.pop(context, 'naslednja'),
+            subtitle: const Text('Na prvo mesto v čakalni vrsti'),
+            onTap: () => Navigator.pop(context, 'prvo'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.queue_music),
+            title: const Text('Dodaj v čakalno vrsto'),
+            subtitle: const Text('Na zadnje mesto v čakalni vrsti (tudi v setlisti pred naslednjo pesmijo)'),
+            onTap: () => Navigator.pop(context, 'vrsta'),
           ),
           ListTile(
             leading: const Icon(Icons.low_priority),
-            title: const Text('Dodaj na konec'),
+            title: const Text('Dodaj na konec setliste'),
             subtitle: const Text('V setlisti pride na vrsto po zadnji pesmi setliste'),
             onTap: () => Navigator.pop(context, 'naKonec'),
           ),
@@ -53,8 +59,22 @@ Future<void> dodajMedNaslednje(BuildContext context, Spil spil, Baza baza, Pesem
     spil.zamenjajVsem(StanjeSpila(pesem: p.id));
     return;
   }
-  spil.dodajNaslednjo(Naslednja(pesem: p.id, kdo: await kdoSem(baza), naKonec: izbira == 'naKonec'));
-  messenger.showSnackBar(SnackBar(content: Text('Dodano med naslednje: ${p.naslov}')));
+  final naPrvo = izbira == 'prvo';
+  spil.dodajNaslednjo(
+    Naslednja(pesem: p.id, kdo: await kdoSem(baza), naKonec: izbira == 'naKonec'),
+    naPrvo: naPrvo,
+  );
+  messenger.showSnackBar(SnackBar(content: Text('${naPrvo ? 'Naslednja' : 'V čakalni vrsti'}: ${p.naslov}')));
+}
+
+/// Iskalnik v pesmi: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto).
+Future<void> vCakalnoVrsto(BuildContext context, Spil spil, Baza baza, Pesem p, {bool naPrvo = false}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  spil.dodajNaslednjo(
+    Naslednja(pesem: p.id, kdo: await kdoSem(baza)),
+    naPrvo: naPrvo,
+  );
+  messenger.showSnackBar(SnackBar(content: Text('${naPrvo ? 'Naslednja' : 'V čakalni vrsti'}: ${p.naslov}')));
 }
 
 String _opis(Naslednja n) => [if (n.naKonec) 'na konec setliste', if (n.kdo.isNotEmpty) n.kdo].join(' · ');
@@ -104,8 +124,8 @@ Future<void> pokaziNaslednje(BuildContext context, Spil spil, Baza baza, void Fu
             return ListView(
               shrinkWrap: true,
               children: [
-                const ListTile(title: Text('Naslednje pesmi')),
-                if (spil.naslednje.isEmpty) const ListTile(title: Text('Seznamček je prazen.')),
+                const ListTile(title: Text('Čakalna vrsta')),
+                if (spil.naslednje.isEmpty) const ListTile(title: Text('Čakalna vrsta je prazna.')),
                 for (var i = 0; i < spil.naslednje.length; i++)
                   if (baza.pesem(spil.naslednje[i].pesem) case final p?)
                     ListTile(

@@ -180,6 +180,16 @@ void main() {
     expect(vodja.prvaNaslednja(naKonec: false), isNull);
     expect(vodja.prvaNaslednja()?.pesem, 'b');
 
+    // Na prvo mesto; pesem, ki je že v vrsti, se premakne.
+    sledilec.dodajNaslednjo(const Naslednja(pesem: 'a'), naPrvo: true);
+    await _pocakaj(() => sledilec.naslednje.length == 2);
+    expect(sledilec.naslednje.map((n) => n.pesem), ['a', 'b']);
+    sledilec.dodajNaslednjo(const Naslednja(pesem: 'a'));
+    await _pocakaj(() => sledilec.naslednje.first.pesem == 'b');
+    expect(sledilec.naslednje.map((n) => n.pesem), ['b', 'a']);
+    sledilec.odstraniNaslednjo(1);
+    await _pocakaj(() => sledilec.naslednje.length == 1);
+
     sledilec.odstraniNaslednjo(0);
     await _pocakaj(() => vodja.naslednje.isEmpty && sledilec.naslednje.isEmpty);
 
