@@ -11,6 +11,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -18,7 +19,8 @@ jobs:
         with:
           flutter-version: "3.47.8"
           channel: stable
-          cache: true
+          # Predpomnilnik na Windows obvisi pri razpakiranju, zato brez njega.
+          cache: false
 
       - run: flutter pub get
 
