@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../baza.dart';
 import '../chordpro.dart' as cp;
+import '../midi/midi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
@@ -59,7 +60,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _prikaziBesedilo = _besedila.isNotEmpty;
     // Po prvem izrisu, da obvestilo ne pride sredi gradnje zaslonov.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
+      if (!mounted) return;
+      widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
+      Midi.aplikacija.odprta(_pesem, widget.baza.midi);
     });
     if (_pdfji.isNotEmpty) {
       widget.baza.pdf(_pdfji.first.driveId).then((b) {
@@ -75,6 +78,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
       final v = p.getDouble(_kljucPisave);
       if (v != null && mounted) setState(() => _pisava = v);
     });
+  }
+
+  @override
+  void dispose() {
+    Midi.aplikacija.zaprta(_pesem);
+    super.dispose();
   }
 
   Future<void> _spremeniPisavo(double d) async {

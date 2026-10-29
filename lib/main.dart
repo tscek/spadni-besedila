@@ -7,6 +7,7 @@ import 'posodobitev.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
 import 'zasloni/prijava_zaslon.dart';
+import 'midi/midi.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
@@ -17,6 +18,8 @@ Future<void> main() async {
   final posodobitev = Posodobitev();
   final spil = Spil();
   await baza.nalozi();
+  // MIDI naprave, če je MIDI na tej napravi vklopljen (Nastavitve → MIDI).
+  Midi.aplikacija.nalozi().ignore();
   // Risbe se pošiljajo na strežnik sproti, kadar je član prijavljen.
   // Ob prijavi preverimo tudi, ali je na voljo nova različica aplikacije.
   var prijavljen = false;

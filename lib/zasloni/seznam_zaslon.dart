@@ -6,6 +6,7 @@ import '../models.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'midi_zaslon.dart';
 import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
@@ -99,6 +100,16 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             onSelected: (v) {
               if (v == 'odjava') widget.prijava.odjavi();
               if (v == 'prijava') _prijava();
+              if (v == 'midi') {
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza)));
+              }
+              if (v == 'midiKnjiznica') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MidiKnjiznicaZaslon(baza: baza, prijava: widget.prijava),
+                  ),
+                );
+              }
             },
             itemBuilder: (_) => [
               PopupMenuItem(enabled: false, child: Text(widget.prijava.racun?.email ?? 'Ni prijave')),
@@ -108,6 +119,9 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 const PopupMenuItem(value: 'odjava', child: Text('Odjava'))
               else
                 const PopupMenuItem(value: 'prijava', child: Text('Prijava')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'midi', child: Text('Nastavitve MIDI')),
+              const PopupMenuItem(value: 'midiKnjiznica', child: Text('MIDI ukazi in makri')),
             ],
           ),
         ],

@@ -67,6 +67,10 @@ class Api {
     'izbrisi': true,
   });
 
+  /// Shrani ali izbriše vrstico na listu MIDI ukazi, Makri, MIDI gumbi ali MIDI kanali.
+  Future<Map<String, dynamic>> shraniMidi(String tabela, Map<String, dynamic> vrstica, {bool izbrisi = false}) =>
+      _post({'akcija': 'midi', 'tabela': tabela, 'vrstica': vrstica, 'izbrisi': izbrisi});
+
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
   /// Kolikokrat ponovimo klic, ko povezava pade (npr. "Connection reset by peer" na slabem WiFi-ju).

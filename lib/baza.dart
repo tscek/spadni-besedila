@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'models.dart';
 import 'config.dart';
+import 'midi/ukazi.dart';
 import 'risbe.dart';
 import 'shramba/shramba.dart';
 
@@ -24,6 +25,7 @@ class Baza extends ChangeNotifier {
   Map<String, List<SetlistaPesem>> pesmiSetlist = {};
   List<Skupina> skupine = [];
   List<Vloga> vloge = [];
+  KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};
 
@@ -85,6 +87,7 @@ class Baza extends ChangeNotifier {
     }
 
     skupine = t('Skupine').map(Skupina.izVrstice).toList();
+    midi = KnjiznicaMidi.izTabel(tabele);
     vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     zadnjaOsvezitev = DateTime.tryParse(podatki['cas']?.toString() ?? '');
   }
@@ -259,6 +262,17 @@ class Baza extends ChangeNotifier {
     }
   }
 
+  /// Shrani (ali izbriše) ukaz, makro, gumb ali ime kanala. Kanali imajo za ID številko kanala.
+  Future<void> shraniMidi(Api api, String tabela, Zapis vrstica, {bool izbrisi = false}) async {
+    final odg = await api.shraniMidi(tabela, vrstica, izbrisi: izbrisi);
+    final kljuc = tabela == 'MIDI kanali' ? 'Kanal' : 'ID';
+    if (odg['izbrisano'] != null) {
+      await _zamenjajVrstico(tabela, null, izbrisi: odg['izbrisano'].toString(), kljuc: kljuc);
+    } else {
+      await _zamenjajVrstico(tabela, (odg['vrstica'] as Map).cast<String, dynamic>(), kljuc: kljuc);
+    }
+  }
+
   /// Odstrani vrstice, ki ustrezajo pogoju, in doda nove (brez shranjevanja na disk; to naredi naslednji klic).
   Future<void> _zamenjajVrstice(
     String tabela, {
@@ -273,11 +287,11 @@ class Baza extends ChangeNotifier {
   }
 
   /// Zamenja (ali doda) vrstico po ID-ju v lokalni kopiji tabele, da ni treba čakati na celotno osvežitev.
-  Future<void> _zamenjajVrstico(String tabela, Zapis? vrstica, {String? izbrisi}) async {
+  Future<void> _zamenjajVrstico(String tabela, Zapis? vrstica, {String? izbrisi, String kljuc = 'ID'}) async {
     final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? (_podatki['tabele'] = <String, dynamic>{});
     final vrstice = ((tabele[tabela] as List?) ?? []).cast<Map<String, dynamic>>().toList();
-    final id = izbrisi ?? besedilo(vrstica!['ID']);
-    final i = vrstice.indexWhere((r) => besedilo(r['ID']) == id);
+    final id = izbrisi ?? besedilo(vrstica![kljuc]);
+    final i = vrstice.indexWhere((r) => besedilo(r[kljuc]) == id);
     if (vrstica == null) {
       if (i >= 0) vrstice.removeAt(i);
     } else if (i >= 0) {

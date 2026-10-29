@@ -6,6 +6,7 @@ import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../models.dart';
 import '../prijava.dart';
+import 'midi_zaslon.dart';
 import 'pesem_zaslon.dart';
 import 'prijava_zaslon.dart';
 
@@ -94,10 +95,14 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     ('Tempo (BPM)', true, false),
     ('Opombe', false, false),
   ];
-  static const _poljaMidi = [('MIDI ob odprtju', false, false), ('Makro ob odprtju', false, true)];
+  static const _poljaMidi = [
+    ('MIDI ob odprtju', 'Ukazi pesmi ob odprtju (npr. cue na Multiplayu).'),
+    ('Makro ob odprtju', 'Pošlje se za ukazi pesmi.'),
+    ('Makro ob zaprtju', 'Pošlje se, ko pesem zapreš ali odpreš naslednjo.'),
+  ];
 
   late final Map<String, TextEditingController> _vnosi = {
-    for (final (stolpec, _, _) in [..._polja, ..._poljaMidi])
+    for (final stolpec in [..._polja.map((p) => p.$1), ..._poljaMidi.map((p) => p.$1)])
       stolpec: TextEditingController(text: besedilo(widget.pesem?.vrstica[stolpec]))..addListener(_spremenjenaPesem),
   };
   late bool _aktivna = widget.pesem?.aktivna ?? true;
@@ -467,9 +472,11 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final (stolpec, stevilo, predlogi) in _poljaMidi) _polje(stolpec, stevilo, predlogi),
+        for (final (stolpec, pomoc) in _poljaMidi)
+          PoljeMidi(oznaka: stolpec, vnos: _vnosi[stolpec]!, knjiznica: widget.baza.midi, pomoc: pomoc),
         Text(
-          'Ukazi, ki jih vodja pošlje ob odprtju pesmi. Pošiljanje MIDI pride v naslednjih korakih.',
+          'Ukaze in makre izbereš z +, lahko jih je več (ločeni s ;). Pošlje jih vsaka naprava, '
+          'ki ima vklopljen MIDI (Nastavitve MIDI).',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
