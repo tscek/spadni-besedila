@@ -1,13 +1,13 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
 import '../models.dart';
+import '../nastavitve.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'besedilo_risanje.dart';
@@ -55,8 +55,7 @@ class PesemZaslon extends StatefulWidget {
 }
 
 class _PesemZaslonState extends State<PesemZaslon> {
-  static const _kljucPisave = 'velikost_pisave';
-  double _pisava = 22;
+  double get _pisava => Nastavitve.aplikacija.pisava;
   bool _prikaziBesedilo = true;
   Uint8List? _pdf;
   bool _pdfPrebran = false;
@@ -71,7 +70,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
   @override
   void initState() {
     super.initState();
-    _prikaziBesedilo = _besedila.isNotEmpty;
+    _prikaziBesedilo = _besedila.isNotEmpty && !(Nastavitve.aplikacija.pdfNajprej && _pdfji.isNotEmpty);
     // Po prvem izrisu, da obvestilo ne pride sredi gradnje zaslonov.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -88,10 +87,6 @@ class _PesemZaslonState extends State<PesemZaslon> {
         }
       });
     }
-    SharedPreferences.getInstance().then((p) {
-      final v = p.getDouble(_kljucPisave);
-      if (v != null && mounted) setState(() => _pisava = v);
-    });
   }
 
   @override
@@ -100,10 +95,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     super.dispose();
   }
 
-  Future<void> _spremeniPisavo(double d) async {
-    setState(() => _pisava = (_pisava + d).clamp(12, 64));
-    (await SharedPreferences.getInstance()).setDouble(_kljucPisave, _pisava);
-  }
+  Future<void> _spremeniPisavo(double d) => Nastavitve.aplikacija.nastaviPisavo(_pisava + d);
 
   /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
   Future<void> _uredi({int zavihek = 0}) async {
@@ -183,7 +175,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     return NaMidi(
       dejanje: _dejanje,
       child: ListenableBuilder(
-        listenable: Listenable.merge([widget.baza, Midi.aplikacija, ?widget.spil]),
+        listenable: Listenable.merge([widget.baza, Midi.aplikacija, Nastavitve.aplikacija, ?widget.spil]),
         builder: (context, _) => _zaslon(context),
       ),
     );
@@ -341,6 +333,7 @@ class BesediloPogled extends StatelessWidget {
     final barve = Theme.of(context).colorScheme;
     final besedilo = TextStyle(fontSize: velikost, height: 1.25);
     final akord = TextStyle(fontSize: velikost * 0.8, fontWeight: FontWeight.bold, color: barve.primary);
+    final akordi = Nastavitve.aplikacija.akordi;
     final komentar = TextStyle(fontSize: velikost * 0.8, fontStyle: FontStyle.italic, color: barve.secondary);
     return [
       for (final v in cp.razcleni(vsebina))
@@ -351,7 +344,7 @@ class BesediloPogled extends StatelessWidget {
             child: Text(v.komentar, style: komentar),
           ),
           cp.VrstaVrstice.besedilo =>
-            v.imaAkorde
+            v.imaAkorde && akordi
                 ? Wrap(
                     crossAxisAlignment: WrapCrossAlignment.end,
                     children: [

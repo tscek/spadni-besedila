@@ -11,6 +11,7 @@ import 'spil/spil.dart';
 import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
 import 'midi/midi.dart';
+import 'nastavitve.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
@@ -21,6 +22,8 @@ Future<void> main() async {
   final posodobitev = Posodobitev();
   final spil = Spil();
   await baza.nalozi();
+  await Nastavitve.aplikacija.nalozi();
+  Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   if (Config.prekoVodje) {
     // iPad na špilu nima MIDI: gumbi in preizkusi gredo vodji, ki jih pošlje na svoje naprave.
     Midi.aplikacija.posiljajPrekoVodje(
@@ -82,12 +85,12 @@ Future<void> main() async {
   prijava.zacni();
 }
 
-void _zaslonPrizgan() => WakelockPlus.enable().catchError((_) {});
+void _zaslonPrizgan() => WakelockPlus.toggle(enable: Nastavitve.aplikacija.zaslonPrizgan).catchError((_) {});
 
 /// Brskalnik (Safari) dovoli prižgan zaslon šele po dotiku, zato ga ob dotiku zahtevamo znova, če ga še nima.
 Future<void> _zaslonPrizganObDotiku() async {
   try {
-    if (!await WakelockPlus.enabled) await WakelockPlus.enable();
+    if (Nastavitve.aplikacija.zaslonPrizgan && !await WakelockPlus.enabled) await WakelockPlus.enable();
   } catch (_) {}
 }
 
@@ -109,7 +112,10 @@ class SpadniBesedila extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(onPointerDown: kIsWeb ? (_) => _zaslonPrizganObDotiku() : null, child: _aplikacija());
+    return Listener(
+      onPointerDown: kIsWeb ? (_) => _zaslonPrizganObDotiku() : null,
+      child: ListenableBuilder(listenable: Nastavitve.aplikacija, builder: (context, _) => _aplikacija()),
+    );
   }
 
   Widget _aplikacija() {
@@ -117,7 +123,7 @@ class SpadniBesedila extends StatelessWidget {
       navigatorKey: navigator,
       title: 'Špadni besedila',
       debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
+      themeMode: Nastavitve.aplikacija.svetlaTema ? ThemeMode.light : ThemeMode.dark,
       theme: ThemeData(colorSchemeSeed: Colors.amber, brightness: Brightness.light, fontFamily: 'Roboto'),
       darkTheme: ThemeData(colorSchemeSeed: Colors.amber, brightness: Brightness.dark, fontFamily: 'Roboto'),
       home: ListenableBuilder(

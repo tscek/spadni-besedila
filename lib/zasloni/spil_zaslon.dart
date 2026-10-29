@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../config.dart';
+import '../nastavitve.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
@@ -446,7 +447,7 @@ class SamodejnoSledenje {
     if (s == null || s == _zadnje) return;
     _zadnje = s;
     final nav = navigator.currentState;
-    if (nav == null || OdprtoUrejanje.odprtih > 0) return;
+    if (nav == null || OdprtoUrejanje.odprtih > 0 || !Nastavitve.aplikacija.samodejnoSledenje) return;
     pokaziSledenje(nav, spil: spil, baza: baza, prijava: prijava);
   }
 }
