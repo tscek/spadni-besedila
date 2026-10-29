@@ -18,8 +18,17 @@ Future<void> main() async {
   final posodobitev = Posodobitev();
   final spil = Spil();
   await baza.nalozi();
-  // MIDI naprave, če je MIDI na tej napravi vklopljen (Nastavitve → MIDI).
-  Midi.aplikacija.nalozi().ignore();
+  if (Config.prekoVodje) {
+    // iPad na špilu nima MIDI: gumbi in preizkusi gredo vodji, ki jih pošlje na svoje naprave.
+    Midi.aplikacija.posiljajPrekoVodje(
+      (ukazi) => apiNaSpilu(null).posljiMidi([
+        for (final u in ukazi) {'zapis': u.ukaz.zapis, 'ime': u.ukaz.ime, 'izhod': u.izhod},
+      ]),
+    );
+  } else {
+    // MIDI naprave, če je MIDI na tej napravi vklopljen (Nastavitve → MIDI).
+    Midi.aplikacija.nalozi().ignore();
+  }
   // Risbe se pošiljajo na strežnik sproti, kadar je član prijavljen.
   // Ob prijavi preverimo tudi, ali je na voljo nova različica aplikacije.
   var prijavljen = false;

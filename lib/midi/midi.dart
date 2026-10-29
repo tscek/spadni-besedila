@@ -45,6 +45,16 @@ class Midi extends ChangeNotifier {
 
   bool vklopljen = false;
 
+  /// iPad na špilu: ukazi gredo vodji, ki jih pošlje na svoje naprave (vrne število ukazov brez naprave).
+  Future<int> Function(List<PoslaniUkaz>)? prekoVodje;
+
+  /// Na iPadu prek vodje pošilja vodja: vklopi pošiljanje in ne pošilja ukazov ob odprtju pesmi (to naredi vodja).
+  void posiljajPrekoVodje(Future<int> Function(List<PoslaniUkaz>) vodja) {
+    prekoVodje = vodja;
+    vklopljen = true;
+    notifyListeners();
+  }
+
   /// Logični izhod → ime naprave ([vsePovezane] ali [nePosiljaj]).
   Map<String, String> izhodi = {};
 
@@ -236,33 +246,66 @@ class Midi extends ChangeNotifier {
   }
 
   /// Pošlje ukaze po vrsti; note off za note pride malo kasneje.
-  Future<void> poslji(List<PoslaniUkaz> ukazi, {KnjiznicaMidi? knjiznica}) async {
-    if (!vklopljen || ukazi.isEmpty) return;
+  Future<int> poslji(List<PoslaniUkaz> ukazi, {KnjiznicaMidi? knjiznica}) async {
+    if (!vklopljen || ukazi.isEmpty) return ukazi.length;
+    if (prekoVodje case final vodja?) return _posljiVodji(vodja, ukazi, knjiznica);
+    var brezNaprave = 0;
     for (final u in ukazi) {
       final cilji = napraveZa(u.izhod);
+      if (cilji.isEmpty) brezNaprave++;
       for (final n in cilji) {
         _prenos.poslji(Uint8List.fromList(u.ukaz.bajti), n.id);
         if (u.ukaz.bajtiKonca case final konec?) {
           Timer(const Duration(milliseconds: 100), () => _prenos.poslji(Uint8List.fromList(konec), n.id));
         }
       }
-      final ime = u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: ';
-      dnevnik.insert(
-        0,
-        Poslano(DateTime.now(), '$ime${u.ukaz.opis(knjiznica?.imeKanala(u.ukaz.kanal) ?? '')}', u.izhod, [
-          for (final n in cilji) n.ime,
-        ]),
-      );
+      _zapisi(u, knjiznica, [for (final n in cilji) n.ime]);
       // Majhen presledek, da naprave Bluetooth ne izgubijo ukazov.
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
-    if (dnevnik.length > 50) dnevnik.removeRange(50, dnevnik.length);
     notifyListeners();
+    return brezNaprave;
   }
+
+  Future<int> _posljiVodji(
+    Future<int> Function(List<PoslaniUkaz>) vodja,
+    List<PoslaniUkaz> ukazi,
+    KnjiznicaMidi? knjiznica,
+  ) async {
+    var brezNaprave = ukazi.length;
+    try {
+      brezNaprave = await vodja(ukazi);
+      napaka = null;
+    } catch (e) {
+      napaka = 'Vodja ni dosegljiv: $e';
+    }
+    for (final u in ukazi) {
+      _zapisi(u, knjiznica, napaka == null ? const ['vodja'] : const []);
+    }
+    notifyListeners();
+    return brezNaprave;
+  }
+
+  void _zapisi(PoslaniUkaz u, KnjiznicaMidi? knjiznica, List<String> naprave) {
+    final ime = u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: ';
+    dnevnik.insert(
+      0,
+      Poslano(DateTime.now(), '$ime${u.ukaz.opis(knjiznica?.imeKanala(u.ukaz.kanal) ?? '')}', u.izhod, naprave),
+    );
+    if (dnevnik.length > 50) dnevnik.removeRange(50, dnevnik.length);
+  }
+
+  /// Ukazi z iPada (prek vodje), ki jih vodja pošlje na svoje naprave. Vrne število ukazov brez naprave.
+  Future<int> izIpada(List<dynamic> ukazi, KnjiznicaMidi knjiznica) => poslji([
+    for (final u in ukazi)
+      if (u is Map)
+        if (razcleniUkaz(u['zapis']?.toString() ?? '') case final ukaz?)
+          PoslaniUkaz(ukaz.kopija(ime: u['ime']?.toString() ?? ''), u['izhod']?.toString() ?? privzetiIzhod),
+  ], knjiznica: knjiznica);
 
   /// Ob odprtju pesmi: najprej ukazi ob zaprtju prejšnje (če še ni zaprta), nato ukazi nove pesmi.
   Future<void> odprta(Pesem p, KnjiznicaMidi k) async {
-    if (_odprta?.id == p.id) return;
+    if (_odprta?.id == p.id || prekoVodje != null) return;
     final prejsnja = _odprta;
     final prejsnjaKnjiznica = _knjiznicaOdprte;
     _odprta = p;

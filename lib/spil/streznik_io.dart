@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../baza.dart';
 import '../config.dart';
+import '../midi/midi.dart';
 import 'streznik.dart';
 
 StreznikVodje? ustvariStreznik() => StreznikIo();
@@ -180,6 +181,12 @@ class StreznikIo implements StreznikVodje {
       j = jsonDecode(telo);
     } on FormatException {
       return jsonEncode({'napaka': 'Napačna zahteva'});
+    }
+    if (j is Map && j['akcija'] == 'posljiMidi') {
+      final midi = Midi.aplikacija;
+      if (!midi.vklopljen) return jsonEncode({'vklopljen': false});
+      final brez = await midi.izIpada((j['ukazi'] as List?) ?? const [], baza.midi);
+      return jsonEncode({'vklopljen': true, 'brezNaprave': brez});
     }
     if (j is Map && j['akcija'] == 'risba') {
       final clan = j['clan']?.toString() ?? '';

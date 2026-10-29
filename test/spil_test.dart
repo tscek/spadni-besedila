@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:idb_shim/idb_client_memory.dart';
 import 'package:spadni_besedila/api.dart';
+import 'package:spadni_besedila/midi/midi.dart';
+import 'package:spadni_besedila/midi/prenos.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/config.dart';
 import 'package:spadni_besedila/risbe.dart';
@@ -127,6 +130,29 @@ void main() {
     expect(sledilec.vloga, VlogaSpila.sledilec); // se poskuša znova povezati
   });
 
+  test('iPad pošlje MIDI vodji, ta ga pošlje na svoje naprave', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    addTearDown(vodja.ustavi);
+    await vodja.zacniVoditi(baza);
+    final prenos = _Prenos();
+    final midi = Midi(prenos);
+    Midi.aplikacija = midi;
+    await midi.osveziNaprave();
+
+    final ipad = Api(() async => '', url: 'http://127.0.0.1:${Config.vrataVodje}/api');
+    final ukazi = [
+      {'zapis': 'CC 9 12 127', 'ime': 'Delay ON', 'izhod': 'Privzeti'},
+    ];
+    // Vodja brez vklopljenega MIDI to pove.
+    await expectLater(ipad.posljiMidi(ukazi), throwsA(isA<ApiNapaka>()));
+
+    midi.vklopljen = true;
+    expect(await ipad.posljiMidi(ukazi), 0);
+    expect(prenos.poslano, ['x 184 12 127']);
+    expect(midi.dnevnik.single.opis, startsWith('Delay ON: CC'));
+  });
+
   test('sledilec sam najde vodjo in dobi tudi pesmi izven setliste', () async {
     final baza = await _baza();
     final vodja = Spil();
@@ -206,4 +232,25 @@ void main() {
     expect(a['a']['vsebina'], 'stara'); // poslano, zato zdaj velja različica s strežnika
     expect(a['b']['vsebina'], 'z Drive');
   });
+}
+
+class _Prenos implements MidiPrenos {
+  final poslano = <String>[];
+
+  @override
+  Future<List<NapravaMidi>> naprave() async => const [NapravaMidi('x', 'WIDI', 'Bluetooth', true)];
+  @override
+  Future<void> zacniIskanje() async {}
+  @override
+  void ustaviIskanje() {}
+  @override
+  Future<void> povezi(String id) async {}
+  @override
+  void prekini(String id) {}
+  @override
+  void poslji(Uint8List bajti, String id) => poslano.add('$id ${bajti.join(' ')}');
+  @override
+  Stream<void> get spremembe => const Stream.empty();
+  @override
+  Stream<(String, Uint8List)> get prejeto => const Stream.empty();
 }

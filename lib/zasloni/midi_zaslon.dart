@@ -35,8 +35,11 @@ Future<void> preizkusiMidi(BuildContext context, KnjiznicaMidi k, String zapis) 
     messenger.showSnackBar(const SnackBar(content: Text('MIDI je na tej napravi izklopljen (Nastavitve MIDI).')));
     return;
   }
-  await midi.poslji(ukazi, knjiznica: k);
-  final brez = ukazi.where((u) => midi.napraveZa(u.izhod).isEmpty).length;
+  final brez = await midi.poslji(ukazi, knjiznica: k);
+  if (midi.prekoVodje != null && midi.napaka != null) {
+    messenger.showSnackBar(SnackBar(content: Text(midi.napaka!)));
+    return;
+  }
   messenger.showSnackBar(
     SnackBar(
       content: Text(
@@ -65,18 +68,28 @@ class MidiNastavitveZaslon extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
-              SwitchListTile(
-                title: const Text('Pošiljaj MIDI s te naprave'),
-                subtitle: const Text('Ob odprtju in zaprtju pesmi ter z gumbi. Velja samo za to napravo.'),
-                value: midi.vklopljen,
-                onChanged: midi.vklopi,
-              ),
+              if (midi.prekoVodje != null)
+                const ListTile(
+                  leading: Icon(Icons.cast_connected),
+                  title: Text('MIDI pošilja vodja'),
+                  subtitle: Text(
+                    'Ta naprava je na špilu prek vodje. Gumbi in preizkusi gredo vodji, ki jih pošlje na svoje '
+                    'MIDI naprave. Ukaze ob odprtju pesmi pošlje vodja sam.',
+                  ),
+                )
+              else
+                SwitchListTile(
+                  title: const Text('Pošiljaj MIDI s te naprave'),
+                  subtitle: const Text('Ob odprtju in zaprtju pesmi ter z gumbi. Velja samo za to napravo.'),
+                  value: midi.vklopljen,
+                  onChanged: midi.vklopi,
+                ),
               if (midi.napaka case final n?)
                 ListTile(
                   leading: Icon(Icons.error_outline, color: tema.colorScheme.error),
                   title: Text(n),
                 ),
-              if (midi.vklopljen) ...[
+              if (midi.vklopljen && midi.prekoVodje == null) ...[
                 const Divider(),
                 ListTile(
                   title: Text('Naprave', style: tema.textTheme.titleMedium),

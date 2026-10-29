@@ -71,6 +71,13 @@ class Api {
   Future<Map<String, dynamic>> shraniMidi(String tabela, Map<String, dynamic> vrstica, {bool izbrisi = false}) =>
       _post({'akcija': 'midi', 'tabela': tabela, 'vrstica': vrstica, 'izbrisi': izbrisi});
 
+  /// iPad na špilu: vodja pošlje ukaze na svoje MIDI naprave. Vrne število ukazov, ki niso imeli naprave.
+  Future<int> posljiMidi(List<Map<String, dynamic>> ukazi) async {
+    final odg = await _post({'akcija': 'posljiMidi', 'ukazi': ukazi});
+    if (odg['vklopljen'] == false) throw ApiNapaka('Vodja nima vklopljenega MIDI');
+    return (odg['brezNaprave'] as num?)?.toInt() ?? 0;
+  }
+
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
   /// Kolikokrat ponovimo klic, ko povezava pade (npr. "Connection reset by peer" na slabem WiFi-ju).
