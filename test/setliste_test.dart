@@ -186,7 +186,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Vodim · 0'), findsOneWidget);
+    expect(find.byTooltip('Vodim, sledi 0'), findsOneWidget);
     expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'c', 'setlista': 'x', 'indeks': 0});
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
@@ -214,12 +214,12 @@ void main() {
         home: SetlisteZaslon(baza: baza, prijava: prijava, spil: spil),
       ),
     );
-    expect(find.text('Špil'), findsOneWidget);
+    expect(find.byTooltip('Špil'), findsOneWidget);
 
     spil.dobi(const StanjeSpila(pesem: 'b'));
     await tester.pumpAndSettle();
     expect(find.text('1003  BOG TE ŽIVI'), findsOneWidget);
-    expect(find.text('Povezan'), findsOneWidget);
+    expect(find.byTooltip('Povezan z vodjo'), findsOneWidget);
 
     spil.dobi(const StanjeSpila(pesem: 'a', setlista: 'x', indeks: 1));
     await tester.pumpAndSettle();

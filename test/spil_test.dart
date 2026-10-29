@@ -123,6 +123,7 @@ void main() {
 
     await vodja.ustavi();
     await _pocakaj(() => !sledilec.povezan);
+    expect(sledilec.prekinjeno, isTrue); // gumb utripa rdeče
     expect(sledilec.vloga, VlogaSpila.sledilec); // se poskuša znova povezati
   });
 

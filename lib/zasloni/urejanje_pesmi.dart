@@ -113,12 +113,27 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
   late final _opombeBesedila = TextEditingController(text: _besedilo?.opombe ?? '')..addListener(_spremenjenoBesedilo);
   late String _vrsta = BesediloPesmi.vrste.contains(_besedilo?.vrsta) ? _besedilo!.vrsta : BesediloPesmi.vrste.first;
 
+  /// Ali ima član na besedilu risbe (opozorilo, da se ob spremembi vrstic lahko zamaknejo).
+  bool _risbeNaBesedilu = false;
+
   bool _spremembePesmi = false;
   bool _spremembeBesedila = false;
   bool _izbrisiBesedilo = false;
   bool _shranjujem = false;
 
   bool get _spremembe => _spremembePesmi || _spremembeBesedila;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.pesem;
+    if (p != null) {
+      widget.baza.risbe.nalozi(p.id).then((r) {
+        final ima = (r.poteze[0]?.isNotEmpty ?? false) || (r.opombe[0]?.isNotEmpty ?? false);
+        if (ima && mounted) setState(() => _risbeNaBesedilu = true);
+      });
+    }
+  }
 
   void _spremenjenaPesem() {
     if (!_spremembePesmi) setState(() => _spremembePesmi = true);
@@ -391,6 +406,14 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
             style: TextStyle(fontSize: 12),
           ),
         ),
+        if (_risbeNaBesedilu)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Text(
+              'Na besedilu imaš risbe. Če dodaš ali odstraniš vrstice, se risbe pod spremembo zamaknejo.',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error),
+            ),
+          ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(12),

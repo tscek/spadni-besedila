@@ -62,6 +62,9 @@ class Spil extends ChangeNotifier {
   /// Sledilec: ali je povezava z vodjo trenutno vzpostavljena.
   bool povezan = false;
 
+  /// Sledilec: povezava je bila vzpostavljena in je padla (opozorilo, dokler se ne obnovi).
+  bool prekinjeno = false;
+
   StreznikVodje? _streznik;
   WebSocketChannel? _kanal;
   StreamSubscription<dynamic>? _poslusam;
@@ -159,6 +162,7 @@ class Spil extends ChangeNotifier {
       kanal.ready.then((_) {
         if (_kanal != kanal) return;
         povezan = true;
+        prekinjeno = false;
         napaka = null;
         notifyListeners();
       }, onError: (Object _) => _prekinjeno(kanal));
@@ -182,6 +186,7 @@ class Spil extends ChangeNotifier {
     if (kanal != null && kanal != _kanal) return;
     if (povezan) {
       povezan = false;
+      prekinjeno = true;
       notifyListeners();
     }
     _poslusam?.cancel();
@@ -196,6 +201,7 @@ class Spil extends ChangeNotifier {
     _kanal?.sink.close();
     _kanal = null;
     povezan = false;
+    prekinjeno = false;
   }
 
   Future<void> ustavi() async {

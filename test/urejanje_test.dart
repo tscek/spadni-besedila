@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,7 +10,10 @@ import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/chordpro.dart';
 import 'package:spadni_besedila/models.dart';
+import 'package:spadni_besedila/prijava.dart';
+import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/urejanje_pesmi.dart';
 
 void main() {
@@ -166,4 +170,79 @@ void main() {
     expect((poslano.last['besedilo'] as Map)['Besedilo'], '[C]Belo o[G]bleko');
     expect(rezultat?.id, 'a');
   });
+
+  testWidgets('risanje po besedilu: poteza se shrani kot stran 0 risbe pesmi', (tester) async {
+    final baza = Baza(shramba: _Pomnilnik());
+    await tester.runAsync(() async {
+      await baza.osvezi(
+        Api(
+          () async => 'z',
+          url: 'https://example.com/exec',
+          client: MockClient(
+            (r) async => http.Response.bytes(
+              utf8.encode(
+                jsonEncode({
+                  'tabele': {
+                    'Pesmi': [
+                      {'ID': 'a', 'Koda': 1002, 'Naslov': 'BELO OBLEKO', 'Aktivna': true},
+                    ],
+                    'Besedila': [
+                      {'ID': 't', 'Pesem': 'a', 'Besedilo': '[C]Belo obleko [G7]si že nosila'},
+                    ],
+                  },
+                }),
+              ),
+              200,
+            ),
+          ),
+        ),
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: baza.pesmi.single, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Belo obleko '), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Riši in piši opombe'));
+    await tester.pumpAndSettle();
+    await tester.dragFrom(const Offset(100, 200), const Offset(200, 50));
+    await tester.pumpAndSettle();
+    // Shranjevanje teče v lažnem času testa: počakamo, da se konča, nato preberemo shranjeno.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    Risba? risba;
+    baza.risbe.nalozi('a').then((r) => risba = r);
+    await tester.pump();
+    expect(risba!.poteze[0], hasLength(1));
+    expect(risba!.poteze.keys, [0]);
+    // Koordinate so relativne na širino strani: neodvisne od velikosti zaslona.
+    expect(risba!.poteze[0]!.single.tocke.first.dx, inInclusiveRange(0, 1));
+  });
+}
+
+/// Preprosta shramba v pomnilniku, ki deluje tudi v lažnem času testov z gradniki.
+class _Pomnilnik implements Shramba {
+  final _podatki = <String, Object>{};
+
+  @override
+  Future<String?> beriBesedilo(String kljuc) async => _podatki[kljuc] as String?;
+
+  @override
+  Future<void> pisiBesedilo(String kljuc, String vsebina) async => _podatki[kljuc] = vsebina;
+
+  @override
+  Future<Uint8List?> beriBajte(String kljuc) async => _podatki[kljuc] as Uint8List?;
+
+  @override
+  Future<void> pisiBajte(String kljuc, Uint8List bajti) async => _podatki[kljuc] = bajti;
+
+  @override
+  Future<void> izbrisi(String kljuc) async => _podatki.remove(kljuc);
+
+  @override
+  Future<Set<String>> kljuci(String predpona) async => {..._podatki.keys.where((k) => k.startsWith(predpona))};
 }

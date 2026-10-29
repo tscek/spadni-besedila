@@ -25,16 +25,58 @@ class PdfZRisanjem extends StatefulWidget {
 enum _Nacin { pisalo, marker, radirka, opomba }
 
 const _barvePisala = [Color(0xFF000000), Color(0xFFD32F2F), Color(0xFF1565C0), Color(0xFF2E7D32)];
+const _barvePisalaTemno = [Color(0xFFFFFFFF), Color(0xFFFF5252), Color(0xFF64B5F6), Color(0xFF81C784)];
 const _barveMarkerja = [Color(0xFFFFEB3B), Color(0xFF76FF03), Color(0xFFFF4081), Color(0xFF40C4FF)];
 const _debelinaPisala = 0.004;
 const _debelinaMarkerja = 0.025;
 const _polmerRadirke = 0.02;
 
-class _PdfZRisanjemState extends State<PdfZRisanjem> {
+class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
+  @override
+  Risbe get risbe => widget.risbe;
+
+  @override
+  String get pesem => widget.pesem;
+
+  // Stran 0 je besedilo pesmi, PDF ima strani od 1 naprej.
+  @override
+  bool mojaStran(int stran) => stran > 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        PdfViewer.data(
+          widget.pdf,
+          sourceName: widget.ime,
+          params: PdfViewerParams(
+            panEnabled: !risem,
+            scaleEnabled: !risem,
+            pageOverlaysBuilder: (context, rect, page) => [slojStrani(page.pageNumber, rect.size)],
+          ),
+        ),
+        ...kontrole(context),
+      ],
+    );
+  }
+}
+
+/// Risanje in opombe na eni ali več straneh (PDF ali besedilo). Koordinate so relativne:
+/// x glede na širino strani, y glede na [enotaY] (višino strani pri PDF-ju, širino pri besedilu).
+mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
+  Risbe get risbe;
+  String get pesem;
+
+  /// Ali stran pripada temu prikazu (»Izbriši vse« briše samo te strani).
+  bool mojaStran(int stran);
+
+  /// Temno ozadje (besedilo): svetle barve pisala in marker brez množenja barv.
+  bool get temnoOzadje => false;
+
   Risba _risba = Risba();
-  bool _risem = false;
+  bool risem = false;
   _Nacin _nacin = _Nacin.pisalo;
-  Color _barvaPisala = _barvePisala[1];
+  late Color _barvaPisala = _pisala[1];
   Color _barvaMarkerja = _barveMarkerja[0];
 
   // Trenutna poteza (stran in točke), dokler prst ne gre z zaslona.
@@ -42,10 +84,12 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
   Poteza? _poteza;
   final _zgodovina = <String>[];
 
+  List<Color> get _pisala => temnoOzadje ? _barvePisalaTemno : _barvePisala;
+
   @override
   void initState() {
     super.initState();
-    widget.risbe.nalozi(widget.pesem).then((r) {
+    risbe.nalozi(pesem).then((r) {
       if (mounted) setState(() => _risba = r);
     });
   }
@@ -55,7 +99,7 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
     if (_zgodovina.length > 50) _zgodovina.removeAt(0);
   }
 
-  void _shrani() => widget.risbe.shrani(widget.pesem, _risba);
+  void _shrani() => risbe.shrani(pesem, _risba);
 
   void _razveljavi() {
     if (_zgodovina.isEmpty) return;
@@ -67,7 +111,7 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Izbrišem vse risbe in opombe na tej pesmi?'),
+        title: Text(opisIzbrisa),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Prekliči')),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Izbriši')),
@@ -77,15 +121,13 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
     if (ok != true) return;
     _zapomniZaRazveljavi();
     setState(() {
-      _risba.poteze.clear();
-      _risba.opombe.clear();
+      _risba.poteze.removeWhere((stran, _) => mojaStran(stran));
+      _risba.opombe.removeWhere((stran, _) => mojaStran(stran));
     });
     _shrani();
   }
 
   // ---------- Dotiki na strani ----------
-
-  Offset _relativno(Offset lokalno, Size velikost) => Offset(lokalno.dx / velikost.width, lokalno.dy / velikost.height);
 
   void _zacetek(int stran, Offset p) {
     switch (_nacin) {
@@ -175,54 +217,50 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
     _shrani();
   }
 
+  String get opisIzbrisa => 'Izbrišem vse risbe in opombe na tej pesmi?';
+
   // ---------- Prikaz ----------
 
-  List<Widget> _sloj(BuildContext context, Rect stranRect, PdfPage page) {
-    final stran = page.pageNumber;
+  /// Sloj risb nad stranjo velikosti [velikost]; [enotaY] je dolžina, s katero se množi y (privzeto višina).
+  Widget slojStrani(int stran, Size velikost, {double? enotaY}) {
+    final enota = Size(velikost.width, enotaY ?? velikost.height);
+    Offset rel(Offset l) => Offset(l.dx / enota.width, l.dy / enota.height);
     final risba = CustomPaint(
-      size: stranRect.size,
+      size: velikost,
       painter: _RisbaSlikar(
         poteze: List.of(_risba.poteze[stran] ?? const []),
         opombe: List.of(_risba.opombe[stran] ?? const []),
+        enota: enota,
+        temnoOzadje: temnoOzadje,
       ),
     );
-    if (!_risem) return [IgnorePointer(child: risba)];
-    return [
-      Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) => _zacetek(stran, _relativno(e.localPosition, stranRect.size)),
-        onPointerMove: (e) => _premik(stran, _relativno(e.localPosition, stranRect.size)),
-        onPointerUp: (e) => _konec(stran, _relativno(e.localPosition, stranRect.size)),
-        child: SizedBox.fromSize(size: stranRect.size, child: risba),
-      ),
-    ];
+    if (!risem) return IgnorePointer(child: risba);
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (e) => _zacetek(stran, rel(e.localPosition)),
+      onPointerMove: (e) => _premik(stran, rel(e.localPosition)),
+      onPointerUp: (e) => _konec(stran, rel(e.localPosition)),
+      child: SizedBox.fromSize(size: velikost, child: risba),
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        PdfViewer.data(
-          widget.pdf,
-          sourceName: widget.ime,
-          params: PdfViewerParams(panEnabled: !_risem, scaleEnabled: !_risem, pageOverlaysBuilder: _sloj),
-        ),
-        if (_risem) Positioned(left: 0, right: 0, bottom: 0, child: _orodjarna(context)),
-        Positioned(
-          right: 16,
-          bottom: _risem ? 88 : 16,
-          child: FloatingActionButton(
-            tooltip: _risem ? 'Končaj risanje' : 'Riši in piši opombe',
-            onPressed: () => setState(() => _risem = !_risem),
-            child: Icon(_risem ? Icons.check : Icons.edit),
-          ),
-        ),
-      ],
-    );
-  }
+  /// Orodjarna spodaj (med risanjem) in okrogel gumb za vklop risanja.
+  List<Widget> kontrole(BuildContext context) => [
+    if (risem) Positioned(left: 0, right: 0, bottom: 0, child: _orodjarna(context)),
+    Positioned(
+      right: 16,
+      bottom: risem ? 88 : 16,
+      child: FloatingActionButton(
+        heroTag: null,
+        tooltip: risem ? 'Končaj risanje' : 'Riši in piši opombe',
+        onPressed: () => setState(() => risem = !risem),
+        child: Icon(risem ? Icons.check : Icons.edit),
+      ),
+    ),
+  ];
 
   Widget _orodjarna(BuildContext context) {
-    final barve = _nacin == _Nacin.marker ? _barveMarkerja : _barvePisala;
+    final barve = _nacin == _Nacin.marker ? _barveMarkerja : _pisala;
     final izbrana = _nacin == _Nacin.marker ? _barvaMarkerja : _barvaPisala;
     Widget gumb(_Nacin n, IconData ikona, String opis) => IconButton(
       tooltip: opis,
@@ -281,13 +319,18 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
 }
 
 class _RisbaSlikar extends CustomPainter {
-  _RisbaSlikar({required this.poteze, required this.opombe});
+  _RisbaSlikar({required this.poteze, required this.opombe, required this.enota, this.temnoOzadje = false});
 
   final List<Poteza> poteze;
   final List<Opomba> opombe;
 
+  /// Velikost, s katero se pomnožijo relativne koordinate (x: širina, y: višina ali širina).
+  final Size enota;
+  final bool temnoOzadje;
+
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(Canvas canvas, Size platno) {
+    final size = enota;
     for (final p in poteze) {
       final marker = p.orodje == Orodje.marker;
       final barva = Color(p.barva);
@@ -297,7 +340,7 @@ class _RisbaSlikar extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeCap = marker ? StrokeCap.square : StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..blendMode = marker ? BlendMode.multiply : BlendMode.srcOver;
+        ..blendMode = marker && !temnoOzadje ? BlendMode.multiply : BlendMode.srcOver;
       final tocke = [for (final t in p.tocke) Offset(t.dx * size.width, t.dy * size.height)];
       if (tocke.length == 1) {
         canvas.drawPoints(ui.PointMode.points, tocke, copic);
@@ -317,7 +360,12 @@ class _RisbaSlikar extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: o.besedilo,
-          style: TextStyle(color: Color(o.barva), fontSize: size.width * 0.028, fontWeight: FontWeight.w600),
+          style: TextStyle(
+            // Belo pisalo (besedilo na temnem ozadju) bi se na rumenem listku ne videlo.
+            color: Color(o.barva).computeLuminance() > 0.8 ? Colors.black : Color(o.barva),
+            fontSize: size.width * 0.028,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: size.width * 0.5);

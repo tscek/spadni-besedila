@@ -122,27 +122,28 @@ class SpilGumb extends StatelessWidget {
   Widget build(BuildContext context) {
     // Spletna različica z interneta (https) se z vodjo na WiFi-ju ne sme povezati: ponudi prehod na naslov vodje.
     if (kIsWeb && !Config.prekoVodje) {
-      return TextButton.icon(
-        onPressed: () => _odpriVodjo(context),
-        icon: const Icon(Icons.cast),
-        label: const Text('Špil'),
-      );
+      return IconButton(tooltip: 'Špil', onPressed: () => _odpriVodjo(context), icon: const Icon(Icons.cast));
     }
     return ListenableBuilder(
       listenable: spil,
       builder: (context, _) {
-        final barve = Theme.of(context).colorScheme;
-        final (ikona, barva, besedilo) = switch (spil.vloga) {
-          VlogaSpila.vodja => (Icons.cast_connected, barve.primary, 'Vodim · ${spil.sledilcev}'),
-          VlogaSpila.sledilec when spil.povezan => (Icons.cast_connected, Colors.green, 'Povezan'),
-          VlogaSpila.sledilec => (Icons.cast, barve.error, 'Iščem vodjo'),
-          VlogaSpila.nic => (Icons.cast, barve.onSurfaceVariant, 'Špil'),
+        // Samo ikona: vodja zelen s številom sledilcev, povezan sledilec zelen, brez povezave rdeč,
+        // padla povezava utripa rdeče, dokler se ne obnovi.
+        const zelena = Color(0xFF43A047);
+        final rdeca = Theme.of(context).colorScheme.error;
+        final (ikona, barva, opis) = switch (spil.vloga) {
+          VlogaSpila.vodja => (Icons.cast_connected, zelena, 'Vodim, sledi ${spil.sledilcev}'),
+          VlogaSpila.sledilec when spil.povezan => (Icons.cast_connected, zelena, 'Povezan z vodjo'),
+          VlogaSpila.sledilec when spil.prekinjeno => (Icons.cast, rdeca, 'Povezava z vodjo je padla'),
+          VlogaSpila.sledilec => (Icons.cast, rdeca, 'Iščem vodjo'),
+          VlogaSpila.nic => (Icons.cast, Theme.of(context).colorScheme.onSurfaceVariant, 'Špil'),
         };
-        return TextButton.icon(
-          onPressed: () => _meni(context),
-          icon: Icon(ikona, color: barva),
-          label: Text(besedilo, style: TextStyle(color: barva)),
-        );
+        Widget ikonaGumba = Icon(ikona, color: barva);
+        if (spil.vloga == VlogaSpila.vodja) {
+          ikonaGumba = Badge(label: Text('${spil.sledilcev}'), backgroundColor: zelena, child: ikonaGumba);
+        }
+        if (spil.vloga == VlogaSpila.sledilec && spil.prekinjeno) ikonaGumba = _Utripa(child: ikonaGumba);
+        return IconButton(tooltip: opis, onPressed: () => _meni(context), icon: ikonaGumba);
       },
     );
   }
@@ -307,6 +308,31 @@ class SpilGumb extends StatelessWidget {
       ],
     ];
   }
+}
+
+/// Utripanje (opozorilo, da je povezava padla).
+class _Utripa extends StatefulWidget {
+  const _Utripa({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Utripa> createState() => _UtripaState();
+}
+
+class _UtripaState extends State<_Utripa> with SingleTickerProviderStateMixin {
+  late final _animacija = AnimationController(vsync: this, duration: const Duration(milliseconds: 500))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _animacija.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: Tween(begin: 1.0, end: 0.15).animate(_animacija), child: widget.child);
 }
 
 /// Nastavitev, ali je ta naprava ob zagonu vodja, sledilec ali sama zase.

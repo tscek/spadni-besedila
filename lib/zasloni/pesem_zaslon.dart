@@ -8,6 +8,7 @@ import '../chordpro.dart' as cp;
 import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'besedilo_risanje.dart';
 import 'pdf_risanje.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -141,7 +142,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   Widget _vsebina(BuildContext context) {
     if (_prikaziBesedilo && _besedila.isNotEmpty) {
-      return BesediloPogled(vsebina: _besedila.first.vsebina, velikost: _pisava);
+      return BesediloZRisanjem(
+        vsebina: _besedila.first.vsebina,
+        povecava: _pisava / BesediloZRisanjem.osnovnaPisava,
+        pesem: widget.pesem.id,
+        risbe: widget.baza.risbe,
+      );
     }
     if (_pdfji.isNotEmpty) {
       if (!_pdfPrebran) return const Center(child: CircularProgressIndicator());
@@ -171,43 +177,43 @@ class BesediloPogled extends StatelessWidget {
   final String vsebina;
   final double velikost;
 
-  @override
-  Widget build(BuildContext context) {
+  /// Vrstice besedila z akordi nad zlogi (za seznam ali za stran z risbami).
+  static List<Widget> vrstice(BuildContext context, String vsebina, double velikost) {
     final barve = Theme.of(context).colorScheme;
     final besedilo = TextStyle(fontSize: velikost, height: 1.25);
     final akord = TextStyle(fontSize: velikost * 0.8, fontWeight: FontWeight.bold, color: barve.primary);
     final komentar = TextStyle(fontSize: velikost * 0.8, fontStyle: FontStyle.italic, color: barve.secondary);
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        for (final v in cp.razcleni(vsebina))
-          switch (v.vrsta) {
-            cp.VrstaVrstice.prazna => SizedBox(height: velikost * 0.8),
-            cp.VrstaVrstice.komentar => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(v.komentar, style: komentar),
-            ),
-            cp.VrstaVrstice.besedilo =>
-              v.imaAkorde
-                  ? Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.end,
-                      children: [
-                        for (final k in v.kosi)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Presledek za akordom, da se sosednja akorda ne zlepita.
-                              Text(k.akord.isEmpty ? ' ' : '${k.akord} ', style: akord),
-                              Text(k.besedilo, style: besedilo),
-                            ],
-                          ),
-                      ],
-                    )
-                  : Text(v.kosi.map((k) => k.besedilo).join(), style: besedilo),
-          },
-      ],
-    );
+    return [
+      for (final v in cp.razcleni(vsebina))
+        switch (v.vrsta) {
+          cp.VrstaVrstice.prazna => SizedBox(height: velikost * 0.8),
+          cp.VrstaVrstice.komentar => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(v.komentar, style: komentar),
+          ),
+          cp.VrstaVrstice.besedilo =>
+            v.imaAkorde
+                ? Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: [
+                      for (final k in v.kosi)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Presledek za akordom, da se sosednja akorda ne zlepita.
+                            Text(k.akord.isEmpty ? ' ' : '${k.akord} ', style: akord),
+                            Text(k.besedilo, style: besedilo),
+                          ],
+                        ),
+                    ],
+                  )
+                : Text(v.kosi.map((k) => k.besedilo).join(), style: besedilo),
+        },
+    ];
   }
+
+  @override
+  Widget build(BuildContext context) =>
+      ListView(padding: const EdgeInsets.all(16), children: vrstice(context, vsebina, velikost));
 }
