@@ -1,0 +1,148 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:idb_shim/idb_client_memory.dart';
+import 'package:spadni_besedila/api.dart';
+import 'package:spadni_besedila/baza.dart';
+import 'package:spadni_besedila/models.dart';
+import 'package:spadni_besedila/prijava.dart';
+import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/zasloni/setliste_zaslon.dart';
+import 'package:spadni_besedila/zasloni/urejanje_setliste.dart';
+
+Map<String, dynamic> _podatki() => {
+  'vloge': [
+    {'Skupina': 's1', 'Vloga': 'Administrator'},
+  ],
+  'tabele': {
+    'Pesmi': [
+      for (final (id, koda, naslov) in [('a', 1002, 'BELO OBLEKO'), ('b', 1003, 'BOG TE ŽIVI'), ('c', 1004, 'ČEŠNJE')])
+        {'ID': id, 'Koda': koda, 'Naslov': naslov, 'Aktivna': true, 'Skupine': 's1'},
+    ],
+    'Besedila': [
+      for (final id in ['a', 'b', 'c']) {'ID': 't$id', 'Pesem': id, 'Besedilo': 'Besedilo $id'},
+    ],
+    'Setliste': [
+      {'ID': 'x', 'Skupina': 's1', 'Ime': 'Poroka', 'Datum': '2026-11-06T23:00:00.000Z'},
+      {'ID': 'y', 'Skupina': 's1', 'Ime': 'Stara', 'Datum': '2025-01-01'},
+    ],
+    'Setlista pesmi': [
+      {'ID': '1', 'Setlista': 'x', 'Zaporedje': 2, 'Pesem': 'a', 'Opomba': ''},
+      {'ID': '2', 'Setlista': 'x', 'Zaporedje': 1, 'Pesem': 'c', 'Opomba': 'brez uvoda'},
+      {'ID': '3', 'Setlista': 'x', 'Zaporedje': 3, 'Pesem': 'b', 'Opomba': ''},
+    ],
+  },
+};
+
+Future<(Baza, Api, List<Map<String, dynamic>>)> _baza() async {
+  final poslano = <Map<String, dynamic>>[];
+  final api = Api(
+    () async => 'z',
+    url: 'https://example.com/exec',
+    client: MockClient((r) async {
+      if (r.method == 'GET') return http.Response.bytes(utf8.encode(jsonEncode(_podatki())), 200);
+      final telo = jsonDecode(r.body) as Map<String, dynamic>;
+      poslano.add(telo);
+      final sl = telo['setlista'] as Map<String, dynamic>;
+      if (telo['izbrisi'] == true) return http.Response(jsonEncode({'izbrisano': sl['ID']}), 200);
+      final id = sl['ID'] ?? 'nova';
+      return http.Response.bytes(
+        utf8.encode(
+          jsonEncode({
+            'setlista': {...sl, 'ID': id},
+            'pesmi': [
+              for (final (i, p) in (telo['pesmi'] as List).indexed)
+                {'ID': 'n$i', 'Setlista': id, 'Zaporedje': i + 1, ...(p as Map)},
+            ],
+          }),
+        ),
+        200,
+      );
+    }),
+  );
+  final baza = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+  await baza.osvezi(api);
+  return (baza, api, poslano);
+}
+
+void main() {
+  test('setliste: vrstni red, datum po lokalnem času, shranjevanje in brisanje', () async {
+    final (baza, api, poslano) = await _baza();
+    expect(baza.setliste.map((s) => s.ime), ['Poroka', 'Stara']);
+    expect(baza.pesmiSetlist['x']!.map((p) => p.pesem), ['c', 'a', 'b']);
+    expect(datumIso(datumIz('2025-01-01')!), '2025-01-01');
+
+    final nova = await baza.shraniSetlisto(
+      api,
+      {'Ime': 'Vaja', 'Datum': '2026-11-10', 'Skupina': 's1'},
+      [(pesem: 'b', opomba: ''), (pesem: 'a', opomba: '2x refren')],
+    );
+    expect(nova.id, 'nova');
+    expect(baza.pesmiSetlist['nova']!.map((p) => (p.pesem, p.opomba)), [('b', ''), ('a', '2x refren')]);
+    expect(baza.setliste.first.ime, 'Vaja');
+
+    // Ponovno shranjevanje zamenja pesmi, ne doda novih zraven.
+    await baza.shraniSetlisto(api, {'ID': 'x', 'Ime': 'Poroka'}, [(pesem: 'a', opomba: '')]);
+    expect(baza.pesmiSetlist['x']!.map((p) => p.pesem), ['a']);
+
+    await baza.izbrisiSetlisto(api, 'x');
+    expect(baza.setliste.any((s) => s.id == 'x'), isFalse);
+    expect(baza.pesmiSetlist['x'], isNull);
+    expect(poslano.last['izbrisi'], isTrue);
+  });
+
+  testWidgets('igranje po setlisti: naslednja in prejšnja pesem', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final s = baza.setliste.first;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: IgranjeZaslon(setlista: s, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
+    expect(find.text('1 / 3 · brez uvoda'), findsOneWidget);
+    expect(find.text('Naslednja: 1002 BELO OBLEKO'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('1002  BELO OBLEKO'), findsOneWidget);
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('Konec setliste'), findsOneWidget);
+    await tester.tap(find.byTooltip('Prejšnja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+  });
+
+  testWidgets('urejanje setliste: dodaj s kodo in seznam setlist', (tester) async {
+    late Baza baza;
+    late Api api;
+    await tester.runAsync(() async => (baza, api, _) = await _baza());
+    final s = baza.setliste.first;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: UrejanjeSetlisteZaslon(baza: baza, api: api, setlista: s),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('3 pesmi. Vrstni red spremeniš z vlečenjem.'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Dodaj s kodo'), '1003');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('4 pesmi. Vrstni red spremeniš z vlečenjem.'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SetlisteZaslon(baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Poroka'), findsOneWidget);
+    expect(find.textContaining('11. 2026 · 3 pesmi'), findsOneWidget);
+  });
+}

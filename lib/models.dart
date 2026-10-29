@@ -109,6 +109,64 @@ class BesediloPesmi {
   final String opombe;
 }
 
+class Setlista {
+  Setlista({
+    required this.id,
+    required this.skupina,
+    required this.ime,
+    this.datum,
+    this.nastop = '',
+    this.opombe = '',
+  });
+
+  factory Setlista.izVrstice(Zapis r) => Setlista(
+    id: besedilo(r['ID']),
+    skupina: besedilo(r['Skupina']),
+    ime: besedilo(r['Ime']),
+    datum: datumIz(r['Datum']),
+    nastop: besedilo(r['Nastop']),
+    opombe: besedilo(r['Opombe']),
+  );
+
+  final String id;
+  final String skupina;
+  final String ime;
+  final DateTime? datum;
+  final String nastop;
+  final String opombe;
+}
+
+class SetlistaPesem {
+  SetlistaPesem({required this.setlista, required this.zaporedje, required this.pesem, this.opomba = ''});
+
+  factory SetlistaPesem.izVrstice(Zapis r) => SetlistaPesem(
+    setlista: besedilo(r['Setlista']),
+    zaporedje: int.tryParse(besedilo(r['Zaporedje'])) ?? 0,
+    pesem: besedilo(r['Pesem']),
+    opomba: besedilo(r['Opomba']),
+  );
+
+  final String setlista;
+  final int zaporedje;
+  final String pesem;
+  final String opomba;
+}
+
+/// Datum iz preglednice: ISO čas (datumska celica, v UTC) ali besedilo `yyyy-MM-dd`. Vrne lokalni dan.
+DateTime? datumIz(dynamic v) {
+  final s = besedilo(v);
+  if (s.isEmpty) return null;
+  final d = DateTime.tryParse(s);
+  if (d == null) return null;
+  final l = d.isUtc ? d.toLocal() : d;
+  return DateTime(l.year, l.month, l.day);
+}
+
+String datumBesedilo(DateTime d) => '${d.day}. ${d.month}. ${d.year}';
+
+String datumIso(DateTime d) =>
+    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
 class Skupina {
   Skupina({required this.id, required this.ime});
 

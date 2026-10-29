@@ -17,6 +17,9 @@ class Baza extends ChangeNotifier {
   List<Pesem> pesmi = [];
   Map<String, List<PdfDatoteka>> pdfjiPesmi = {};
   Map<String, List<BesediloPesmi>> besedilaPesmi = {};
+  Map<String, Pesem> _poId = {};
+  List<Setlista> setliste = [];
+  Map<String, List<SetlistaPesem>> pesmiSetlist = {};
   List<Skupina> skupine = [];
   List<Vloga> vloge = [];
   DateTime? zadnjaOsvezitev;
@@ -50,6 +53,7 @@ class Baza extends ChangeNotifier {
 
     pesmi = t('Pesmi').map(Pesem.izVrstice).where((p) => p.id.isNotEmpty && p.aktivna).toList()
       ..sort((a, b) => a.kodaStevilka.compareTo(b.kodaStevilka));
+    _poId = {for (final p in pesmi) p.id: p};
 
     pdfjiPesmi = {};
     for (final p in t('PDF').map(PdfDatoteka.izVrstice).where((p) => p.driveId.isNotEmpty)) {
@@ -62,6 +66,17 @@ class Baza extends ChangeNotifier {
     besedilaPesmi = {};
     for (final b in t('Besedila').map(BesediloPesmi.izVrstice).where((b) => b.vsebina.trim().isNotEmpty)) {
       besedilaPesmi.putIfAbsent(b.pesem, () => []).add(b);
+    }
+
+    setliste = t('Setliste').map(Setlista.izVrstice).where((s) => s.id.isNotEmpty).toList()
+      // Najnovejše najprej, brez datuma na konec.
+      ..sort((a, b) => (b.datum ?? DateTime(0)).compareTo(a.datum ?? DateTime(0)));
+    pesmiSetlist = {};
+    for (final p in t('Setlista pesmi').map(SetlistaPesem.izVrstice).where((p) => p.pesem.isNotEmpty)) {
+      pesmiSetlist.putIfAbsent(p.setlista, () => []).add(p);
+    }
+    for (final l in pesmiSetlist.values) {
+      l.sort((a, b) => a.zaporedje.compareTo(b.zaporedje));
     }
 
     skupine = t('Skupine').map(Skupina.izVrstice).toList();
@@ -157,6 +172,32 @@ class Baza extends ChangeNotifier {
     return Pesem.izVrstice(vrstica);
   }
 
+  Pesem? pesem(String id) => _poId[id];
+
+  bool smeUrejatiSetlisto(Setlista s) => urednikSkupine.contains(s.skupina);
+
+  /// Shrani setlisto in njene pesmi (ID-ji pesmi v vrstnem redu). Vrne shranjeno setlisto.
+  Future<Setlista> shraniSetlisto(Api api, Zapis setlista, List<({String pesem, String opomba})> vrsta) async {
+    final odg = await api.shraniSetlisto(setlista, [
+      for (final v in vrsta) {'Pesem': v.pesem, 'Opomba': v.opomba},
+    ]);
+    final vrstica = (odg['setlista'] as Map).cast<String, dynamic>();
+    final id = besedilo(vrstica['ID']);
+    await _zamenjajVrstice(
+      'Setlista pesmi',
+      odstrani: (r) => besedilo(r['Setlista']) == id,
+      dodaj: ((odg['pesmi'] as List?) ?? []).cast<Map>().map((m) => m.cast<String, dynamic>()).toList(),
+    );
+    await _zamenjajVrstico('Setliste', vrstica);
+    return Setlista.izVrstice(vrstica);
+  }
+
+  Future<void> izbrisiSetlisto(Api api, String id) async {
+    await api.izbrisiSetlisto(id);
+    await _zamenjajVrstice('Setlista pesmi', odstrani: (r) => besedilo(r['Setlista']) == id);
+    await _zamenjajVrstico('Setliste', null, izbrisi: id);
+  }
+
   Future<void> shraniBesedilo(Api api, Zapis podatki) async {
     final odg = await api.shraniBesedilo(podatki);
     if (odg['izbrisano'] != null) {
@@ -164,6 +205,19 @@ class Baza extends ChangeNotifier {
     } else {
       await _zamenjajVrstico('Besedila', (odg['vrstica'] as Map).cast<String, dynamic>());
     }
+  }
+
+  /// Odstrani vrstice, ki ustrezajo pogoju, in doda nove (brez shranjevanja na disk; to naredi naslednji klic).
+  Future<void> _zamenjajVrstice(
+    String tabela, {
+    required bool Function(Zapis) odstrani,
+    List<Zapis> dodaj = const [],
+  }) async {
+    final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? (_podatki['tabele'] = <String, dynamic>{});
+    tabele[tabela] = [
+      ...((tabele[tabela] as List?) ?? []).cast<Map<String, dynamic>>().where((r) => !odstrani(r)),
+      ...dodaj,
+    ];
   }
 
   /// Zamenja (ali doda) vrstico po ID-ju v lokalni kopiji tabele, da ni treba čakati na celotno osvežitev.

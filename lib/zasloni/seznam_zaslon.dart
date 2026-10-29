@@ -8,6 +8,7 @@ import '../posodobitev.dart';
 import '../prijava.dart';
 import 'pesem_zaslon.dart';
 import 'prijava_zaslon.dart';
+import 'setliste_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
 class SeznamZaslon extends StatefulWidget {
@@ -74,6 +75,15 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       appBar: AppBar(
         title: const Text('Pesmi'),
         actions: [
+          IconButton(
+            tooltip: 'Setliste',
+            icon: const Icon(Icons.queue_music),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SetlisteZaslon(baza: widget.baza, prijava: widget.prijava),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Osveži iz baze',
             icon: baza.osvezujem

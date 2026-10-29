@@ -12,11 +12,14 @@ import 'urejanje_besedila.dart';
 import 'urejanje_pesmi.dart';
 
 class PesemZaslon extends StatefulWidget {
-  const PesemZaslon({super.key, required this.pesem, required this.baza, required this.prijava});
+  const PesemZaslon({super.key, required this.pesem, required this.baza, required this.prijava, this.spodaj});
 
   final Pesem pesem;
   final Baza baza;
   final Prijava prijava;
+
+  /// Vrstica pod pesmijo (npr. premikanje po setlisti).
+  final Widget? spodaj;
 
   @override
   State<PesemZaslon> createState() => _PesemZaslonState();
@@ -124,6 +127,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         ],
       ),
       body: _vsebina(context),
+      bottomNavigationBar: widget.spodaj,
     );
   }
 

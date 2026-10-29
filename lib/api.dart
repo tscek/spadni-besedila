@@ -45,6 +45,16 @@ class Api {
   Future<Map<String, dynamic>> shraniBesedilo(Map<String, dynamic> besedilo) =>
       _post({'akcija': 'besedilo', 'besedilo': besedilo});
 
+  /// Shrani setlisto in njene pesmi v podanem vrstnem redu. Vrne {setlista, pesmi}.
+  Future<Map<String, dynamic>> shraniSetlisto(Map<String, dynamic> setlista, List<Map<String, dynamic>> pesmi) =>
+      _post({'akcija': 'setlista', 'setlista': setlista, 'pesmi': pesmi});
+
+  Future<Map<String, dynamic>> izbrisiSetlisto(String id) => _post({
+    'akcija': 'setlista',
+    'setlista': {'ID': id},
+    'izbrisi': true,
+  });
+
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
   /// Kolikokrat ponovimo klic, ko povezava pade (npr. "Connection reset by peer" na slabem WiFi-ju).
