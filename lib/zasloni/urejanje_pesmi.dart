@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'prijava_zaslon.dart';
 
 import '../api.dart';
 import '../baza.dart';
@@ -6,10 +9,21 @@ import '../models.dart';
 import '../prijava.dart';
 
 /// Api za shranjevanje sprememb; brez prijave pokaže opozorilo in vrne null.
+/// Prijava: na Androidu sistemsko okno, v brskalniku zaslon z Googlovim gumbom.
+Future<void> odpriPrijavo(NavigatorState navigator, Prijava prijava) async {
+  if (!kIsWeb) return prijava.prijavi();
+  await navigator.push(MaterialPageRoute<void>(builder: (_) => PrijavaZaslon(prijava: prijava, zapriObPrijavi: true)));
+}
+
 Api? apiZaUrejanje(BuildContext context, Prijava prijava) {
   if (prijava.prijavljen) return Api(prijava.zeton);
-  ScaffoldMessenger.of(context)
-      .showSnackBar(const SnackBar(content: Text('Za urejanje se prijavi z Google računom (potreben je internet).')));
+  final navigator = Navigator.of(context);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: const Text('Za urejanje se prijavi z Google računom (potreben je internet).'),
+      action: SnackBarAction(label: 'Prijava', onPressed: () => odpriPrijavo(navigator, prijava)),
+    ),
+  );
   return null;
 }
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
@@ -92,7 +93,8 @@ class Api {
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> telo) async {
     final zahteva = http.Request('POST', Uri.parse(_url))
-      ..followRedirects = false
+      // Brskalnik preusmeritev skripte izvede sam (z GET); brez tega bi vsak POST v spletni različici padel.
+      ..followRedirects = kIsWeb
       ..headers['Content-Type'] = 'text/plain;charset=utf-8'
       ..body = jsonEncode({...telo, 'zeton': await _zeton(), 'clan': ?clan});
     // POST ne ponavljamo: če je skripta zahtevo že izvedla, bi se zapis podvojil.

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -8,7 +7,6 @@ import '../posodobitev.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
-import 'prijava_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -55,11 +53,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   }
 
   /// V brskalniku prijava potrebuje Googlov gumb, zato odpre zaslon za prijavo.
-  Future<void> _prijava() async {
-    if (!kIsWeb) return widget.prijava.prijavi();
-    await Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => PrijavaZaslon(prijava: widget.prijava, zapriObPrijavi: true)));
-  }
+  Future<void> _prijava() => odpriPrijavo(Navigator.of(context), widget.prijava);
 
   void _osveziZApi() {
     final api = Api(widget.prijava.zeton);
@@ -104,12 +98,16 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'odjava') widget.prijava.odjavi();
+              if (v == 'prijava') _prijava();
             },
             itemBuilder: (_) => [
               PopupMenuItem(enabled: false, child: Text(widget.prijava.racun?.email ?? 'Ni prijave')),
               if (baza.zadnjaOsvezitev != null)
                 PopupMenuItem(enabled: false, child: Text('Osveženo: ${_datum(baza.zadnjaOsvezitev!)}')),
-              if (widget.prijava.racun != null) const PopupMenuItem(value: 'odjava', child: Text('Odjava')),
+              if (widget.prijava.racun != null)
+                const PopupMenuItem(value: 'odjava', child: Text('Odjava'))
+              else
+                const PopupMenuItem(value: 'prijava', child: Text('Prijava')),
             ],
           ),
         ],

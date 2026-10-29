@@ -123,6 +123,10 @@ class Prijava extends ChangeNotifier {
       await cakam.future.timeout(const Duration(seconds: 30));
     } on TimeoutException {
       if (identical(_cakamZeton, cakam)) _cakamZeton = null;
+      // Brez veljavnega žetona aplikacija ponudi ponovno prijavo (meni in pri urejanju).
+      racun = null;
+      _idZeton = null;
+      notifyListeners();
       throw StateError('Prijava je potekla. Prijavi se znova.');
     }
     final nov = _idZeton;
