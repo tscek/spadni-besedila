@@ -32,7 +32,7 @@ class _PrijavaZaslonState extends State<PrijavaZaslon> {
 
   void _sprememba() {
     if (!mounted) return;
-    if (widget.zapriObPrijavi && prijava.racun != null) {
+    if (widget.zapriObPrijavi && prijava.prijavljen) {
       Navigator.of(context).pop();
     } else {
       setState(() {});

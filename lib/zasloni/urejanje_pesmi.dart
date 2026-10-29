@@ -7,7 +7,7 @@ import '../prijava.dart';
 
 /// Api za shranjevanje sprememb; brez prijave pokaže opozorilo in vrne null.
 Api? apiZaUrejanje(BuildContext context, Prijava prijava) {
-  if (prijava.racun != null) return Api(prijava.zeton);
+  if (prijava.prijavljen) return Api(prijava.zeton);
   ScaffoldMessenger.of(context)
       .showSnackBar(const SnackBar(content: Text('Za urejanje se prijavi z Google računom (potreben je internet).')));
   return null;

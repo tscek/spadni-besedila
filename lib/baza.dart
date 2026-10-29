@@ -174,6 +174,12 @@ class Baza extends ChangeNotifier {
 
   Pesem? pesem(String id) => _poId[id];
 
+  /// Ali sme prijavljeni član na špilu voditi (stolpec Sme voditi na listu Vloge).
+  bool get smeVoditi => vloge.any((v) => v.smeVoditi);
+
+  /// Podatki, ki jih vodja na špilu da iPadom: vse razen svojih vlog (sledilci ne urejajo).
+  String podatkiZaSledilce() => jsonEncode({..._podatki, 'vloge': const [], 'clan': null});
+
   bool smeUrejatiSetlisto(Setlista s) => urednikSkupine.contains(s.skupina);
 
   /// Shrani setlisto in njene pesmi (ID-ji pesmi v vrstnem redu). Vrne shranjeno setlisto.

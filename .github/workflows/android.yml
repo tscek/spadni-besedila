@@ -42,6 +42,17 @@ jobs:
             echo "::warning::Ni podpisnega ključa, APK bo podpisan z debug ključem."
           fi
 
+      # Spletna različica v APK-ju: vodja na špilu jo streže iPadom (assets/splet/splet.zip).
+      - name: Spletna različica za vodjo
+        run: |
+          rm -f assets/splet/splet.zip
+          flutter build web --release --no-web-resources-cdn \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+          (cd build/web && zip -qr -9 ../../assets/splet/splet.zip . \
+            -x '*.symbols' 'canvaskit/chromium/*' 'canvaskit/skwasm*' 'canvaskit/wimp*' \
+               'canvaskit/webparagraph/*' 'assets/NOTICES' 'sw.js' 'assets/assets/splet/*')
+          ls -l assets/splet/splet.zip
+
       - name: Gradnja APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

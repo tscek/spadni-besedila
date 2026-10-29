@@ -6,17 +6,26 @@ import '../baza.dart';
 import '../models.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
+import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
 import 'prijava_zaslon.dart';
 import 'setliste_zaslon.dart';
+import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
 class SeznamZaslon extends StatefulWidget {
-  const SeznamZaslon({super.key, required this.prijava, required this.baza, required this.posodobitev});
+  const SeznamZaslon({
+    super.key,
+    required this.prijava,
+    required this.baza,
+    required this.posodobitev,
+    required this.spil,
+  });
 
   final Prijava prijava;
   final Baza baza;
   final Posodobitev posodobitev;
+  final Spil spil;
 
   @override
   State<SeznamZaslon> createState() => _SeznamZaslonState();
@@ -33,12 +42,12 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   }
 
   void _osvezi() {
-    if (widget.prijava.racun == null) {
+    if (!widget.prijava.prijavljen) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Za osvežitev se prijavi z Google računom (potreben je internet).')));
       _prijava().then((_) {
-        if (widget.prijava.racun != null) _osveziZApi();
+        if (widget.prijava.prijavljen) _osveziZApi();
       });
       return;
     }
@@ -80,7 +89,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             icon: const Icon(Icons.queue_music),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => SetlisteZaslon(baza: widget.baza, prijava: widget.prijava),
+                builder: (_) => SetlisteZaslon(baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
               ),
             ),
           ),
@@ -94,11 +103,14 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'odjava') widget.prijava.odjavi();
+              if (v == 'sledi') zacniSlediti(context, spil: widget.spil, baza: baza, prijava: widget.prijava);
             },
             itemBuilder: (_) => [
               PopupMenuItem(enabled: false, child: Text(widget.prijava.racun?.email ?? 'Ni prijave')),
               if (baza.zadnjaOsvezitev != null)
                 PopupMenuItem(enabled: false, child: Text('Osveženo: ${_datum(baza.zadnjaOsvezitev!)}')),
+              // V brskalniku z interneta se ni mogoče povezati z vodjo na lokalnem WiFi-ju (iPad odpre naslov vodje).
+              if (!kIsWeb) const PopupMenuItem(value: 'sledi', child: Text('Sledi vodji')),
               if (widget.prijava.racun != null) const PopupMenuItem(value: 'odjava', child: Text('Odjava')),
             ],
           ),

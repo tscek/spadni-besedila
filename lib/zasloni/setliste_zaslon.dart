@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import '../baza.dart';
 import '../models.dart';
 import '../prijava.dart';
+import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
+import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
 
 /// Seznam setlist, najnovejše najprej.
 class SetlisteZaslon extends StatelessWidget {
-  const SetlisteZaslon({super.key, required this.baza, required this.prijava});
+  const SetlisteZaslon({super.key, required this.baza, required this.prijava, this.spil});
 
   final Baza baza;
   final Prijava prijava;
+  final Spil? spil;
 
   Future<void> _nova(BuildContext context) async {
     final api = apiZaUrejanje(context, prijava);
@@ -26,7 +29,7 @@ class SetlisteZaslon extends StatelessWidget {
     if (nova != null) {
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => SetlistaZaslon(setlista: nova, baza: baza, prijava: prijava),
+          builder: (_) => SetlistaZaslon(setlista: nova, baza: baza, prijava: prijava, spil: spil),
         ),
       );
     }
@@ -63,7 +66,7 @@ class SetlisteZaslon extends StatelessWidget {
                       ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava),
+                          builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
                         ),
                       ),
                     ),
@@ -76,11 +79,12 @@ class SetlisteZaslon extends StatelessWidget {
 
 /// Pesmi ene setliste po vrsti; tap začne igranje od te pesmi.
 class SetlistaZaslon extends StatelessWidget {
-  const SetlistaZaslon({super.key, required this.setlista, required this.baza, required this.prijava});
+  const SetlistaZaslon({super.key, required this.setlista, required this.baza, required this.prijava, this.spil});
 
   final Setlista setlista;
   final Baza baza;
   final Prijava prijava;
+  final Spil? spil;
 
   Future<void> _uredi(BuildContext context, Setlista s) async {
     final api = apiZaUrejanje(context, prijava);
@@ -153,7 +157,7 @@ class SetlistaZaslon extends StatelessWidget {
   void _igraj(BuildContext context, Setlista s, int zacetek) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => IgranjeZaslon(setlista: s, baza: baza, prijava: prijava, zacetek: zacetek),
+        builder: (_) => IgranjeZaslon(setlista: s, baza: baza, prijava: prijava, zacetek: zacetek, spil: spil),
       ),
     );
   }
@@ -161,12 +165,22 @@ class SetlistaZaslon extends StatelessWidget {
 
 /// Igranje po setlisti: pesem čez cel zaslon, spodaj prejšnja/naslednja.
 class IgranjeZaslon extends StatefulWidget {
-  const IgranjeZaslon({super.key, required this.setlista, required this.baza, required this.prijava, this.zacetek = 0});
+  const IgranjeZaslon({
+    super.key,
+    required this.setlista,
+    required this.baza,
+    required this.prijava,
+    this.zacetek = 0,
+    this.spil,
+  });
 
   final Setlista setlista;
   final Baza baza;
   final Prijava prijava;
   final int zacetek;
+
+  /// Če je podan in vodja vodi, se vsaka zamenjava pesmi pošlje sledilcem.
+  final Spil? spil;
 
   @override
   State<IgranjeZaslon> createState() => _IgranjeZaslonState();
@@ -174,6 +188,29 @@ class IgranjeZaslon extends StatefulWidget {
 
 class _IgranjeZaslonState extends State<IgranjeZaslon> {
   late int _i = widget.zacetek;
+
+  @override
+  void initState() {
+    super.initState();
+    _objavi();
+  }
+
+  void _pojdi(int i) {
+    setState(() => _i = i);
+    _objavi();
+  }
+
+  /// Vodja pošlje sledilcem trenutno pesem.
+  void _objavi() {
+    final spil = widget.spil;
+    if (spil == null || spil.vloga != VlogaSpila.vodja) return;
+    final vrsta = _vrsta;
+    if (vrsta.isEmpty) return;
+    final i = _i.clamp(0, vrsta.length - 1);
+    // Indeks v celotni setlisti (tudi pesmi, ki jih ni več v repertoarju), da se ujema pri sledilcih.
+    final vse = widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[];
+    spil.objavi(StanjeSpila(pesem: vrsta[i].$2.id, setlista: widget.setlista.id, indeks: vse.indexOf(vrsta[i].$1)));
+  }
 
   List<(SetlistaPesem, Pesem)> get _vrsta => [
     for (final v in widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[])
@@ -210,7 +247,7 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                   iconSize: 36,
                   tooltip: 'Prejšnja pesem',
                   icon: const Icon(Icons.skip_previous),
-                  onPressed: i > 0 ? () => setState(() => _i = i - 1) : null,
+                  onPressed: i > 0 ? () => _pojdi(i - 1) : null,
                 ),
                 Expanded(
                   child: Column(
@@ -229,11 +266,13 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                     ],
                   ),
                 ),
+                if (widget.spil case final spil? when widget.baza.smeVoditi && spil.lahkoVodi)
+                  VodjaGumb(spil: spil, baza: widget.baza, obZacetku: _objavi),
                 IconButton(
                   iconSize: 36,
                   tooltip: 'Naslednja pesem',
                   icon: const Icon(Icons.skip_next),
-                  onPressed: naslednja != null ? () => setState(() => _i = i + 1) : null,
+                  onPressed: naslednja != null ? () => _pojdi(i + 1) : null,
                 ),
               ],
             ),

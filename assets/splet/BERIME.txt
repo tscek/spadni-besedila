@@ -1,0 +1,2 @@
+Sem gradnja na GitHubu pred gradnjo APK shrani splet.zip (spletna različica),
+ki jo vodja na špilu ponudi iPadom na lokalnem WiFi-ju.

@@ -22,10 +22,13 @@ class Prijava extends ChangeNotifier {
 
   bool get nastavljena => Config.googleServerClientId.isNotEmpty;
 
+  /// Ali sme aplikacija klicati strežnik. Na špilu (prek vodje) prijava ni potrebna.
+  bool get prijavljen => racun != null || Config.prekoVodje;
+
   Future<void> zacni() => _priprava ??= _zacni();
 
   Future<void> _zacni() async {
-    if (!nastavljena) return;
+    if (!nastavljena || Config.prekoVodje) return;
     // V brskalniku je isti "Web application" client ID clientId, na Androidu serverClientId.
     await _gsi.initialize(
       clientId: kIsWeb ? Config.googleServerClientId : null,
@@ -93,6 +96,7 @@ class Prijava extends ChangeNotifier {
 
   /// Veljaven ID žeton za klic na strežnik. Sočasni klici si delijo isto osvežitev.
   Future<String> zeton() async {
+    if (Config.prekoVodje) return '';
     final z = _idZeton;
     if (z != null && veljaVsaj(z, const Duration(minutes: 5))) return z;
     final prvi = _cakamZeton == null;
