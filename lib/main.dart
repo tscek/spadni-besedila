@@ -21,10 +21,14 @@ Future<void> main() async {
   // Ob prijavi preverimo tudi, ali je na voljo nova različica aplikacije.
   var prijavljen = false;
   prijava.addListener(() {
+    if (Config.prekoVodje) return;
     final api = prijava.prijavljen ? Api(prijava.zeton) : null;
     baza.risbe.api = api;
+    baza.risbeClanov.api = api;
     if (api != null && !prijavljen) {
       posodobitev.preveri(api);
+      // Vodja: kar so člani narisali na zadnjem špilu, gre zdaj na Drive.
+      if (baza.smeVoditi) baza.risbeClanov.posljiNeposlane().ignore();
       // Prva prijava na novi napravi: takoj prenesi pesmi.
       if (baza.pesmi.isEmpty) baza.osvezi(api);
     }
@@ -32,7 +36,10 @@ Future<void> main() async {
   });
   if (Config.prekoVodje) {
     // iPad na špilu: aplikacija in podatki pridejo od vodje, sledimo mu takoj.
-    baza.osvezi(Api(prijava.zeton));
+    // Risbe člana, ki se je na tem iPadu že predstavil (izbira imena), pridejo od vodje.
+    final api = apiNaSpilu(await clanNaSpilu());
+    baza.risbe.api = api;
+    baza.osvezi(api);
     spil.sledi(Uri.parse('ws://${Uri.base.host}:${Uri.base.port}/ws'));
   } else {
     // Stalna vloga naprave (vodja ali sledilec), nastavljena z gumbom Špil.
@@ -74,7 +81,10 @@ class SpadniBesedila extends StatelessWidget {
         listenable: Listenable.merge([prijava, baza, posodobitev]),
         builder: (context, _) {
           if (Config.prekoVodje) {
-            return SledilecZaslon(spil: spil, baza: baza, prijava: prijava, koren: true);
+            return ZahtevajClana(
+              baza: baza,
+              child: SledilecZaslon(spil: spil, baza: baza, prijava: prijava, koren: true),
+            );
           }
           if (!prijava.prijavljen && baza.pesmi.isEmpty) {
             return PrijavaZaslon(prijava: prijava);

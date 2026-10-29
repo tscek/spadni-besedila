@@ -202,6 +202,92 @@ class Risbe {
   }
 }
 
+/// Vodja: risbe ostalih članov, da jih na špilu brez interneta streže iPadom.
+/// Kar član nariše na špilu, vodja shrani in kasneje pošlje na Drive (akcija risbaZa).
+/// Vse je v eni datoteki `risbe/_clani.json`: {član: {pesem: {vsebina, spremenjeno, neposlano?}}}.
+class RisbeClanov {
+  RisbeClanov(this._shramba);
+
+  final Shramba _shramba;
+  Api? api;
+  Map<String, Map<String, dynamic>>? _vse;
+  Timer? _odlozenoPosiljanje;
+
+  static const _kljuc = 'risbe/_clani.json';
+
+  Future<Map<String, Map<String, dynamic>>> _nalozi() async {
+    if (_vse != null) return _vse!;
+    final s = await _shramba.beriBesedilo(_kljuc);
+    Map<String, dynamic> j = {};
+    try {
+      if (s != null) j = jsonDecode(s) as Map<String, dynamic>;
+    } on FormatException {
+      // pokvarjena datoteka: začnemo znova, podatki so še na Drivu
+    }
+    return _vse = {for (final e in j.entries) e.key: (e.value as Map).cast<String, dynamic>()};
+  }
+
+  Future<void> _zapisi() async => _shramba.pisiBesedilo(_kljuc, jsonEncode(await _nalozi()));
+
+  /// Risbe enega člana v obliki, kot jo vrne skripta za akcijo risbe.
+  Future<Map<String, dynamic>> zaClana(String clan) async => {
+    for (final e in ((await _nalozi())[clan] ?? const {}).entries)
+      e.key: {'vsebina': (e.value as Map)['vsebina'], 'spremenjeno': (e.value as Map)['spremenjeno']},
+  };
+
+  /// Risba, ki jo je član naredil na špilu (iPad prek vodje).
+  Future<void> shrani(String clan, String pesem, String vsebina) async {
+    final vse = await _nalozi();
+    var spremenjeno = DateTime.now().toUtc().toIso8601String();
+    try {
+      if (vsebina.isNotEmpty) spremenjeno = Risba.izBesedila(vsebina).spremenjeno.toUtc().toIso8601String();
+    } on FormatException {
+      // pustimo trenutni čas
+    }
+    vse.putIfAbsent(clan, () => {})[pesem] = {'vsebina': vsebina, 'spremenjeno': spremenjeno, 'neposlano': true};
+    await _zapisi();
+    _odlozenoPosiljanje?.cancel();
+    _odlozenoPosiljanje = Timer(const Duration(seconds: 5), () => posljiNeposlane().ignore());
+  }
+
+  /// Pošlje na Drive, kar so člani narisali na špilu. Brez interneta ostane za naslednjič.
+  Future<void> posljiNeposlane() async {
+    final a = api;
+    if (a == null) return;
+    final vse = await _nalozi();
+    try {
+      for (final clan in vse.entries) {
+        for (final r in clan.value.entries) {
+          final v = r.value as Map;
+          if (v['neposlano'] != true) continue;
+          await a.risbaZa(clan.key, r.key, v['vsebina']?.toString() ?? '');
+          v.remove('neposlano');
+        }
+      }
+    } finally {
+      await _zapisi();
+    }
+  }
+
+  /// Pošlje risbe s špila, nato prenese risbe vseh članov (novejše zamenjajo starejše).
+  Future<void> sinhroniziraj(Api a) async {
+    api = a;
+    await posljiNeposlane();
+    final streznik = await a.risbeClanov();
+    final vse = await _nalozi();
+    for (final clan in streznik.entries) {
+      final lokalno = vse.putIfAbsent(clan.key, () => {});
+      for (final r in (clan.value as Map).entries) {
+        final nova = (r.value as Map).cast<String, dynamic>();
+        final stara = lokalno[r.key] as Map?;
+        if (stara != null && stara['neposlano'] == true) continue;
+        lokalno[r.key as String] = {'vsebina': nova['vsebina'], 'spremenjeno': nova['spremenjeno']};
+      }
+    }
+    await _zapisi();
+  }
+}
+
 double _zaokrozi(double v) => (v * 10000).roundToDouble() / 10000;
 
 double _razdaljaDoDaljice(Offset p, Offset a, Offset b) {

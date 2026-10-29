@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api.dart';
 import 'models.dart';
+import 'config.dart';
 import 'risbe.dart';
 import 'shramba/shramba.dart';
 
@@ -11,6 +12,7 @@ import 'shramba/shramba.dart';
 class Baza extends ChangeNotifier {
   Baza({Shramba? shramba}) : shramba = shramba ?? Shramba() {
     risbe = Risbe(this.shramba);
+    risbeClanov = RisbeClanov(this.shramba);
   }
 
   final Shramba shramba;
@@ -27,6 +29,9 @@ class Baza extends ChangeNotifier {
 
   /// Osebne risbe prijavljenega člana.
   late final Risbe risbe;
+
+  /// Vodja: risbe ostalih članov za iPade na špilu.
+  late final RisbeClanov risbeClanov;
 
   static const hkratniPrenosi = 6;
 
@@ -130,9 +135,24 @@ class Baza extends ChangeNotifier {
       } catch (e) {
         risbeNapaka = true;
       }
+      String? risbeClanovNapaka;
+      if (smeVoditi && !Config.prekoVodje) {
+        stanje = 'Prenašam risbe članov za špil …';
+        notifyListeners();
+        try {
+          await risbeClanov.sinhroniziraj(api);
+        } on ApiNapaka catch (e) {
+          risbeClanovNapaka = e.sporocilo.contains('Neznana akcija')
+              ? 'Skripta še nima risb članov za špil (uvedi novo različico).'
+              : 'Risb članov za špil ni bilo mogoče prenesti.';
+        } catch (_) {
+          risbeClanovNapaka = 'Risb članov za špil ni bilo mogoče prenesti.';
+        }
+      }
       stanje = [
         if (neuspeli.isNotEmpty) '${neuspeli.length} PDF-jev ni bilo mogoče prenesti.',
         if (risbeNapaka) 'Risb ni bilo mogoče uskladiti.',
+        ?risbeClanovNapaka,
       ].join(' ');
       if (stanje!.isEmpty) {
         stanje = null;
@@ -178,7 +198,33 @@ class Baza extends ChangeNotifier {
   bool get smeVoditi => vloge.any((v) => v.smeVoditi);
 
   /// Podatki, ki jih vodja na špilu da iPadom: vse razen svojih vlog (sledilci ne urejajo).
-  String podatkiZaSledilce() => jsonEncode({..._podatki, 'vloge': const [], 'clan': null});
+  /// Podatki za iPade na špilu: brez vlog in brez e-naslovov članov.
+  String podatkiZaSledilce() {
+    final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? const {};
+    return jsonEncode({
+      ..._podatki,
+      'vloge': const [],
+      'clan': null,
+      'tabele': {
+        ...tabele,
+        'Člani': [
+          for (final c in (tabele['Člani'] as List?) ?? const [])
+            if (c is Map) {...c}..remove('Email'),
+        ],
+      },
+    });
+  }
+
+  /// Aktivni člani (ID, ime), npr. za izbiro na iPadu prek vodje.
+  List<({String id, String ime})> get clani => [
+    for (final c in ((_podatki['tabele'] as Map?)?['Člani'] as List?) ?? const [])
+      if (c is Map &&
+          c['ID'] != null &&
+          c['ID'].toString().isNotEmpty &&
+          c['Aktiven'] != false &&
+          c['Aktiven'] != 'FALSE')
+        (id: c['ID'].toString(), ime: (c['Ime'] ?? c['ID']).toString()),
+  ]..sort((a, b) => a.ime.compareTo(b.ime));
 
   bool smeUrejatiSetlisto(Setlista s) => urednikSkupine.contains(s.skupina);
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api.dart';
 import '../baza.dart';
 import '../config.dart';
 import '../prijava.dart';
@@ -32,6 +33,80 @@ Future<void> zacniPrivzetoVlogo(Spil spil, Baza baza) async {
       spil.samodejnoSledi(zadnji: naslovWebSocket(prefs.getString(_kljucVodje) ?? ''));
     default:
   }
+}
+
+const _kljucClana = 'jaz_clan';
+
+/// iPad prek vodje: kateri član je na tej napravi (shranjeno v brskalniku za naslov vodje).
+Future<String?> clanNaSpilu() async => (await SharedPreferences.getInstance()).getString(_kljucClana);
+
+/// Klici na vodjo v imenu člana (brez Google prijave).
+Api apiNaSpilu(String? clan) => Api(() async => '', clan: clan);
+
+/// iPad prek vodje: vpraša, kdo je, in od vodje prenese njegove risbe.
+Future<void> izberiClana(BuildContext context, Baza baza) async {
+  final clani = baza.clani;
+  if (clani.isEmpty) return;
+  final id = await showDialog<String>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: const Text('Kdo igra na tem iPadu?'),
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: Text('Tako vidiš svoje opombe in risbe, nove pa vodja shrani zate.'),
+        ),
+        for (final c in clani) SimpleDialogOption(onPressed: () => Navigator.pop(context, c.id), child: Text(c.ime)),
+      ],
+    ),
+  );
+  if (id == null) return;
+  await (await SharedPreferences.getInstance()).setString(_kljucClana, id);
+  final api = apiNaSpilu(id);
+  baza.risbe.api = api;
+  try {
+    await baza.risbe.sinhroniziraj(api);
+  } catch (_) {
+    // vodja ni dosegljiv: risbe se prenesejo ob naslednjem odprtju
+  }
+}
+
+/// Ob prvem odprtju prek vodje (ko so člani znani) vpraša, kdo je na iPadu.
+class ZahtevajClana extends StatefulWidget {
+  const ZahtevajClana({super.key, required this.baza, required this.child});
+
+  final Baza baza;
+  final Widget child;
+
+  @override
+  State<ZahtevajClana> createState() => _ZahtevajClanaState();
+}
+
+class _ZahtevajClanaState extends State<ZahtevajClana> {
+  bool _vprasano = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.baza.addListener(_preveri);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _preveri());
+  }
+
+  @override
+  void dispose() {
+    widget.baza.removeListener(_preveri);
+    super.dispose();
+  }
+
+  Future<void> _preveri() async {
+    if (_vprasano || widget.baza.clani.isEmpty) return;
+    _vprasano = true;
+    if (await clanNaSpilu() != null || !mounted) return;
+    await izberiClana(context, widget.baza);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Gumb v zgornji vrstici vseh zaslonov: pokaže stanje špila in odpre nastavitve povezave.
@@ -68,18 +143,19 @@ class SpilGumb extends StatelessWidget {
   Future<void> _meni(BuildContext context) => showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
-    builder: (context) => ListenableBuilder(
+    builder: (meni) => ListenableBuilder(
       listenable: spil,
-      builder: (context, _) => SafeArea(
+      builder: (meni, _) => SafeArea(
         child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: _moznosti(context)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: _moznosti(meni, context)),
         ),
       ),
     ),
   );
 
-  List<Widget> _moznosti(BuildContext context) {
-    void zapri() => Navigator.pop(context);
+  /// [meni] je odprt spodnji meni, [zaslon] pa zaslon pod njim (za dialoge, ko se meni zapre).
+  List<Widget> _moznosti(BuildContext meni, BuildContext zaslon) {
+    void zapri() => Navigator.pop(meni);
     final lahkoVodi = baza.smeVoditi && spil.lahkoVodi;
     return [
       ListTile(
@@ -94,7 +170,21 @@ class SpilGumb extends StatelessWidget {
         subtitle: spil.napaka == null ? null : Text(spil.napaka!),
       ),
       if (Config.prekoVodje)
-        ...[]
+        FutureBuilder(
+          future: clanNaSpilu(),
+          builder: (context, s) {
+            final ime = baza.clani.where((c) => c.id == s.data).firstOrNull?.ime;
+            return ListTile(
+              leading: const Icon(Icons.person),
+              title: Text(ime == null ? 'Izberi, kdo si' : 'Na tem iPadu: $ime'),
+              subtitle: const Text('Za tvoje opombe in risbe'),
+              onTap: () {
+                zapri();
+                izberiClana(zaslon, baza);
+              },
+            );
+          },
+        )
       else ...[
         if (spil.vloga == VlogaSpila.vodja) ...[
           ListTile(
@@ -102,7 +192,7 @@ class SpilGumb extends StatelessWidget {
             title: const Text('Pokaži kodo za iPade'),
             onTap: () {
               zapri();
-              pokaziNaslovVodje(context, spil);
+              pokaziNaslovVodje(zaslon, spil);
             },
           ),
           ListTile(
@@ -121,7 +211,7 @@ class SpilGumb extends StatelessWidget {
               title: const Text('Pokaži pesem vodje'),
               onTap: () {
                 zapri();
-                pokaziSledenje(Navigator.of(context), spil: spil, baza: baza, prijava: prijava);
+                pokaziSledenje(Navigator.of(zaslon), spil: spil, baza: baza, prijava: prijava);
               },
             ),
           ListTile(
@@ -160,7 +250,7 @@ class SpilGumb extends StatelessWidget {
             title: const Text('Poveži z vpisanim naslovom'),
             onTap: () {
               zapri();
-              zacniSlediti(context, spil: spil, baza: baza, prijava: prijava);
+              zacniSlediti(zaslon, spil: spil, baza: baza, prijava: prijava);
             },
           ),
         const Divider(),

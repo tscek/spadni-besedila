@@ -35,6 +35,10 @@ void main() {
                   {'ID': 't1', 'Pesem': 'a', 'Besedilo': '[C]Belo obleko [G7]si že nosila'},
                   {'ID': 't2', 'Pesem': 'b', 'Besedilo': '{c: Refren}\n[F]Bog te [C]živi'},
                 ],
+                'Člani': [
+                  {'ID': 'A', 'Ime': 'Nina Kovšca', 'Email': 'x@example.com', 'Aktiven': true},
+                  {'ID': 'B', 'Ime': 'Matej Šček', 'Email': 'y@example.com', 'Aktiven': true},
+                ],
                 'Setliste': [
                   {'ID': 'x', 'Skupina': 's1', 'Ime': 'Poroka'},
                 ],
@@ -55,9 +59,9 @@ void main() {
     await vodja.zacniVoditi(baza);
     // ignore: avoid_print
     print('VODJA ${vodja.naslov} ${vodja.napaka ?? ''}');
-    vodja.objavi(const StanjeSpila(pesem: 'a', setlista: 'x', indeks: 0));
+    vodja.prikazujem(const StanjeSpila(pesem: 'a', setlista: 'x', indeks: 0));
     await Future<void>.delayed(const Duration(seconds: 40));
-    vodja.objavi(const StanjeSpila(pesem: 'b', setlista: 'x', indeks: 1));
+    vodja.prikazujem(const StanjeSpila(pesem: 'b'));
     await Future<void>.delayed(const Duration(seconds: 40));
     await vodja.ustavi();
   }, timeout: const Timeout(Duration(minutes: 3)));

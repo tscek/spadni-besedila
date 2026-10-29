@@ -127,9 +127,7 @@ class StreznikIo implements StreznikVodje {
     if (pot == '/api') {
       r.headers.contentType = ContentType.json;
       if (z.method == 'POST') {
-        // Risbe in dnevnik s špila zaenkrat ostanejo na napravi sledilca.
-        await utf8.decoder.bind(z).join();
-        r.write(jsonEncode({'shranjeno': true}));
+        r.write(await _apiPost(await utf8.decoder.bind(z).join(), baza));
       } else {
         r.write(await _api(z.uri.queryParameters, baza));
       }
@@ -167,10 +165,29 @@ class StreznikIo implements StreznikVodje {
       case 'verzija':
         return jsonEncode({'verzija': 0});
       case 'risbe':
-        return jsonEncode({});
+        final clan = p['clan'] ?? '';
+        return jsonEncode(clan.isEmpty ? {} : await baza.risbeClanov.zaClana(clan));
       default:
         return jsonEncode({'napaka': 'Neznana akcija'});
     }
+  }
+
+  /// iPad pošlje risbo, ki jo je član naredil na špilu; vodja jo shrani in kasneje pošlje na Drive.
+  /// Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
+  Future<String> _apiPost(String telo, Baza baza) async {
+    final Object? j;
+    try {
+      j = jsonDecode(telo);
+    } on FormatException {
+      return jsonEncode({'napaka': 'Napačna zahteva'});
+    }
+    if (j is Map && j['akcija'] == 'risba') {
+      final clan = j['clan']?.toString() ?? '';
+      final pesem = j['pesem']?.toString() ?? '';
+      if (clan.isEmpty || pesem.isEmpty) return jsonEncode({'napaka': 'Izberi, kdo si'});
+      await baza.risbeClanov.shrani(clan, pesem, j['vsebina']?.toString() ?? '');
+    }
+    return jsonEncode({'shranjeno': true});
   }
 
   static Future<Map<String, Uint8List>> _naloziSplet() async {

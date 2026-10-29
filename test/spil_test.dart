@@ -9,10 +9,10 @@ import 'package:idb_shim/idb_client_memory.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/config.dart';
+import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/spil/streznik.dart';
-
 
 Future<Baza> _baza() async {
   final api = Api(
@@ -28,6 +28,9 @@ Future<Baza> _baza() async {
             'tabele': {
               'Pesmi': [
                 {'ID': 'a', 'Koda': 1002, 'Naslov': 'BELO OBLEKO', 'Aktivna': true},
+              ],
+              'Člani': [
+                {'ID': 'A', 'Ime': 'Nina', 'Email': 'nina@example.com', 'Aktiven': true},
               ],
             },
           }),
@@ -92,6 +95,27 @@ void main() {
     expect(podatki['vloge'], isEmpty);
     expect((podatki['tabele']['Pesmi'] as List).single['Naslov'], 'BELO OBLEKO');
 
+    // E-naslovi članov ne gredo na iPade.
+    expect((podatki['tabele']['Člani'] as List).single, {'ID': 'A', 'Ime': 'Nina', 'Aktiven': true});
+
+    // iPad pošlje risbo člana A; vodja jo shrani in vrne ob naslednjem branju.
+    final z = await odjemalec.postUrl(Uri.parse('http://127.0.0.1:${Config.vrataVodje}/api'));
+    z.write(
+      jsonEncode({
+        'akcija': 'risba',
+        'pesem': 'a',
+        'vsebina': '{"spremenjeno":"2026-10-29T10:00:00Z"}',
+        'clan': 'A',
+        'zeton': '',
+      }),
+    );
+    final o = await z.close();
+    expect(await utf8.decoder.bind(o).join(), contains('shranjeno'));
+    final (_, risbe) = await get('/api?akcija=risbe&clan=A&zeton=');
+    expect((jsonDecode(risbe) as Map)['a']['vsebina'], contains('2026-10-29'));
+    final (_, tujeRisbe) = await get('/api?akcija=risbe&zeton=');
+    expect(jsonDecode(tujeRisbe), isEmpty);
+
     // Brez zapakirane spletne različice (v testih) strežnik to pove.
     final (kodaStrani, stran) = await get('/');
     expect(kodaStrani, 404);
@@ -148,5 +172,37 @@ void main() {
       return;
     }
     expect(najdeni.first, endsWith(':${Config.vrataVodje}'));
+  });
+
+  test('vodja: risbe članov s špila gredo na strežnik, nato se prenesejo vse', () async {
+    final poslano = <Map<String, dynamic>>[];
+    final api = Api(
+      () async => 'z',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async {
+        if (r.method == 'POST') {
+          poslano.add(jsonDecode(r.body) as Map<String, dynamic>);
+          return http.Response(jsonEncode({'shranjeno': true}), 200);
+        }
+        expect(r.url.queryParameters['akcija'], 'risbeClanov');
+        return http.Response(
+          jsonEncode({
+            'A': {
+              'a': {'vsebina': 'stara', 'spremenjeno': '2026-01-01T00:00:00Z'},
+              'b': {'vsebina': 'z Drive', 'spremenjeno': '2026-01-01T00:00:00Z'},
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    final r = RisbeClanov(ShrambaIdb(newIdbFactoryMemory()));
+    await r.shrani('A', 'a', '');
+    await r.sinhroniziraj(api);
+    expect(poslano.single, containsPair('akcija', 'risbaZa'));
+    expect(poslano.single, containsPair('clan', 'A'));
+    final a = await r.zaClana('A');
+    expect(a['a']['vsebina'], 'stara'); // poslano, zato zdaj velja različica s strežnika
+    expect(a['b']['vsebina'], 'z Drive');
   });
 }

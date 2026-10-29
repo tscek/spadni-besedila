@@ -15,9 +15,14 @@ class ApiNapaka implements Exception {
 
 /// Klici na Apps Script (besedila-api.gs). Vsak klic nosi Google ID žeton člana.
 class Api {
-  Api(this._zeton, {http.Client? client, String? url}) : _client = client ?? http.Client(), _url = url ?? Config.apiUrl;
+  Api(this._zeton, {http.Client? client, String? url, this.clan})
+    : _client = client ?? http.Client(),
+      _url = url ?? Config.apiUrl;
 
   final Future<String> Function() _zeton;
+
+  /// iPad na špilu (brez prijave): član, ki ga je izbral, da vodja ve, čigave so risbe.
+  final String? clan;
   final http.Client _client;
   final String _url;
 
@@ -36,6 +41,13 @@ class Api {
 
   /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
   Future<void> risba(String pesem, String vsebina) => _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina});
+
+  /// Vodja: risbe vseh članov njegovih skupin {član: {pesem: {vsebina, spremenjeno}}}.
+  Future<Map<String, dynamic>> risbeClanov() => _get({'akcija': 'risbeClanov'});
+
+  /// Vodja: shrani risbo, ki jo je član naredil na špilu (na iPadu prek vodje).
+  Future<void> risbaZa(String clan, String pesem, String vsebina) =>
+      _post({'akcija': 'risbaZa', 'clan': clan, 'pesem': pesem, 'vsebina': vsebina});
 
   /// Shrani pesem (brez ID = nova). Vrne zapisano vrstico lista Pesmi.
   Future<Map<String, dynamic>> shraniPesem(Map<String, dynamic> pesem) => _post({'akcija': 'pesem', 'pesem': pesem});
@@ -61,7 +73,7 @@ class Api {
   static const poskusi = 3;
 
   Future<Map<String, dynamic>> _get(Map<String, String> parametri) async {
-    final uri = Uri.parse(_url).replace(queryParameters: {...parametri, 'zeton': await _zeton()});
+    final uri = Uri.parse(_url).replace(queryParameters: {...parametri, 'zeton': await _zeton(), 'clan': ?clan});
     final odg = await _sPonovitvijo(() => _client.get(uri));
     return _odgovor(odg);
   }
@@ -82,7 +94,7 @@ class Api {
     final zahteva = http.Request('POST', Uri.parse(_url))
       ..followRedirects = false
       ..headers['Content-Type'] = 'text/plain;charset=utf-8'
-      ..body = jsonEncode({...telo, 'zeton': await _zeton()});
+      ..body = jsonEncode({...telo, 'zeton': await _zeton(), 'clan': ?clan});
     // POST ne ponavljamo: če je skripta zahtevo že izvedla, bi se zapis podvojil.
     var odg = await _sPonovitvijo(() async => http.Response.fromStream(await _client.send(zahteva)), poskusov: 1);
     // Apps Script po POST preusmeri na stran z rezultatom, ki jo je treba prebrati z GET.
