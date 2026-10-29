@@ -90,6 +90,14 @@ jobs:
               json.dump(telo, f)
           PY
           url=$(grep -o "https://script.google.com/macros/s/[^']*/exec" lib/config.dart)
+          # Majhen poskus najprej: nova koda skripte odgovori "Napačen ključ", stara "Manjka prijava".
+          proba=$(curl -sS -L --max-time 60 -H "Content-Type: text/plain" --data '{"akcija":"naloziApk","kljuc":"preveri"}' "$url")
+          echo "Preverjanje skripte: $proba"
+          if echo "$proba" | grep -q "Manjka prijava"; then
+            echo "::error::Na naslovu skripte teče stara koda. V Apps Scriptu: Uvedi > Upravljaj uvedbe > svinčnik > Nova različica > Uvedi."
+            exit 1
+          fi
+          echo "Velikost zahteve: $(du -h telo.json | cut -f1)"
           odgovor=$(curl -sS -L --max-time 300 -H "Content-Type: text/plain" --data-binary @telo.json "$url")
           echo "$odgovor" | head -c 300; echo
           echo "$odgovor" | grep -q '"verzija"' || { echo "::error::Nalaganje na Drive ni uspelo"; exit 1; }
