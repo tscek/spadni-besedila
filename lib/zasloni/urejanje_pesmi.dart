@@ -18,8 +18,10 @@ Future<void> odpriPrijavo(NavigatorState navigator, Prijava prijava) async {
 }
 
 /// Api za shranjevanje sprememb; brez prijave pokaže opozorilo in vrne null.
-Api? apiZaUrejanje(BuildContext context, Prijava prijava) {
+/// Z [baza] lahko član s pravico urejanja ureja tudi brez prijave (brez interneta); spremembe počakajo na napravi.
+Api? apiZaUrejanje(BuildContext context, Prijava prijava, {Baza? baza}) {
   if (prijava.prijavljen) return Api(prijava.zeton);
+  if (baza?.smeUrejati ?? false) return Api(() async => throw StateError('Ni prijave'));
   final navigator = Navigator.of(context);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -202,6 +204,11 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           'Besedilo': _izbrisiBesedilo || prazno ? '' : _vsebina.text.trimRight(),
           'Opombe': _opombeBesedila.text.trim(),
         });
+      }
+      if (widget.baza.neposlano.isNotEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Ni povezave: shranjeno na napravi, poslano bo, ko bo internet.')),
+        );
       }
       if (mounted) Navigator.pop(context, pesem);
     } catch (e) {

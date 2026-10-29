@@ -13,6 +13,11 @@ class ApiNapaka implements Exception {
   String toString() => sporocilo;
 }
 
+/// Strežnik ni dosegljiv (ni interneta).
+class NiPovezave extends ApiNapaka {
+  NiPovezave() : super('Ni povezave s strežnikom. Preveri internet in poskusi znova.');
+}
+
 /// Klici na Apps Script (besedila-api.gs). Vsak klic nosi Google ID žeton člana.
 class Api {
   Api(this._zeton, {http.Client? client, String? url, this.clan})
@@ -95,7 +100,7 @@ class Api {
         return await klic();
       } on http.ClientException {
         // Sporočilo napake vsebuje celoten naslov z žetonom, zato ga ne prikažemo.
-        if (i >= poskusov) throw ApiNapaka('Ni povezave s strežnikom. Preveri internet in poskusi znova.');
+        if (i >= poskusov) throw NiPovezave();
         await Future<void>.delayed(Duration(milliseconds: 500 * i));
       }
     }

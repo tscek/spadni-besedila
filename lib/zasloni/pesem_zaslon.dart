@@ -99,7 +99,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
   Future<void> _uredi({int zavihek = 0}) async {
-    final api = apiZaUrejanje(context, widget.prijava);
+    final api = apiZaUrejanje(context, widget.prijava, baza: widget.baza);
     if (api == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<Pesem>(

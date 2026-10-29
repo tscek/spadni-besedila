@@ -50,7 +50,81 @@ class Baza extends ChangeNotifier {
   Future<void> nalozi() async {
     final s = await shramba.beriBesedilo(_kljucPodatkov);
     if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
+    final n = await shramba.beriBesedilo(_kljucNeposlanih);
+    if (n != null) neposlano = (jsonDecode(n) as List).cast<Map<String, dynamic>>();
     notifyListeners();
+  }
+
+  // ---------- Urejanje brez interneta ----------
+
+  static const _kljucNeposlanih = 'neposlano.json';
+  static const _zacasni = 'lokalno-';
+
+  /// Spremembe, shranjene brez interneta, ki čakajo na pošiljanje (po vrsti).
+  List<Map<String, dynamic>> neposlano = [];
+
+  /// Napaka ni od strežnika (ta vrne ApiNapaka), torej ni povezave ali prijave.
+  static bool _brezPovezave(Object e) => e is NiPovezave || e is! ApiNapaka;
+
+  Future<void> _shraniNeposlano() => shramba.pisiBesedilo(_kljucNeposlanih, jsonEncode(neposlano));
+
+  Future<void> _dodajNeposlano(String akcija, Zapis podatki) async {
+    final id = besedilo(podatki['ID']);
+    // Novo besedilo, ki se je vmes spet spremenilo: pošlje se samo zadnja različica.
+    final prej = id.startsWith(_zacasni) ? neposlano.indexWhere((n) => n['zacasniId'] == id) : -1;
+    final vnos = {
+      'akcija': akcija,
+      'podatki': id.startsWith(_zacasni) ? ({...podatki}..remove('ID')) : podatki,
+      if (id.startsWith(_zacasni)) 'zacasniId': id,
+    };
+    if (prej >= 0 && besedilo(podatki['Besedilo']).isEmpty && podatki.containsKey('Besedilo')) {
+      // Novo besedilo, ki je bilo izbrisano, preden je prišlo na strežnik.
+      neposlano.removeAt(prej);
+    } else if (prej >= 0) {
+      neposlano[prej] = vnos;
+    } else {
+      neposlano.add(vnos);
+    }
+    await _shraniNeposlano();
+  }
+
+  Zapis? _vrstica(String tabela, String id) => ((_podatki['tabele'] as Map?)?[tabela] as List?)
+      ?.cast<Map<String, dynamic>>()
+      .where((r) => besedilo(r['ID']) == id)
+      .firstOrNull;
+
+  /// Pošlje spremembe, shranjene brez interneta. Ustavi se ob prvi napaki povezave.
+  /// Spremembo, ki jo strežnik zavrne, zavrže in vrne opis; vrne null, če je vse poslano.
+  Future<String?> posljiNeposlano(Api api) async {
+    final zavrnjene = <String>[];
+    while (neposlano.isNotEmpty) {
+      final n = neposlano.first;
+      final podatki = (n['podatki'] as Map).cast<String, dynamic>();
+      try {
+        if (n['akcija'] == 'pesem') {
+          final odg = await api.shraniPesem(podatki);
+          await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
+        } else {
+          final odg = await api.shraniBesedilo(podatki);
+          if (n['zacasniId'] case final String z) await _zamenjajVrstico('Besedila', null, izbrisi: z);
+          if (odg['izbrisano'] != null) {
+            await _zamenjajVrstico('Besedila', null, izbrisi: odg['izbrisano'].toString());
+          } else {
+            await _zamenjajVrstico('Besedila', (odg['vrstica'] as Map).cast<String, dynamic>());
+          }
+        }
+      } on ApiNapaka catch (e) {
+        if (e is NiPovezave) break;
+        zavrnjene.add('${n['akcija'] == 'pesem' ? 'Pesem' : 'Besedilo'}: $e');
+      } catch (_) {
+        break; // še vedno brez povezave
+      }
+      neposlano.removeAt(0);
+      await _shraniNeposlano();
+      notifyListeners();
+    }
+    if (neposlano.isNotEmpty) return '${neposlano.length} sprememb še čaka na internet.';
+    return zavrnjene.isEmpty ? null : 'Strežnik ni sprejel: ${zavrnjene.join('; ')}';
   }
 
   void _uporabi(Map<String, dynamic> podatki) {
@@ -99,7 +173,18 @@ class Baza extends ChangeNotifier {
     napaka = null;
     stanje = 'Prenašam seznam pesmi …';
     notifyListeners();
+    String? zavrnjene;
     try {
+      // Najprej spremembe, shranjene brez interneta; dokler niso poslane, se lokalna kopija ne zamenja.
+      if (neposlano.isNotEmpty) {
+        stanje = 'Pošiljam spremembe, shranjene brez interneta …';
+        notifyListeners();
+        zavrnjene = await posljiNeposlano(api);
+        if (neposlano.isNotEmpty) {
+          stanje = zavrnjene;
+          return;
+        }
+      }
       final podatki = await api.podatki();
       await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(podatki));
       _uporabi(podatki);
@@ -153,6 +238,7 @@ class Baza extends ChangeNotifier {
         }
       }
       stanje = [
+        ?zavrnjene,
         if (neuspeli.isNotEmpty) '${neuspeli.length} PDF-jev ni bilo mogoče prenesti.',
         if (risbeNapaka) 'Risb ni bilo mogoče uskladiti.',
         ?risbeClanovNapaka,
@@ -188,8 +274,23 @@ class Baza extends ChangeNotifier {
       pesmi.map((p) => besedilo(p.vrstica[stolpec])).where((v) => v.isNotEmpty).toSet().toList()..sort();
 
   /// Shrani pesem na strežnik in v lokalno kopijo. Vrne shranjeno pesem.
+  /// Brez interneta se sprememba obstoječe pesmi shrani na napravo in pošlje pozneje ([neposlano]).
   Future<Pesem> shraniPesem(Api api, Zapis podatki) async {
-    final odg = await api.shraniPesem(podatki);
+    final Map<String, dynamic> odg;
+    try {
+      // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
+      if (neposlano.isNotEmpty) await posljiNeposlano(api);
+      if (neposlano.isNotEmpty) throw StateError('Prejšnje spremembe še niso poslane');
+      odg = await api.shraniPesem(podatki);
+    } catch (e) {
+      final stara = _vrstica('Pesmi', besedilo(podatki['ID']));
+      if (!_brezPovezave(e)) rethrow;
+      if (stara == null) throw StateError('Za novo pesem je potreben internet.');
+      final vrstica = {...stara, ...podatki};
+      await _dodajNeposlano('pesem', podatki);
+      await _zamenjajVrstico('Pesmi', vrstica);
+      return Pesem.izVrstice(vrstica);
+    }
     final vrstica = (odg['vrstica'] as Map).cast<String, dynamic>();
     await _zamenjajVrstico('Pesmi', vrstica);
     return Pesem.izVrstice(vrstica);
@@ -257,7 +358,27 @@ class Baza extends ChangeNotifier {
   }
 
   Future<void> shraniBesedilo(Api api, Zapis podatki) async {
-    final odg = await api.shraniBesedilo(podatki);
+    final Map<String, dynamic> odg;
+    try {
+      // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
+      if (neposlano.isNotEmpty) await posljiNeposlano(api);
+      if (neposlano.isNotEmpty) throw StateError('Prejšnje spremembe še niso poslane');
+      odg = await api.shraniBesedilo(podatki);
+    } catch (e) {
+      if (!_brezPovezave(e)) rethrow;
+      // Brez interneta: na napravo (novo besedilo dobi začasen ID), na strežnik pozneje.
+      final id = besedilo(podatki['ID']).isEmpty
+          ? '$_zacasni${DateTime.now().microsecondsSinceEpoch}'
+          : besedilo(podatki['ID']);
+      final zapis = {...podatki, 'ID': id};
+      await _dodajNeposlano('besedilo', zapis);
+      if (besedilo(podatki['Besedilo']).isEmpty) {
+        await _zamenjajVrstico('Besedila', null, izbrisi: id);
+      } else {
+        await _zamenjajVrstico('Besedila', {...?_vrstica('Besedila', id), ...zapis});
+      }
+      return;
+    }
     if (odg['izbrisano'] != null) {
       await _zamenjajVrstico('Besedila', null, izbrisi: odg['izbrisano'].toString());
     } else {

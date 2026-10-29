@@ -47,6 +47,8 @@ Future<void> main() async {
       posodobitev.preveri(api);
       // Vodja: kar so člani narisali na zadnjem špilu, gre zdaj na Drive.
       if (baza.smeVoditi) baza.risbeClanov.posljiNeposlane().ignore();
+      // Spremembe pesmi in besedil, shranjene brez interneta.
+      if (baza.neposlano.isNotEmpty) baza.posljiNeposlano(api).ignore();
       // Prva prijava na novi napravi: takoj prenesi pesmi.
       if (baza.pesmi.isEmpty) baza.osvezi(api);
     }

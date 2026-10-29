@@ -223,6 +223,12 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       body: Column(
         children: [
           ..._posodobitev(),
+          if (baza.neposlano.isNotEmpty && baza.stanje == null && !baza.osvezujem)
+            MaterialBanner(
+              leading: const Icon(Icons.cloud_upload_outlined),
+              content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),
+              actions: [TextButton(onPressed: _osvezi, child: const Text('Pošlji'))],
+            ),
           if (baza.stanje != null || baza.napaka != null)
             MaterialBanner(
               content: Text(baza.napaka ?? baza.stanje!),
