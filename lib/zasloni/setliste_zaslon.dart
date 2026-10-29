@@ -7,6 +7,7 @@ import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
+import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
@@ -198,12 +199,19 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
   /// Pesem izven setliste, vrinjena za [_i] (s seznamčka ali iz iskalnika); naslednja je spet [_i] + 1.
   Pesem? _vmes;
 
-  void _pojdi(int i) => setState(() {
+  /// Smer zadnje zamenjave pesmi za animacijo: 1 naprej (od desne), -1 nazaj (od leve).
+  int _smer = 0;
+
+  void _pojdi(int i, {int smer = 0}) => setState(() {
     _i = i;
     _vmes = null;
+    _smer = smer;
   });
 
-  void _vrini(Pesem p) => setState(() => _vmes = p);
+  void _vrini(Pesem p, {int smer = 0}) => setState(() {
+    _vmes = p;
+    _smer = smer;
+  });
 
   List<(SetlistaPesem, Pesem)> get _vrsta => [
     for (final v in widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[])
@@ -219,17 +227,17 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
   void _naprej(int i, int dolzina) {
     final izbrana = _izbrana(i, dolzina);
     if (izbrana != null) {
-      _vrini(izbrana);
+      _vrini(izbrana, smer: 1);
     } else if (i + 1 < dolzina) {
-      _pojdi(i + 1);
+      _pojdi(i + 1, smer: 1);
     }
   }
 
   void _nazaj(int i) {
     if (_vmes != null) {
-      _pojdi(i);
+      _pojdi(i, smer: -1);
     } else if (i > 0) {
-      _pojdi(i - 1);
+      _pojdi(i - 1, smer: -1);
     }
   }
 
@@ -242,7 +250,7 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
         _nazaj(i);
       case DejanjeMidi.izbrana:
         if (widget.spil?.prvaNaslednja() case final n?) {
-          if (widget.baza.pesem(n.pesem) case final p?) _vrini(p);
+          if (widget.baza.pesem(n.pesem) case final p?) _vrini(p, smer: 1);
         }
       default:
         return false;
@@ -264,7 +272,10 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
       );
     }
     final i = _i.clamp(0, vrsta.length - 1);
-    return NaMidi(dejanje: (d) => _dejanje(d, i, vrsta.length), child: _pesem(context, vrsta, i));
+    return NaMidi(
+      dejanje: (d) => _dejanje(d, i, vrsta.length),
+      child: PrehodPesmi(smer: _smer, child: _pesem(context, vrsta, i)),
+    );
   }
 
   Widget _pesem(BuildContext context, List<(SetlistaPesem, Pesem)> vrsta, int i) {

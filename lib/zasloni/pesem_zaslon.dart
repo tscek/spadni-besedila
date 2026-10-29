@@ -14,7 +14,9 @@ import 'besedilo_risanje.dart';
 import 'iskalnik_pesmi.dart';
 import 'midi_zaslon.dart';
 import 'naslednje.dart';
+import 'orodja.dart';
 import 'pdf_risanje.dart';
+import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
@@ -112,14 +114,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (mounted && _besedila.isNotEmpty && _pdfji.isEmpty) setState(() => _prikaziBesedilo = true);
   }
 
-  void _odpri(Pesem p) {
+  /// Odpre drugo pesem; [smer] 1 (naslednja) pride od desne, -1 (prejšnja) od leve.
+  void _odpri(Pesem p, {int smer = 0}) {
     setState(() => _iskalnik = false);
     if (p.id == widget.pesem.id) return;
     if (widget.odpri case final odpri?) return odpri(p);
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) =>
+      potDoPesmi(
+        (_) =>
             PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil, seznam: widget.seznam),
+        smer: smer,
       ),
     );
   }
@@ -176,13 +180,13 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (izbrana != null &&
         (d == DejanjeMidi.izbrana || (d == DejanjeMidi.naslednja && widget.odpri == null)) &&
         widget.baza.pesem(izbrana.pesem) != null) {
-      _odpri(widget.baza.pesem(izbrana.pesem)!);
+      _odpri(widget.baza.pesem(izbrana.pesem)!, smer: 1);
       return true;
     }
     final seznam = widget.seznam;
     if (seznam != null && (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja)) {
       final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + (d == DejanjeMidi.naslednja ? 1 : -1);
-      if (i >= 0 && i < seznam.length) _odpri(seznam[i]);
+      if (i >= 0 && i < seznam.length) _odpri(seznam[i], smer: d == DejanjeMidi.naslednja ? 1 : -1);
       return true;
     }
     return false;
@@ -269,35 +273,27 @@ class _PesemZaslonState extends State<PesemZaslon> {
     );
   }
 
-  Widget _zaslon(BuildContext context) {
+  /// Gumbi in prikazi na [mesto] (zgoraj ali v spodnji vrstici), kot so izbrani v nastavitvah.
+  List<Widget> _orodja(BuildContext context, Mesto mesto) {
     final p = _pesem;
-    final imaOboje = _besedila.isNotEmpty && _pdfji.isNotEmpty;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('${p.koda}  ${p.naslov}'),
-        actions: [
-          if (widget.spil case final spil?) SpilGumb(spil: spil, baza: widget.baza, prijava: widget.prijava),
-          if (widget.spil case final spil?)
+    final besedilo = _prikaziBesedilo && _besedila.isNotEmpty;
+    return [
+      for (final o in Nastavitve.aplikacija.orodjaNa(mesto))
+        ...switch (o) {
+          Orodje.spil => [
+            if (widget.spil case final spil?) SpilGumb(spil: spil, baza: widget.baza, prijava: widget.prijava),
+          ],
+          Orodje.bluetooth => [BluetoothIkona(baza: widget.baza)],
+          Orodje.midi => [const MidiLucki()],
+          Orodje.iskanje => [
             IconButton(
-              tooltip: 'Dodaj med naslednje',
-              icon: const Icon(Icons.playlist_add),
-              onPressed: () => dodajMedNaslednje(context, spil, widget.baza, p),
+              tooltip: 'Išči pesem',
+              isSelected: _iskalnik,
+              icon: const Icon(Icons.search),
+              onPressed: () => setState(() => _iskalnik = !_iskalnik),
             ),
-          IconButton(
-            tooltip: 'Išči pesem',
-            icon: const Icon(Icons.search),
-            onPressed: () => setState(() => _iskalnik = !_iskalnik),
-          ),
-          if (imaOboje)
-            IconButton(
-              tooltip: _prikaziBesedilo ? 'Pokaži PDF' : 'Pokaži besedilo',
-              icon: Icon(_prikaziBesedilo ? Icons.picture_as_pdf : Icons.notes),
-              onPressed: () => setState(() {
-                _prikaziBesedilo = !_prikaziBesedilo;
-                _risem = false;
-              }),
-            ),
-          if (_prikaziBesedilo && _besedila.isNotEmpty) ...[
+          ],
+          Orodje.pisava when besedilo => [
             IconButton(
               tooltip: 'Manjša pisava',
               icon: const Icon(Icons.text_decrease),
@@ -309,20 +305,62 @@ class _PesemZaslonState extends State<PesemZaslon> {
               onPressed: () => _spremeniPisavo(2),
             ),
           ],
-          if (widget.baza.smeUrejatiPesem(p))
+          Orodje.pdf when _besedila.isNotEmpty && _pdfji.isNotEmpty => [
+            IconButton(
+              tooltip: _prikaziBesedilo ? 'Pokaži PDF' : 'Pokaži besedilo',
+              icon: Icon(_prikaziBesedilo ? Icons.picture_as_pdf : Icons.notes),
+              onPressed: () => setState(() {
+                _prikaziBesedilo = !_prikaziBesedilo;
+                _risem = false;
+              }),
+            ),
+          ],
+          Orodje.uredi when widget.baza.smeUrejatiPesem(p) => [
             IconButton(
               tooltip: 'Uredi pesem',
               icon: const Icon(Icons.edit),
               // Ko je na zaslonu besedilo, se urejanje odpre pri besedilu.
-              onPressed: () =>
-                  _uredi(zavihek: _prikaziBesedilo && _besedila.isNotEmpty ? UrejanjePesmiZaslon.zavihekBesedila : 0),
+              onPressed: () => _uredi(zavihek: besedilo ? UrejanjePesmiZaslon.zavihekBesedila : 0),
             ),
-        ],
+          ],
+          Orodje.ura => [const Ura()],
+          _ => const <Widget>[],
+        },
+    ];
+  }
+
+  Widget? _spodnjaOrodja(BuildContext context) {
+    final orodja = _orodja(context, Mesto.spodaj);
+    if (orodja.isEmpty) return null;
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        bottom: widget.spodaj == null,
+        child: SizedBox(
+          height: 48,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(children: orodja),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _zaslon(BuildContext context) {
+    final p = _pesem;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${p.koda}  ${p.naslov}'),
+        actions: [..._orodja(context, Mesto.zgoraj), const SizedBox(width: 4)],
       ),
       body: _telo(context),
       bottomNavigationBar: switch ([
         ?vrsticaNaslednjih(context, widget.spil, widget.baza, _odpri),
         ?_vrsticaGumbov(context),
+        ?_spodnjaOrodja(context),
         ?widget.spodaj,
       ]) {
         [] => null,

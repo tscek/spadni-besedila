@@ -29,4 +29,18 @@ void main() {
     await tester.runAsync(shranjeno.nalozi);
     expect(shranjeno.akordi, isFalse);
   });
+
+  test('orodja: privzeto iskanje spodaj, izbira se shrani', () async {
+    SharedPreferences.setMockInitialValues({});
+    final n = Nastavitve();
+    await n.nalozi();
+    expect(n.orodjaNa(Mesto.spodaj), [Orodje.iskanje]);
+    expect(n.mesto(Orodje.ura), Mesto.skrito);
+    await n.nastaviOrodje(Orodje.ura, Mesto.spodaj);
+    await n.nastaviOrodje(Orodje.iskanje, Mesto.zgoraj);
+    final shranjeno = Nastavitve();
+    await shranjeno.nalozi();
+    expect(shranjeno.orodjaNa(Mesto.spodaj), [Orodje.ura]);
+    expect(shranjeno.mesto(Orodje.iskanje), Mesto.zgoraj);
+  });
 }

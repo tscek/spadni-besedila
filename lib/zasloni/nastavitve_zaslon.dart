@@ -59,7 +59,21 @@ class NastavitveZaslon extends StatelessWidget {
               value: n.zaslonPrizgan,
               onChanged: n.nastaviZaslonPrizgan,
             ),
-            const ListTile(title: Text('Vloga na špilu'), subtitle: Text('Vodja, sledilec ali sama: gumb Špil zgoraj')),
+            const ListTile(title: Text('Vloga na špilu'), subtitle: Text('Vodja, sledilec ali sama: gumb Špil')),
+            const Divider(),
+            const ListTile(
+              title: Text('Orodni vrstici pri pesmi'),
+              subtitle: Text('Kaj je zgoraj, kaj v vrstici spodaj in kaj skrito'),
+            ),
+            for (final o in Orodje.values)
+              ListTile(
+                title: Text(o.opis),
+                trailing: DropdownButton<Mesto>(
+                  value: n.mesto(o),
+                  onChanged: (m) => m == null ? null : n.nastaviOrodje(o, m),
+                  items: [for (final m in Mesto.values) DropdownMenuItem(value: m, child: Text(m.ime))],
+                ),
+              ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.piano),

@@ -72,6 +72,10 @@ class Midi extends ChangeNotifier {
   /// Dejanje, ki čaka na pritisk stikala (učenje).
   DejanjeMidi? ucim;
 
+  /// Števca prejetih in poslanih ukazov za lučki MIDI IN / OUT.
+  final aktivnostVhoda = ValueNotifier(0);
+  final aktivnostIzhoda = ValueNotifier(0);
+
   /// Nazadnje prejeti ukaz, za prikaz v nastavitvah.
   String? zadnjePrejeto;
 
@@ -208,6 +212,7 @@ class Midi extends ChangeNotifier {
   /// Prejet ukaz z MIDI naprave.
   void prejeto(List<int> bajti) {
     if (!vklopljen) return;
+    aktivnostVhoda.value++;
     final s = sprozilecIz(bajti);
     if (s == null) return;
     zadnjePrejeto = s;
@@ -287,6 +292,7 @@ class Midi extends ChangeNotifier {
   }
 
   void _zapisi(PoslaniUkaz u, KnjiznicaMidi? knjiznica, List<String> naprave) {
+    if (naprave.isNotEmpty) aktivnostIzhoda.value++;
     final ime = u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: ';
     dnevnik.insert(
       0,
