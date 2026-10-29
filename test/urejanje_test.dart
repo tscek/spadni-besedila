@@ -10,7 +10,6 @@ import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/chordpro.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
-import 'package:spadni_besedila/zasloni/urejanje_besedila.dart';
 import 'package:spadni_besedila/zasloni/urejanje_pesmi.dart';
 
 void main() {
@@ -95,39 +94,76 @@ void main() {
     expect(poslano.map((t) => t['akcija']), ['pesem', 'pesem', 'besedilo', 'besedilo']);
   });
 
-  testWidgets('zaslona za urejanje se izrišeta, predogled pokaže akorde', (tester) async {
-    final api = Api(() async => 'z', url: 'https://example.com/exec');
-    final baza = Baza();
-    final pesem = Pesem(
-      id: 'a',
-      koda: '1002',
-      naslov: 'BELO OBLEKO',
-      vrstica: {'Naslov': 'BELO OBLEKO', 'Zvrst': 'Pop'},
+  testWidgets('en zaslon za urejanje: podatki, besedilo s predogledom, shrani oboje', (tester) async {
+    final poslano = <Map<String, dynamic>>[];
+    final api = Api(
+      () async => 'z',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async {
+        final telo = jsonDecode(r.body) as Map<String, dynamic>;
+        poslano.add(telo);
+        final vrstica = (telo['pesem'] ?? telo['besedilo']) as Map<String, dynamic>;
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode({
+              'vrstica': {...vrstica, 'ID': vrstica['ID'] ?? 'nova', 'Aktivna': true},
+            }),
+          ),
+          200,
+        );
+      }),
     );
+    final baza = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+    final pesem = Pesem.izVrstice({
+      'ID': 'a',
+      'Koda': 1002,
+      'Naslov': 'BELO OBLEKO',
+      'Zvrst': 'Pop',
+      'Aktivna': true,
+      'Skupine': 's1',
+    });
 
+    Pesem? rezultat;
     await tester.pumpWidget(
       MaterialApp(
-        home: UrejanjePesmiZaslon(baza: baza, api: api, pesem: pesem),
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => rezultat = await Navigator.of(context).push<Pesem>(
+              MaterialPageRoute(
+                builder: (_) => UrejanjePesmiZaslon(baza: baza, api: api, pesem: pesem),
+              ),
+            ),
+            child: const Text('odpri'),
+          ),
+        ),
       ),
     );
-    expect(find.text('BELO OBLEKO'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Pesem je v repertoarju'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Pesem je v repertoarju'), findsOneWidget);
+    await tester.tap(find.text('odpri'));
+    await tester.pumpAndSettle();
+    expect(find.text('BELO OBLEKO'), findsWidgets);
+    await tester.enterText(find.widgetWithText(TextField, 'Avtor glasbe'), 'Slavko Avsenik');
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: UrejanjeBesedilaZaslon(baza: baza, api: api, pesem: pesem),
-      ),
-    );
-    await tester.enterText(find.byType(TextField).first, 'C     G\nBelo obleko');
+    await tester.tap(find.text('Besedilo'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Besedilo pesmi'), 'C     G\nBelo obleko');
     await tester.tap(find.byIcon(Icons.auto_fix_high));
     await tester.pump();
     await tester.tap(find.text('Predogled'));
     await tester.pumpAndSettle();
     expect(find.text('G '), findsOneWidget);
+
+    await tester.tap(find.text('Shrani'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var i = 0; i < 50 && rezultat == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(poslano.map((t) => t['akcija']), ['pesem', 'besedilo']);
+    expect((poslano.first['pesem'] as Map)['Avtor glasbe'], 'Slavko Avsenik');
+    expect((poslano.last['besedilo'] as Map)['Besedilo'], '[C]Belo o[G]bleko');
+    expect(rezultat?.id, 'a');
   });
 }

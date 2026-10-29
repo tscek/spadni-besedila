@@ -10,7 +10,6 @@ import '../prijava.dart';
 import '../spil/spil.dart';
 import 'pdf_risanje.dart';
 import 'spil_zaslon.dart';
-import 'urejanje_besedila.dart';
 import 'urejanje_pesmi.dart';
 
 class PesemZaslon extends StatefulWidget {
@@ -82,26 +81,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
     (await SharedPreferences.getInstance()).setDouble(_kljucPisave, _pisava);
   }
 
-  Future<void> _urediPesem() async {
+  /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
+  Future<void> _uredi({int zavihek = 0}) async {
     final api = apiZaUrejanje(context, widget.prijava);
     if (api == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<Pesem>(
-        builder: (_) => UrejanjePesmiZaslon(baza: widget.baza, api: api, pesem: _pesem),
+        builder: (_) => UrejanjePesmiZaslon(baza: widget.baza, api: api, pesem: _pesem, zavihek: zavihek),
       ),
     );
-  }
-
-  Future<void> _urediBesedilo() async {
-    final api = apiZaUrejanje(context, widget.prijava);
-    if (api == null) return;
-    final shranjeno = await Navigator.of(context).push(
-      MaterialPageRoute<bool>(
-        builder: (_) =>
-            UrejanjeBesedilaZaslon(baza: widget.baza, api: api, pesem: _pesem, besedilo: _besedila.firstOrNull),
-      ),
-    );
-    if (shranjeno ?? false) setState(() => _prikaziBesedilo = _besedila.isNotEmpty);
+    if (mounted && _besedila.isNotEmpty && _pdfji.isEmpty) setState(() => _prikaziBesedilo = true);
   }
 
   @override
@@ -136,14 +125,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
             ),
           ],
           if (widget.baza.smeUrejatiPesem(p))
-            PopupMenuButton<String>(
-              tooltip: 'Urejanje',
+            IconButton(
+              tooltip: 'Uredi pesem',
               icon: const Icon(Icons.edit),
-              onSelected: (v) => v == 'pesem' ? _urediPesem() : _urediBesedilo(),
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'pesem', child: Text('Uredi podatke pesmi')),
-                PopupMenuItem(value: 'besedilo', child: Text(_besedila.isEmpty ? 'Dodaj besedilo' : 'Uredi besedilo')),
-              ],
+              // Ko je na zaslonu besedilo, se urejanje odpre pri besedilu.
+              onPressed: () =>
+                  _uredi(zavihek: _prikaziBesedilo && _besedila.isNotEmpty ? UrejanjePesmiZaslon.zavihekBesedila : 0),
             ),
         ],
       ),
@@ -167,7 +154,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (widget.baza.smeUrejatiPesem(_pesem)) {
       return Center(
         child: FilledButton.icon(
-          onPressed: _urediBesedilo,
+          onPressed: () => _uredi(zavihek: UrejanjePesmiZaslon.zavihekBesedila),
           icon: const Icon(Icons.add),
           label: const Text('Dodaj besedilo'),
         ),
