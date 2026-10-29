@@ -6,10 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../midi/midi.dart';
+import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'besedilo_risanje.dart';
+import 'iskalnik_pesmi.dart';
+import 'midi_zaslon.dart';
 import 'pdf_risanje.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -23,6 +26,8 @@ class PesemZaslon extends StatefulWidget {
     this.spil,
     this.stanje,
     this.spodaj,
+    this.seznam,
+    this.odpri,
   });
 
   final Pesem pesem;
@@ -38,6 +43,12 @@ class PesemZaslon extends StatefulWidget {
   /// Vrstica pod pesmijo (npr. premikanje po setlisti).
   final Widget? spodaj;
 
+  /// Seznam, iz katerega je pesem odprta: naslednja in prejšnja pesem z nožnim stikalom.
+  final List<Pesem>? seznam;
+
+  /// Kako odpreti drugo pesem iz iskalnika; privzeto zamenja ta zaslon.
+  final void Function(Pesem)? odpri;
+
   @override
   State<PesemZaslon> createState() => _PesemZaslonState();
 }
@@ -48,6 +59,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   bool _prikaziBesedilo = true;
   Uint8List? _pdf;
   bool _pdfPrebran = false;
+  bool _iskalnik = false;
+  final _iskalnikKljuc = GlobalKey<IskalnikPesmiState>();
 
   /// Trenutni podatki pesmi iz baze (po urejanju se spremenijo).
   Pesem get _pesem => widget.baza.pesmi.where((p) => p.id == widget.pesem.id).firstOrNull ?? widget.pesem;
@@ -103,9 +116,118 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (mounted && _besedila.isNotEmpty && _pdfji.isEmpty) setState(() => _prikaziBesedilo = true);
   }
 
+  void _odpri(Pesem p) {
+    setState(() => _iskalnik = false);
+    if (p.id == widget.pesem.id) return;
+    if (widget.odpri case final odpri?) return odpri(p);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil, seznam: widget.seznam),
+      ),
+    );
+  }
+
+  List<MidiGumb> get _gumbi => widget.baza.midi.gumbiZa(widget.pesem.id);
+
+  void _pritisni(MidiGumb g) {
+    final k = widget.baza.midi;
+    Midi.aplikacija.poslji(k.razsiri(g.ukazi), knjiznica: k);
+  }
+
+  /// Nožno stikalo: gumbi pesmi, iskalnik in premikanje po seznamu.
+  bool _dejanje(DejanjeMidi d) {
+    if (d.gumb > 0) {
+      final gumbi = _gumbi;
+      if (d.gumb <= gumbi.length) _pritisni(gumbi[d.gumb - 1]);
+      return true;
+    }
+    if (_iskalnik) {
+      final i = _iskalnikKljuc.currentState;
+      switch (d) {
+        case DejanjeMidi.gor || DejanjeMidi.prejsnja:
+          i?.premakni(-1);
+        case DejanjeMidi.dol || DejanjeMidi.naslednja:
+          i?.premakni(1);
+        case DejanjeMidi.potrdi:
+          i?.potrdi();
+        default:
+          setState(() => _iskalnik = false);
+      }
+      return true;
+    }
+    if (d == DejanjeMidi.iskalnik) {
+      setState(() => _iskalnik = true);
+      return true;
+    }
+    final seznam = widget.seznam;
+    if (seznam != null && (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja)) {
+      final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + (d == DejanjeMidi.naslednja ? 1 : -1);
+      if (i >= 0 && i < seznam.length) _odpri(seznam[i]);
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: widget.baza, builder: (context, _) => _zaslon(context));
+    return NaMidi(
+      dejanje: _dejanje,
+      child: ListenableBuilder(
+        listenable: Listenable.merge([widget.baza, Midi.aplikacija]),
+        builder: (context, _) => _zaslon(context),
+      ),
+    );
+  }
+
+  Widget? _vrsticaGumbov(BuildContext context) {
+    final gumbi = _gumbi;
+    if (gumbi.isEmpty || !Midi.aplikacija.vklopljen) return null;
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: SizedBox(
+        height: 56,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          children: [
+            for (var i = 0; i < gumbi.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilledButton.tonal(
+                  style: barvaGumba(gumbi[i].barva),
+                  onPressed: () => _pritisni(gumbi[i]),
+                  child: Text('${i + 1}  ${gumbi[i].ime}'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _telo(BuildContext context) {
+    if (!_iskalnik) return _vsebina(context);
+    return LayoutBuilder(
+      builder: (context, meje) => Stack(
+        children: [
+          _vsebina(context),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            width: (meje.maxWidth - 32).clamp(0, 400).toDouble(),
+            height: (meje.maxHeight * 0.6).clamp(0, 520).toDouble(),
+            child: IskalnikPesmi(
+              key: _iskalnikKljuc,
+              pesmi: widget.baza.pesmi,
+              trenutna: widget.pesem,
+              odpri: _odpri,
+              zapri: () => setState(() => _iskalnik = false),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _zaslon(BuildContext context) {
@@ -116,6 +238,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
         title: Text('${p.koda}  ${p.naslov}'),
         actions: [
           if (widget.spil case final spil?) SpilGumb(spil: spil, baza: widget.baza, prijava: widget.prijava),
+          IconButton(
+            tooltip: 'Išči pesem',
+            icon: const Icon(Icons.search),
+            onPressed: () => setState(() => _iskalnik = !_iskalnik),
+          ),
           if (imaOboje)
             IconButton(
               tooltip: _prikaziBesedilo ? 'Pokaži PDF' : 'Pokaži besedilo',
@@ -144,8 +271,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
             ),
         ],
       ),
-      body: _vsebina(context),
-      bottomNavigationBar: widget.spodaj,
+      body: _telo(context),
+      bottomNavigationBar: switch ((_vrsticaGumbov(context), widget.spodaj)) {
+        (null, final spodaj) => spodaj,
+        (final gumbi?, null) => gumbi,
+        (final gumbi?, final spodaj?) => Column(mainAxisSize: MainAxisSize.min, children: [gumbi, spodaj]),
+      },
     );
   }
 

@@ -25,6 +25,9 @@ abstract class MidiPrenos {
 
   /// Javi, ko se seznam naprav spremeni.
   Stream<void> get spremembe;
+
+  /// Prejeti ukazi (ime naprave, bajti enega ukaza).
+  Stream<(String, Uint8List)> get prejeto;
 }
 
 /// Prave naprave prek flutter_midi_command: Bluetooth in USB na Androidu, Web MIDI v brskalniku (ne v Safariju).
@@ -95,4 +98,8 @@ class MidiPrenosNaprave implements MidiPrenos {
 
   @override
   Stream<void> get spremembe => _m.onMidiSetupChanged ?? const Stream.empty();
+
+  @override
+  Stream<(String, Uint8List)> get prejeto =>
+      _m.onMidiPacketReceived?.map((p) => (p.device.name, p.data)) ?? const Stream.empty();
 }

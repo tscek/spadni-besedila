@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../baza.dart';
+import '../midi/midi.dart';
+import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
@@ -195,6 +197,14 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
 
   void _pojdi(int i) => setState(() => _i = i);
 
+  /// Nožno stikalo: naslednja in prejšnja pesem v setlisti.
+  bool _dejanje(DejanjeMidi d, int i, int dolzina) {
+    if (d != DejanjeMidi.naslednja && d != DejanjeMidi.prejsnja) return false;
+    final j = i + (d == DejanjeMidi.naslednja ? 1 : -1);
+    if (j >= 0 && j < dolzina) _pojdi(j);
+    return true;
+  }
+
   List<(SetlistaPesem, Pesem)> get _vrsta => [
     for (final v in widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[])
       if (widget.baza.pesem(v.pesem) case final p?) (v, p),
@@ -213,8 +223,37 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
     final (v, p) = vrsta[i];
     final naslednja = i + 1 < vrsta.length ? vrsta[i + 1].$2 : null;
     final tema = Theme.of(context);
+    return NaMidi(
+      dejanje: (d) => _dejanje(d, i, vrsta.length),
+      child: _pesem(context, vrsta, i, v, p, naslednja, tema),
+    );
+  }
+
+  Widget _pesem(
+    BuildContext context,
+    List<(SetlistaPesem, Pesem)> vrsta,
+    int i,
+    SetlistaPesem v,
+    Pesem p,
+    Pesem? naslednja,
+    ThemeData tema,
+  ) {
     return PesemZaslon(
       key: ValueKey('${p.id}-$i'),
+      // Pesem iz iskalnika: če je v setlisti, skoči nanjo, sicer se odpre nad setlisto.
+      odpri: (izbrana) {
+        final j = vrsta.indexWhere((e) => e.$2.id == izbrana.id);
+        if (j >= 0) {
+          _pojdi(j);
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  PesemZaslon(pesem: izbrana, baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
+            ),
+          );
+        }
+      },
       pesem: p,
       baza: widget.baza,
       prijava: widget.prijava,

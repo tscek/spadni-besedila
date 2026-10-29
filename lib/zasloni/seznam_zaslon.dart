@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../baza.dart';
+import '../midi/midi.dart';
+import '../midi/ukazi.dart';
 import '../models.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'midi_zaslon.dart';
+import 'iskalnik_pesmi.dart';
 import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
@@ -32,10 +35,39 @@ class SeznamZaslon extends StatefulWidget {
 
 class _SeznamZaslonState extends State<SeznamZaslon> {
   final _iskanje = TextEditingController();
+  final _iskanjeFokus = FocusNode();
+  final _izbira = GlobalKey<IzbiraPesmiState>();
   String _zvrst = '';
+
+  /// Nožno stikalo na seznamu: gor in dol premikata izbiro, potrdi odpre pesem, iskalnik gre v iskanje.
+  bool _dejanje(DejanjeMidi d) {
+    final izbira = _izbira.currentState;
+    switch (d) {
+      case DejanjeMidi.gor || DejanjeMidi.prejsnja:
+        izbira?.premakni(-1);
+      case DejanjeMidi.dol || DejanjeMidi.naslednja:
+        izbira?.premakni(1);
+      case DejanjeMidi.potrdi:
+        _iskanjeFokus.unfocus();
+        izbira?.potrdi();
+      case DejanjeMidi.iskalnik:
+        _iskanjeFokus.requestFocus();
+      default:
+        return false;
+    }
+    return true;
+  }
+
+  void _odpri(Pesem p, List<Pesem> seznam) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil, seznam: seznam),
+    ),
+  );
 
   @override
   void dispose() {
+    _iskanjeFokus.dispose();
     _iskanje.dispose();
     super.dispose();
   }
@@ -68,6 +100,10 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     final zvrsti = baza.pesmi.map((p) => p.zvrst).where((z) => z.isNotEmpty).toSet().toList()..sort();
     final pesmi = baza.pesmi.where((p) => (_zvrst.isEmpty || p.zvrst == _zvrst) && p.ustreza(_iskanje.text)).toList();
 
+    return NaMidi(dejanje: _dejanje, child: _zaslon(context, baza, zvrsti, pesmi));
+  }
+
+  Widget _zaslon(BuildContext context, Baza baza, List<String> zvrsti, List<Pesem> pesmi) {
     return Scaffold(
       floatingActionButton: baza.smeUrejati
           ? FloatingActionButton.extended(
@@ -133,7 +169,9 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: TextField(
                   controller: _iskanje,
+                  focusNode: _iskanjeFokus,
                   onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _izbira.currentState?.potrdi(),
                   decoration: InputDecoration(
                     hintText: 'Išči po kodi, naslovu ali izvajalcu',
                     prefixIcon: const Icon(Icons.search),
@@ -179,7 +217,12 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           Expanded(
             child: pesmi.isEmpty
                 ? Center(child: Text(baza.pesmi.isEmpty ? 'Ni pesmi. Osveži iz baze.' : 'Ni zadetkov.'))
-                : ListView.builder(itemCount: pesmi.length, itemBuilder: (context, i) => _vrstica(context, pesmi[i])),
+                : IzbiraPesmi(
+                    key: _izbira,
+                    pesmi: pesmi,
+                    odpri: (p) => _odpri(p, pesmi),
+                    vrstica: (context, p, izbrana) => _vrstica(context, p, izbrana, pesmi),
+                  ),
           ),
         ],
       ),
@@ -226,10 +269,12 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     ];
   }
 
-  Widget _vrstica(BuildContext context, Pesem p) {
+  Widget _vrstica(BuildContext context, Pesem p, bool izbrana, List<Pesem> seznam) {
     final imaBesedilo = widget.baza.besedilaPesmi.containsKey(p.id);
     final imaPdf = widget.baza.pdfjiPesmi.containsKey(p.id);
     return ListTile(
+      selected: izbrana,
+      selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
       leading: SizedBox(
         width: 52,
         child: Text(
@@ -246,11 +291,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           if (imaPdf) const Icon(Icons.picture_as_pdf, size: 18),
         ],
       ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
-        ),
-      ),
+      onTap: () => _odpri(p, seznam),
     );
   }
 

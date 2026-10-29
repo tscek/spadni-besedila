@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
@@ -40,6 +41,7 @@ class Midi extends ChangeNotifier {
   static const _kljucVklopa = 'midi_vklop';
   static const _kljucIzhodov = 'midi_izhodi';
   static const _kljucNaprav = 'midi_naprave';
+  static const _kljucVhoda = 'midi_vhod';
 
   bool vklopljen = false;
 
@@ -53,6 +55,18 @@ class Midi extends ChangeNotifier {
   bool iscem = false;
   String? napaka;
   final List<Poslano> dnevnik = [];
+
+  /// Dejanje → sprožilec (npr. "CC 1 64"), na vsaki napravi svoje.
+  Map<DejanjeMidi, String> vhod = {};
+
+  /// Dejanje, ki čaka na pritisk stikala (učenje).
+  DejanjeMidi? ucim;
+
+  /// Nazadnje prejeti ukaz, za prikaz v nastavitvah.
+  String? zadnjePrejeto;
+
+  final List<bool Function(DejanjeMidi)> _prejemniki = [];
+  StreamSubscription<(String, Uint8List)>? _vhodNarocnina;
 
   Pesem? _odprta;
   KnjiznicaMidi? _knjiznicaOdprte;
@@ -70,6 +84,12 @@ class Midi extends ChangeNotifier {
       izhodi = {};
     }
     shranjeneNaprave = (p.getStringList(_kljucNaprav) ?? const []).toSet();
+    try {
+      final v = (jsonDecode(p.getString(_kljucVhoda) ?? '{}') as Map).cast<String, String>();
+      vhod = {for (final d in DejanjeMidi.values) d: ?v[d.name]};
+    } catch (_) {
+      vhod = {};
+    }
     notifyListeners();
     if (vklopljen) unawaited(_zazeni());
   }
@@ -89,6 +109,7 @@ class Midi extends ChangeNotifier {
 
   Future<void> _zazeni() async {
     _spremembe ??= _prenos.spremembe.listen((_) => osveziNaprave());
+    _vhodNarocnina ??= _prenos.prejeto.listen((p) => prejeto(p.$2));
     await isci();
   }
 
@@ -153,6 +174,57 @@ class Midi extends ChangeNotifier {
     }
   }
 
+  Future<void> nastaviVhod(DejanjeMidi d, String? sprozilec) async {
+    if (sprozilec == null) {
+      vhod.remove(d);
+    } else {
+      // En sprožilec sproži samo eno dejanje.
+      vhod.removeWhere((_, s) => s == sprozilec);
+      vhod[d] = sprozilec;
+    }
+    (await SharedPreferences.getInstance()).setString(
+      _kljucVhoda,
+      jsonEncode({for (final e in vhod.entries) e.key.name: e.value}),
+    );
+    notifyListeners();
+  }
+
+  /// Začne ali prekliče učenje: naslednji prejeti ukaz postane sprožilec dejanja.
+  void uci(DejanjeMidi? d) {
+    ucim = d;
+    notifyListeners();
+  }
+
+  /// Prejet ukaz z MIDI naprave.
+  void prejeto(List<int> bajti) {
+    if (!vklopljen) return;
+    final s = sprozilecIz(bajti);
+    if (s == null) return;
+    zadnjePrejeto = s;
+    final u = ucim;
+    if (u != null) {
+      ucim = null;
+      nastaviVhod(u, s);
+      return;
+    }
+    notifyListeners();
+    for (final e in vhod.entries) {
+      if (e.value == s) sprozi(e.key);
+    }
+  }
+
+  /// Zasloni, ki se odzovejo na dejanja; zadnji dodani ima prednost (je na vrhu).
+  void dodajPrejemnika(bool Function(DejanjeMidi) p) => _prejemniki.add(p);
+  void odstraniPrejemnika(bool Function(DejanjeMidi) p) => _prejemniki.remove(p);
+
+  /// Pošlje dejanje zaslonom od vrha navzdol, dokler ga kateri ne izvede.
+  bool sprozi(DejanjeMidi d) {
+    for (final p in _prejemniki.reversed.toList()) {
+      if (p(d)) return true;
+    }
+    return false;
+  }
+
   /// Povezane naprave, na katere gre logični izhod.
   List<NapravaMidi> napraveZa(String izhod) {
     final povezane = naprave.where((n) => n.povezana).toList();
@@ -211,6 +283,41 @@ class Midi extends ChangeNotifier {
   @override
   void dispose() {
     _spremembe?.cancel();
+    _vhodNarocnina?.cancel();
     super.dispose();
   }
+}
+
+/// Ovije zaslon, ki se odziva na dejanja MIDI (nožno stikalo), dokler je njegov zaslon na vrhu.
+class NaMidi extends StatefulWidget {
+  const NaMidi({super.key, required this.dejanje, required this.child});
+
+  /// Vrne true, če je dejanje izvedel; sicer ga dobi zaslon pod njim.
+  final bool Function(DejanjeMidi) dejanje;
+  final Widget child;
+
+  @override
+  State<NaMidi> createState() => _NaMidiState();
+}
+
+class _NaMidiState extends State<NaMidi> {
+  bool _prejmi(DejanjeMidi d) {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    return widget.dejanje(d);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Midi.aplikacija.dodajPrejemnika(_prejmi);
+  }
+
+  @override
+  void dispose() {
+    Midi.aplikacija.odstraniPrejemnika(_prejmi);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

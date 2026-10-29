@@ -136,6 +136,52 @@ class Makro {
   };
 }
 
+/// Gumb na zaslonu pesmi, ki pošlje ukaze (imena ukazov in makrov, ločena s ;).
+/// Gumb brez pesmi je pri vseh pesmih.
+class MidiGumb {
+  MidiGumb({
+    this.id = '',
+    this.skupina = '',
+    this.pesem = '',
+    required this.ime,
+    required this.ukazi,
+    this.barva = '',
+    this.zaporedje = 0,
+  });
+
+  factory MidiGumb.izVrstice(Zapis r) => MidiGumb(
+    id: besedilo(r['ID']),
+    skupina: besedilo(r['Skupina']),
+    pesem: besedilo(r['Pesem']),
+    ime: besedilo(r['Ime']),
+    ukazi: besedilo(r['Makro']),
+    barva: besedilo(r['Barva']),
+    zaporedje: _stevilo(r['Zaporedje'], 0),
+  );
+
+  final String id;
+  final String skupina;
+
+  /// ID pesmi; prazno pomeni pri vseh pesmih.
+  final String pesem;
+  final String ime;
+  final String ukazi;
+  final String barva;
+  final int zaporedje;
+
+  static const barve = ['rdeča', 'oranžna', 'rumena', 'zelena', 'modra', 'vijolična'];
+
+  Zapis vVrstico() => {
+    if (id.isNotEmpty) 'ID': id,
+    'Skupina': skupina,
+    'Pesem': pesem,
+    'Ime': ime,
+    'Makro': ukazi,
+    'Barva': barva,
+    'Zaporedje': zaporedje,
+  };
+}
+
 /// Ukaz, pripravljen za pošiljanje, z izhodom, na katerega gre.
 class PoslaniUkaz {
   const PoslaniUkaz(this.ukaz, this.izhod);
@@ -188,7 +234,7 @@ MidiUkaz? razcleniUkaz(String t) {
 
 /// Vsi ukazi, makri in imena kanalov zasedbe.
 class KnjiznicaMidi {
-  KnjiznicaMidi({this.ukazi = const [], this.makri = const [], this.kanali = const {}});
+  KnjiznicaMidi({this.ukazi = const [], this.makri = const [], this.kanali = const {}, this.gumbi = const []});
 
   factory KnjiznicaMidi.izTabel(Map<String, dynamic> tabele) {
     List<Zapis> t(String ime) => ((tabele[ime] as List?) ?? []).cast<Map<String, dynamic>>();
@@ -207,12 +253,23 @@ class KnjiznicaMidi {
           if (int.tryParse(besedilo(r['Kanal'])) case final k? when besedilo(r['Ime']).isNotEmpty)
             k: besedilo(r['Ime']),
       },
+      gumbi: [
+        for (final r in t('MIDI gumbi'))
+          if (besedilo(r['Ime']).isNotEmpty) MidiGumb.izVrstice(r),
+      ]..sort((a, b) => a.zaporedje.compareTo(b.zaporedje)),
     );
   }
 
   final List<MidiUkaz> ukazi;
   final List<Makro> makri;
   final Map<int, String> kanali;
+  final List<MidiGumb> gumbi;
+
+  /// Gumbi pri pesmi: najprej splošni, nato gumbi te pesmi.
+  List<MidiGumb> gumbiZa(String pesem) => [
+    ...gumbi.where((g) => g.pesem.isEmpty),
+    ...gumbi.where((g) => g.pesem == pesem),
+  ];
 
   String imeKanala(int kanal) => kanali[kanal] ?? '';
 
@@ -284,3 +341,41 @@ class KnjiznicaMidi {
 
 int _stevilo(dynamic v, int privzeto) =>
     v is num ? v.toInt() : int.tryParse(besedilo(v)) ?? double.tryParse(besedilo(v))?.toInt() ?? privzeto;
+
+/// Kaj naredi aplikacija, ko prejme MIDI (npr. z nožnega stikala).
+enum DejanjeMidi {
+  naslednja('Naslednja pesem'),
+  prejsnja('Prejšnja pesem'),
+  gor('Gor po seznamu'),
+  dol('Dol po seznamu'),
+  potrdi('Izberi / potrdi'),
+  iskalnik('Odpri iskalnik'),
+  gumb1('Gumb 1 na pesmi', 1),
+  gumb2('Gumb 2 na pesmi', 2),
+  gumb3('Gumb 3 na pesmi', 3),
+  gumb4('Gumb 4 na pesmi', 4),
+  gumb5('Gumb 5 na pesmi', 5),
+  gumb6('Gumb 6 na pesmi', 6),
+  gumb7('Gumb 7 na pesmi', 7),
+  gumb8('Gumb 8 na pesmi', 8);
+
+  const DejanjeMidi(this.oznaka, [this.gumb = 0]);
+  final String oznaka;
+
+  /// Zaporedna številka gumba na trenutni pesmi (1 je prvi z leve), 0 pri ostalih dejanjih.
+  final int gumb;
+}
+
+/// Prejeti ukaz kot sprožilec brez vrednosti, npr. "CC 1 64", "Nota 10 20", "PC 1 3".
+/// Spuščena tipka (Note Off, nota s hitrostjo 0, CC z vrednostjo 0) ni sprožilec.
+String? sprozilecIz(List<int> b) {
+  if (b.length < 2) return null;
+  final vrsta = b[0] & 0xF0;
+  final kanal = (b[0] & 0x0F) + 1;
+  return switch (vrsta) {
+    0x90 when b.length > 2 && b[2] > 0 => 'Nota $kanal ${b[1]}',
+    0xB0 when b.length > 2 && b[2] > 0 => 'CC $kanal ${b[1]}',
+    0xC0 => 'PC $kanal ${b[1]}',
+    _ => null,
+  };
+}

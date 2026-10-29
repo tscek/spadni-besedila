@@ -7,6 +7,21 @@ import '../midi/ukazi.dart';
 import '../prijava.dart';
 import 'urejanje_pesmi.dart';
 
+/// Barva gumba MIDI po imenu iz baze (prazno: privzeta).
+ButtonStyle? barvaGumba(String barva) {
+  final c = switch (barva) {
+    'rdeča' => Colors.red,
+    'oranžna' => Colors.orange,
+    'rumena' => Colors.amber,
+    'zelena' => Colors.green,
+    'modra' => Colors.blue,
+    'vijolična' => Colors.purple,
+    _ => null,
+  };
+  if (c == null) return null;
+  return FilledButton.styleFrom(backgroundColor: c.shade700, foregroundColor: Colors.white);
+}
+
 /// Pošlje ukaze in javi, če MIDI na tej napravi ni vklopljen ali ni kam poslati.
 Future<void> preizkusiMidi(BuildContext context, KnjiznicaMidi k, String zapis) async {
   final messenger = ScaffoldMessenger.of(context);
@@ -86,6 +101,15 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   subtitle: const Text('Ukaz gre na izhod, ki ga ima nastavljenega, sicer na Privzeti.'),
                 ),
                 for (final izhod in baza.midi.izhodi) _izhod(midi, izhod, imenaNaprav),
+                const Divider(),
+                ListTile(
+                  title: Text('Nožno stikalo (MIDI vhod)', style: tema.textTheme.titleMedium),
+                  subtitle: Text(
+                    'Pritisni Nauči in nato stikalo. '
+                    'Nazadnje prejeto: ${midi.zadnjePrejeto ?? 'še nič'}',
+                  ),
+                ),
+                for (final d in DejanjeMidi.values) _vhod(context, midi, d),
               ],
               const Divider(),
               ListTile(title: Text('Nazadnje poslano', style: tema.textTheme.titleMedium)),
@@ -116,6 +140,23 @@ class MidiNastavitveZaslon extends StatelessWidget {
     onChanged: (da) => midi.povezi(n, da),
   );
 
+  Widget _vhod(BuildContext context, Midi midi, DejanjeMidi d) {
+    final ucim = midi.ucim == d;
+    final sprozilec = midi.vhod[d];
+    return ListTile(
+      title: Text(d.oznaka),
+      subtitle: Text(ucim ? 'Pritisni stikalo …' : sprozilec ?? 'ni nastavljeno'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(onPressed: () => midi.uci(ucim ? null : d), child: Text(ucim ? 'Prekliči' : 'Nauči')),
+          if (sprozilec != null)
+            IconButton(tooltip: 'Odstrani', icon: const Icon(Icons.close), onPressed: () => midi.nastaviVhod(d, null)),
+        ],
+      ),
+    );
+  }
+
   Widget _izhod(Midi midi, String izhod, List<String> imenaNaprav) {
     final privzeti = izhod == privzetiIzhod;
     final moznosti = <String, String>{
@@ -145,7 +186,7 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: ListenableBuilder(
         listenable: baza,
         builder: (context, _) {
@@ -157,6 +198,7 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                 tabs: [
                   Tab(text: 'Ukazi'),
                   Tab(text: 'Makri'),
+                  Tab(text: 'Gumbi'),
                   Tab(text: 'Kanali'),
                 ],
               ),
@@ -185,6 +227,18 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                     ),
                 ], 'Ni še makrov.'),
                 _seznam([
+                  for (final g in [
+                    ...k.gumbi.where((g) => g.pesem.isEmpty),
+                    ...k.gumbi.where((g) => g.pesem.isNotEmpty),
+                  ])
+                    ListTile(
+                      title: Text(g.ime),
+                      subtitle: Text('${_pesemGumba(g)} · ${g.ukazi}'),
+                      trailing: _gumbPoslji(context, k, g.ukazi),
+                      onTap: () => _urediGumb(context, g),
+                    ),
+                ], 'Ni še gumbov. Gumb pošlje ukaze ali makre in ga sprožiš tudi z nožnim stikalom.'),
+                _seznam([
                   for (var c = 1; c <= 16; c++)
                     ListTile(
                       leading: CircleAvatar(child: Text('$c')),
@@ -197,9 +251,11 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
             floatingActionButton: Builder(
               builder: (context) => FloatingActionButton(
                 tooltip: 'Dodaj',
-                onPressed: () => DefaultTabController.of(context).index == 1
-                    ? _urediMakro(context, null)
-                    : _urediUkaz(context, null),
+                onPressed: () => switch (DefaultTabController.of(context).index) {
+                  1 => _urediMakro(context, null),
+                  2 => _urediGumb(context, null),
+                  _ => _urediUkaz(context, null),
+                },
                 child: const Icon(Icons.add),
               ),
             ),
@@ -266,6 +322,22 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
     if (nov == null || !context.mounted) return;
     final (makro, izbrisi) = nov;
     await _shrani(context, 'Makri', makro.vVrstico(), izbrisi: izbrisi);
+  }
+
+  String _pesemGumba(MidiGumb g) {
+    if (g.pesem.isEmpty) return 'pri vseh pesmih';
+    final p = baza.pesem(g.pesem);
+    return p == null ? 'pesem ni v repertoarju' : '${p.koda} ${p.naslov}';
+  }
+
+  Future<void> _urediGumb(BuildContext context, MidiGumb? g) async {
+    final nov = await showDialog<(MidiGumb, bool)>(
+      context: context,
+      builder: (_) => _GumbDialog(baza: baza, gumb: g),
+    );
+    if (nov == null || !context.mounted) return;
+    final (gumb, izbrisi) = nov;
+    await _shrani(context, 'MIDI gumbi', gumb.vVrstico(), izbrisi: izbrisi);
   }
 
   Future<void> _urediKanal(BuildContext context, int kanal) async {
@@ -429,6 +501,124 @@ class _UkazDialogState extends State<_UkazDialog> {
             onPressed: () {
               final u = _ukaz();
               if (u != null) Navigator.pop(context, (u, false));
+            },
+            child: const Text('Shrani'),
+          ),
+      ],
+    );
+  }
+}
+
+class _GumbDialog extends StatefulWidget {
+  const _GumbDialog({required this.baza, this.gumb});
+
+  final Baza baza;
+  final MidiGumb? gumb;
+
+  @override
+  State<_GumbDialog> createState() => _GumbDialogState();
+}
+
+class _GumbDialogState extends State<_GumbDialog> {
+  late final _ime = TextEditingController(text: widget.gumb?.ime ?? '');
+  late final _ukazi = TextEditingController(text: widget.gumb?.ukazi ?? '');
+  late final _koda = TextEditingController(text: widget.baza.pesem(widget.gumb?.pesem ?? '')?.koda ?? '');
+  late final _zaporedje = TextEditingController(text: '${widget.gumb?.zaporedje ?? ''}');
+  late String _barva = widget.gumb?.barva ?? '';
+  String? _napaka;
+
+  @override
+  void dispose() {
+    for (final c in [_ime, _ukazi, _koda, _zaporedje]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  MidiGumb? _gumb() {
+    final koda = _koda.text.trim();
+    final pesem = koda.isEmpty ? null : widget.baza.pesmi.where((p) => p.koda == koda).firstOrNull;
+    final napaka = _ime.text.trim().isEmpty
+        ? 'Vpiši ime gumba.'
+        : _ukazi.text.trim().isEmpty
+        ? 'Dodaj vsaj en ukaz ali makro.'
+        : koda.isNotEmpty && pesem == null
+        ? 'Pesmi s kodo $koda ni.'
+        : null;
+    setState(() => _napaka = napaka);
+    if (napaka != null) return null;
+    return MidiGumb(
+      id: widget.gumb?.id ?? '',
+      skupina: widget.gumb?.skupina ?? '',
+      pesem: pesem?.id ?? '',
+      ime: _ime.text.trim(),
+      ukazi: _ukazi.text.trim(),
+      barva: _barva,
+      zaporedje: int.tryParse(_zaporedje.text.trim()) ?? 0,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final smeUrejati = widget.baza.smeUrejati;
+    return AlertDialog(
+      title: Text(widget.gumb == null ? 'Nov gumb' : 'Gumb'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _ime,
+                decoration: const InputDecoration(labelText: 'Ime (npr. Solo kitara)'),
+              ),
+              const SizedBox(height: 16),
+              PoljeMidi(oznaka: 'Ukazi in makri', vnos: _ukazi, knjiznica: widget.baza.midi),
+              TextField(
+                controller: _koda,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Koda pesmi',
+                  helperText: 'Prazno: gumb je pri vseh pesmih (ti so pred gumbi pesmi).',
+                ),
+              ),
+              TextField(
+                controller: _zaporedje,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Zaporedje', helperText: 'Manjše je bolj levo.'),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final b in ['', ...MidiGumb.barve])
+                    ChoiceChip(
+                      label: Text(b.isEmpty ? 'privzeta' : b),
+                      selected: _barva == b,
+                      onSelected: (_) => setState(() => _barva = b),
+                    ),
+                ],
+              ),
+              if (_napaka case final n?)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(n, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (widget.gumb != null && smeUrejati)
+          TextButton(onPressed: () => Navigator.pop(context, (widget.gumb!, true)), child: const Text('Izbriši')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+        if (smeUrejati)
+          FilledButton(
+            onPressed: () {
+              final g = _gumb();
+              if (g != null) Navigator.pop(context, (g, false));
             },
             child: const Text('Shrani'),
           ),

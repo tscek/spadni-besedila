@@ -15,7 +15,10 @@ import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/prijava.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/midi_zaslon.dart';
+import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
+import 'package:spadni_besedila/zasloni/setliste_zaslon.dart';
 import 'package:spadni_besedila/zasloni/urejanje_pesmi.dart';
 
 class _Prenos implements MidiPrenos {
@@ -39,6 +42,8 @@ class _Prenos implements MidiPrenos {
   void poslji(Uint8List bajti, String id) => poslano.add('$id ${bajti.join(' ')}');
   @override
   Stream<void> get spremembe => const Stream.empty();
+  @override
+  Stream<(String, Uint8List)> get prejeto => const Stream.empty();
 }
 
 KnjiznicaMidi _knjiznica() => KnjiznicaMidi.izTabel(_tabele);
@@ -199,6 +204,117 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'MIDI ob odprtju'), 'Ne obstaja');
     await tester.pump();
     expect(find.text('Neznano: Ne obstaja'), findsOneWidget);
+  });
+  testWidgets('nožno stikalo: učenje, naslednja pesem, gumbi pesmi, iskalnik in setlista', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prenos = _Prenos();
+    final midi = Midi(prenos);
+    Midi.aplikacija = midi;
+    await tester.runAsync(() async {
+      await midi.nalozi();
+      midi.vklopljen = true;
+      await midi.osveziNaprave();
+    });
+
+    // Učenje: prvi pritisk stikala postane sprožilec; spust (vrednost 0) se ne šteje.
+    midi.uci(DejanjeMidi.naslednja);
+    midi.prejeto([0xB0, 64, 0]);
+    expect(midi.ucim, DejanjeMidi.naslednja);
+    midi.prejeto([0xB0, 64, 127]);
+    expect(midi.vhod[DejanjeMidi.naslednja], 'CC 1 64');
+    expect(midi.ucim, isNull);
+    await tester.runAsync(() async {
+      await midi.nastaviVhod(DejanjeMidi.gumb2, 'Nota 10 20');
+      await midi.nastaviVhod(DejanjeMidi.iskalnik, 'CC 1 67');
+      await midi.nastaviVhod(DejanjeMidi.dol, 'CC 1 66');
+      await midi.nastaviVhod(DejanjeMidi.potrdi, 'CC 1 65');
+    });
+
+    final api = Api(
+      () async => 'z',
+      url: 'https://example.com/exec',
+      client: MockClient(
+        (r) async => http.Response.bytes(
+          utf8.encode(
+            jsonEncode({
+              'tabele': {
+                'Pesmi': [
+                  {'ID': 'a', 'Koda': 1, 'Naslov': 'PRVA', 'Aktivna': true},
+                  {'ID': 'b', 'Koda': 2, 'Naslov': 'DRUGA', 'Aktivna': true},
+                  {'ID': 'c', 'Koda': 3, 'Naslov': 'TRETJA', 'Aktivna': true},
+                ],
+                'Besedila': [
+                  {'ID': 't', 'Pesem': 'a', 'Besedilo': 'la la'},
+                ],
+                'Setliste': [
+                  {'ID': 's', 'Skupina': 's1', 'Ime': 'Poroka'},
+                ],
+                'Setlista pesmi': [
+                  {'ID': '1', 'Setlista': 's', 'Zaporedje': 1, 'Pesem': 'c'},
+                  {'ID': '2', 'Setlista': 's', 'Zaporedje': 2, 'Pesem': 'a'},
+                ],
+                'MIDI ukazi': _tabele['MIDI ukazi'],
+                'Makri': _tabele['Makri'],
+                'MIDI gumbi': [
+                  {'ID': 'g1', 'Pesem': '', 'Ime': 'Pavza', 'Makro': 'Luči pavza', 'Zaporedje': 1},
+                  {'ID': 'g2', 'Pesem': 'b', 'Ime': 'Solo', 'Makro': 'CC 9 12 127', 'Barva': 'rdeča'},
+                ],
+              },
+            }),
+          ),
+          200,
+        ),
+      ),
+    );
+    final baza = Baza(shramba: _Pomnilnik());
+    await tester.runAsync(() => baza.osvezi(api));
+    final pesmi = baza.pesmi;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: pesmi.first, baza: baza, prijava: Prijava(), seznam: pesmi),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1  PRVA'), findsOneWidget);
+    expect(find.text('1  Pavza'), findsOneWidget); // splošni gumb
+
+    midi.prejeto([0xB0, 64, 127]); // naslednja
+    await tester.pumpAndSettle();
+    expect(find.text('2  DRUGA'), findsOneWidget);
+    expect(find.text('2  Solo'), findsOneWidget); // gumb te pesmi je drugi
+
+    prenos.poslano.clear();
+    await tester.runAsync(() async {
+      midi.prejeto([0x99, 20, 100]); // gumb 2
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    expect(prenos.poslano, ['a 184 12 127', 'b 184 12 127']);
+
+    // Iskalnik: odpre se pri trenutni pesmi, dol in potrdi odpreta naslednjo.
+    midi.prejeto([0xB0, 67, 127]);
+    await tester.pumpAndSettle();
+    expect(find.byType(IskalnikPesmi), findsOneWidget);
+    midi.prejeto([0xB0, 66, 127]);
+    await tester.pump();
+    midi.prejeto([0xB0, 65, 127]);
+    await tester.pumpAndSettle();
+    expect(find.text('3  TRETJA'), findsOneWidget);
+    expect(find.byType(IskalnikPesmi), findsNothing);
+
+    // Setlista: naslednja gre po setlisti, ne po seznamu.
+    await tester.pumpWidget(
+      MaterialApp(
+        key: const ValueKey('setlista'),
+        home: IgranjeZaslon(setlista: baza.setliste.single, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('3  TRETJA'), findsOneWidget);
+    midi.prejeto([0xB0, 64, 127]);
+    await tester.pumpAndSettle();
+    expect(find.text('1  PRVA'), findsOneWidget);
+    expect(find.text('2 / 2'), findsOneWidget);
   });
 }
 

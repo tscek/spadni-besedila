@@ -575,6 +575,12 @@ class SledilecZaslon extends StatelessWidget {
           spil: spil,
           stanje: s,
           spodaj: vrstica,
+          // Pesem iz iskalnika se odpre nad sledenjem, da sledilec ostane povezan.
+          odpri: (p) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil),
+            ),
+          ),
         );
       },
     );
