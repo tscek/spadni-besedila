@@ -40,7 +40,10 @@ class SetlisteZaslon extends StatelessWidget {
     return ListenableBuilder(
       listenable: baza,
       builder: (context, _) => Scaffold(
-        appBar: AppBar(title: const Text('Setliste')),
+        appBar: AppBar(
+          title: const Text('Setliste'),
+          actions: [if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava)],
+        ),
         floatingActionButton: baza.smeUrejati
             ? FloatingActionButton.extended(
                 onPressed: () => _nova(context),
@@ -110,6 +113,7 @@ class SetlistaZaslon extends StatelessWidget {
           appBar: AppBar(
             title: Text(s.ime),
             actions: [
+              if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava),
               if (baza.smeUrejatiSetlisto(s))
                 IconButton(
                   tooltip: 'Uredi setlisto',
@@ -179,7 +183,7 @@ class IgranjeZaslon extends StatefulWidget {
   final Prijava prijava;
   final int zacetek;
 
-  /// Če je podan in vodja vodi, se vsaka zamenjava pesmi pošlje sledilcem.
+  /// Če je podan in naprava vodi, se vsaka zamenjava pesmi (z mestom v setlisti) pošlje sledilcem.
   final Spil? spil;
 
   @override
@@ -189,28 +193,7 @@ class IgranjeZaslon extends StatefulWidget {
 class _IgranjeZaslonState extends State<IgranjeZaslon> {
   late int _i = widget.zacetek;
 
-  @override
-  void initState() {
-    super.initState();
-    _objavi();
-  }
-
-  void _pojdi(int i) {
-    setState(() => _i = i);
-    _objavi();
-  }
-
-  /// Vodja pošlje sledilcem trenutno pesem.
-  void _objavi() {
-    final spil = widget.spil;
-    if (spil == null || spil.vloga != VlogaSpila.vodja) return;
-    final vrsta = _vrsta;
-    if (vrsta.isEmpty) return;
-    final i = _i.clamp(0, vrsta.length - 1);
-    // Indeks v celotni setlisti (tudi pesmi, ki jih ni več v repertoarju), da se ujema pri sledilcih.
-    final vse = widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[];
-    spil.objavi(StanjeSpila(pesem: vrsta[i].$2.id, setlista: widget.setlista.id, indeks: vse.indexOf(vrsta[i].$1)));
-  }
+  void _pojdi(int i) => setState(() => _i = i);
 
   List<(SetlistaPesem, Pesem)> get _vrsta => [
     for (final v in widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[])
@@ -235,6 +218,13 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
       pesem: p,
       baza: widget.baza,
       prijava: widget.prijava,
+      spil: widget.spil,
+      // Indeks v celotni setlisti (tudi pesmi, ki jih ni več v repertoarju), da se ujema pri sledilcih.
+      stanje: StanjeSpila(
+        pesem: p.id,
+        setlista: widget.setlista.id,
+        indeks: (widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[]).indexOf(v),
+      ),
       spodaj: Material(
         color: tema.colorScheme.surfaceContainer,
         child: SafeArea(
@@ -266,8 +256,6 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                     ],
                   ),
                 ),
-                if (widget.spil case final spil? when widget.baza.smeVoditi && spil.lahkoVodi)
-                  VodjaGumb(spil: spil, baza: widget.baza, obZacetku: _objavi),
                 IconButton(
                   iconSize: 36,
                   tooltip: 'Naslednja pesem',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,7 +11,8 @@ import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/config.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
-import 'package:spadni_besedila/zasloni/spil_zaslon.dart';
+import 'package:spadni_besedila/spil/streznik.dart';
+
 
 Future<Baza> _baza() async {
   final api = Api(
@@ -98,5 +100,53 @@ void main() {
     await vodja.ustavi();
     await _pocakaj(() => !sledilec.povezan);
     expect(sledilec.vloga, VlogaSpila.sledilec); // se poskuša znova povezati
+  });
+
+  test('sledilec sam najde vodjo in dobi tudi pesmi izven setliste', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    final oglasi = StreamController<String>();
+    final sledilec = Spil(iskalec: () => oglasi.stream);
+    addTearDown(() async {
+      await sledilec.ustavi();
+      await vodja.ustavi();
+    });
+
+    sledilec.samodejnoSledi();
+    expect(sledilec.vloga, VlogaSpila.sledilec);
+    expect(sledilec.povezan, isFalse);
+
+    vodja.prikazujem(const StanjeSpila(pesem: 'a'));
+    await vodja.zacniVoditi(baza);
+    oglasi.add('http://127.0.0.1:${Config.vrataVodje}');
+    await _pocakaj(() => sledilec.povezan && sledilec.stanje?.pesem == 'a');
+    expect(sledilec.naslovVodje, '127.0.0.1:${Config.vrataVodje}');
+
+    // Pesem izven setliste: vodja jo samo odpre.
+    vodja.prikazujem(const StanjeSpila(pesem: 'b'));
+    await _pocakaj(() => sledilec.stanje?.pesem == 'b');
+
+    await sledilec.ustavi();
+    expect(oglasi.hasListener, isFalse);
+  });
+
+  test('vodja se oglaša na omrežju', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    addTearDown(vodja.ustavi);
+    final najdeni = <String>[];
+    final p = isciVodjo().listen(najdeni.add);
+    addTearDown(p.cancel);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await vodja.zacniVoditi(baza);
+    for (var i = 0; i < 60 && najdeni.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    // V nekaterih okoljih (CI brez omrežja) oddajanje ne pride do sprejemnika; tam test ne pove ničesar.
+    if (najdeni.isEmpty) {
+      markTestSkipped('oddajanje v tem okolju ne doseže sprejemnika');
+      return;
+    }
+    expect(najdeni.first, endsWith(':${Config.vrataVodje}'));
   });
 }

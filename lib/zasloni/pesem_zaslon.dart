@@ -7,16 +7,32 @@ import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../models.dart';
 import '../prijava.dart';
+import '../spil/spil.dart';
 import 'pdf_risanje.dart';
+import 'spil_zaslon.dart';
 import 'urejanje_besedila.dart';
 import 'urejanje_pesmi.dart';
 
 class PesemZaslon extends StatefulWidget {
-  const PesemZaslon({super.key, required this.pesem, required this.baza, required this.prijava, this.spodaj});
+  const PesemZaslon({
+    super.key,
+    required this.pesem,
+    required this.baza,
+    required this.prijava,
+    this.spil,
+    this.stanje,
+    this.spodaj,
+  });
 
   final Pesem pesem;
   final Baza baza;
   final Prijava prijava;
+
+  /// Špil: gumb s stanjem povezave zgoraj; vodja ob odprtju pesmi to pošlje sledilcem.
+  final Spil? spil;
+
+  /// Kar se pošlje sledilcem (npr. z mestom v setlisti); privzeto samo pesem.
+  final StanjeSpila? stanje;
 
   /// Vrstica pod pesmijo (npr. premikanje po setlisti).
   final Widget? spodaj;
@@ -41,6 +57,10 @@ class _PesemZaslonState extends State<PesemZaslon> {
   void initState() {
     super.initState();
     _prikaziBesedilo = _besedila.isNotEmpty;
+    // Po prvem izrisu, da obvestilo ne pride sredi gradnje zaslonov.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
+    });
     if (_pdfji.isNotEmpty) {
       widget.baza.pdf(_pdfji.first.driveId).then((b) {
         if (mounted) {
@@ -96,6 +116,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       appBar: AppBar(
         title: Text('${p.koda}  ${p.naslov}'),
         actions: [
+          if (widget.spil case final spil?) SpilGumb(spil: spil, baza: widget.baza, prijava: widget.prijava),
           if (imaOboje)
             IconButton(
               tooltip: _prikaziBesedilo ? 'Pokaži PDF' : 'Pokaži besedilo',

@@ -30,6 +30,23 @@ Future<bool> potrdiOdhod(BuildContext context) async {
 }
 
 /// Vnos nove pesmi ali urejanje podatkov obstoječe. Ob uspehu vrne shranjeno [Pesem].
+/// Šteje odprte urejevalnike, da jih sledenje vodji na špilu ne zapre sredi urejanja.
+mixin OdprtoUrejanje<T extends StatefulWidget> on State<T> {
+  static int odprtih = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    odprtih++;
+  }
+
+  @override
+  void dispose() {
+    odprtih--;
+    super.dispose();
+  }
+}
+
 class UrejanjePesmiZaslon extends StatefulWidget {
   const UrejanjePesmiZaslon({super.key, required this.baza, required this.api, this.pesem});
 
@@ -41,7 +58,7 @@ class UrejanjePesmiZaslon extends StatefulWidget {
   State<UrejanjePesmiZaslon> createState() => _UrejanjePesmiZaslonState();
 }
 
-class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> {
+class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUrejanje {
   // Stolpec v listu Pesmi, številska tipkovnica, predlogi iz obstoječih pesmi.
   static const _polja = [
     ('Koda', true, false),

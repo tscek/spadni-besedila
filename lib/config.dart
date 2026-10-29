@@ -14,6 +14,9 @@ class Config {
   /// Vrata strežnika, ki ga na špilu zažene vodja.
   static const vrataVodje = 8765;
 
+  /// Vrata UDP, na katerih vodja oddaja svoj naslov, da ga sledilci najdejo sami.
+  static const vrataIskanja = 8766;
+
   /// Ali je spletna različica odprta s strežnika vodje na lokalnem WiFi-ju (iPad na špilu).
   /// Takrat podatke daje vodja, Google prijava pa ni potrebna.
   static bool get prekoVodje => kIsWeb && Uri.base.port == vrataVodje;

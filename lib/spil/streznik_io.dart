@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../baza.dart';
@@ -22,6 +23,8 @@ class StreznikIo implements StreznikVodje {
   String? _zadnje;
   Map<String, Uint8List> _splet = {};
   void Function(int)? _obSpremembi;
+  RawDatagramSocket? _oddajnik;
+  Timer? _oddajanje;
 
   @override
   Future<String> zacni(Baza baza, void Function(int sledilcev) obSpremembi) async {
@@ -39,7 +42,40 @@ class StreznikIo implements StreznikVodje {
         } catch (_) {}
       }
     });
+    await _zacniOddajati();
     return 'http://${await lokalniNaslov() ?? 'localhost'}:${Config.vrataVodje}';
+  }
+
+  /// Vsaki 2 s pošlje na lokalno omrežje kratko sporočilo, po katerem sledilci najdejo vodjo.
+  /// Sledilec naslov vzame iz pošiljatelja paketa, zato velja tudi, če vodja zamenja WiFi.
+  Future<void> _zacniOddajati() async {
+    try {
+      final u = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      u.broadcastEnabled = true;
+      _oddajnik = u;
+      final sporocilo = utf8.encode(jsonEncode({'spadni': 1, 'vrata': Config.vrataVodje}));
+      Future<void> oddaj() async {
+        // Splošni naslov in še naslov vsakega omrežja posebej (dostopna točka telefona splošnega ne prepusti vedno).
+        final cilji = {'255.255.255.255'};
+        try {
+          for (final v in await NetworkInterface.list(type: InternetAddressType.IPv4)) {
+            for (final a in v.addresses) {
+              if (!a.isLoopback) cilji.add(a.address.replaceFirst(RegExp(r'\.\d+$'), '.255'));
+            }
+          }
+        } catch (_) {}
+        for (final c in cilji) {
+          try {
+            u.send(sporocilo, InternetAddress(c), Config.vrataIskanja);
+          } catch (_) {}
+        }
+      }
+
+      await oddaj();
+      _oddajanje = Timer.periodic(const Duration(seconds: 2), (_) => oddaj());
+    } catch (_) {
+      // Brez oddajanja se sledilci še vedno povežejo z vpisom naslova.
+    }
   }
 
   @override
@@ -56,6 +92,10 @@ class StreznikIo implements StreznikVodje {
 
   @override
   Future<void> ustavi() async {
+    _oddajanje?.cancel();
+    _oddajanje = null;
+    _oddajnik?.close();
+    _oddajnik = null;
     for (final ws in _odjemalci.toList()) {
       await ws.close();
     }
@@ -163,6 +203,47 @@ class StreznikIo implements StreznikVodje {
       _ => 'application/octet-stream',
     };
   }
+}
+
+/// Posluša oddajanje vodij na lokalnem omrežju in vrača njihove naslove.
+Stream<String> isciVodjo() {
+  RawDatagramSocket? vticnica;
+  late final StreamController<String> tok;
+  tok = StreamController<String>(
+    onListen: () async {
+      await _multicast(true);
+      try {
+        final u = await RawDatagramSocket.bind(InternetAddress.anyIPv4, Config.vrataIskanja, reuseAddress: true);
+        vticnica = u;
+        u.listen((dogodek) {
+          if (dogodek != RawSocketEvent.read) return;
+          final d = u.receive();
+          if (d == null) return;
+          try {
+            final j = jsonDecode(utf8.decode(d.data));
+            if (j is Map && j['spadni'] == 1) {
+              tok.add('http://${d.address.address}:${(j['vrata'] as num?)?.toInt() ?? Config.vrataVodje}');
+            }
+          } catch (_) {}
+        });
+      } catch (e) {
+        tok.addError(e);
+      }
+    },
+    onCancel: () async {
+      vticnica?.close();
+      await _multicast(false);
+    },
+  );
+  return tok.stream;
+}
+
+/// Android sicer lahko zavrže pakete za vse naprave na WiFi-ju (varčevanje z baterijo).
+Future<void> _multicast(bool vklopi) async {
+  if (defaultTargetPlatform != TargetPlatform.android) return;
+  try {
+    await const MethodChannel('si.spadnifantje/omrezje').invokeMethod<void>('multicast', vklopi);
+  } catch (_) {}
 }
 
 /// IPv4 naslov naprave na lokalnem omrežju (WiFi ali dostopna točka), ki ga vidijo drugi.

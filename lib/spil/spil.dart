@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../baza.dart';
+import '../config.dart';
 import 'streznik.dart';
 
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
@@ -43,9 +44,12 @@ enum VlogaSpila { nic, vodja, sledilec }
 /// Vodja zažene strežnik ([StreznikVodje]) in pošilja [StanjeSpila]; sledilci ga prek WebSocketa
 /// prejemajo in pokažejo isto pesem iz svoje lokalne kopije.
 class Spil extends ChangeNotifier {
-  Spil({StreznikVodje? Function()? streznik}) : _ustvariStreznik = streznik ?? ustvariStreznik;
+  Spil({StreznikVodje? Function()? streznik, Stream<String> Function()? iskalec})
+    : _ustvariStreznik = streznik ?? ustvariStreznik,
+      _isciVodjo = iskalec ?? isciVodjo;
 
   final StreznikVodje? Function() _ustvariStreznik;
+  final Stream<String> Function() _isciVodjo;
 
   VlogaSpila vloga = VlogaSpila.nic;
   StanjeSpila? stanje;
@@ -63,6 +67,13 @@ class Spil extends ChangeNotifier {
   StreamSubscription<dynamic>? _poslusam;
   Timer? _ponovnaPovezava;
   Uri? _naslovVodje;
+  StreamSubscription<String>? _iskanje;
+
+  /// Kar ta naprava trenutno kaže; ko začne voditi, to takoj pošlje sledilcem.
+  StanjeSpila? _prikazano;
+
+  /// Sledilec: naslov vodje, s katerim se povezuje (npr. 192.168.1.5:8765).
+  String? get naslovVodje => _naslovVodje == null ? null : '${_naslovVodje!.host}:${_naslovVodje!.port}';
 
   /// Ali naprava lahko vodi (strežnika v brskalniku ni mogoče zagnati).
   bool get lahkoVodi => _ustvariStreznik() != null;
@@ -84,11 +95,40 @@ class Spil extends ChangeNotifier {
       _streznik = s;
       vloga = VlogaSpila.vodja;
       napaka = null;
+      stanje = _prikazano ?? stanje;
       if (stanje != null) s.poslji(jsonEncode(stanje!.vJson()));
     } catch (e) {
       napaka = 'Strežnika ni bilo mogoče zagnati: $e';
     }
     notifyListeners();
+  }
+
+  /// Zaslon s pesmijo pove, kaj kaže; vodja to pošlje sledilcem.
+  void prikazujem(StanjeSpila s) {
+    _prikazano = s;
+    if (vloga == VlogaSpila.vodja) objavi(s);
+  }
+
+  /// Sledilec: poišče vodjo na WiFi-ju (vodja svoj naslov oddaja vsaki 2 s) in se z njim poveže.
+  /// Če je podan [zadnji] naslov, se z njim poveže takoj, dokler se vodja ne oglasi.
+  void samodejnoSledi({Uri? zadnji}) {
+    if (vloga == VlogaSpila.vodja) return;
+    if (zadnji != null) {
+      sledi(zadnji);
+    } else if (vloga != VlogaSpila.sledilec) {
+      vloga = VlogaSpila.sledilec;
+      notifyListeners();
+    }
+    _iskanje ??= _isciVodjo().listen(
+      (naslov) {
+        final ws = naslovWebSocket(naslov);
+        if (ws != null && ws != _naslovVodje && vloga == VlogaSpila.sledilec) sledi(ws);
+      },
+      onError: (Object e) {
+        napaka = 'Iskanje vodje ne deluje: $e';
+        notifyListeners();
+      },
+    );
   }
 
   /// Vodja: pošlji sledilcem, kaj je zdaj na vrsti.
@@ -159,7 +199,10 @@ class Spil extends ChangeNotifier {
   }
 
   Future<void> ustavi() async {
+    await _iskanje?.cancel();
+    _iskanje = null;
     _ustaviSledenje();
+    _naslovVodje = null;
     await _streznik?.ustavi();
     _streznik = null;
     vloga = VlogaSpila.nic;
@@ -167,4 +210,14 @@ class Spil extends ChangeNotifier {
     sledilcev = 0;
     notifyListeners();
   }
+}
+
+/// Iz vnosa, kot je "192.168.1.5", "192.168.1.5:8765" ali "http://192.168.1.5:8765", naredi naslov WebSocketa.
+Uri? naslovWebSocket(String vnos) {
+  var s = vnos.trim();
+  if (s.isEmpty) return null;
+  s = s.replaceFirst(RegExp(r'^(https?|wss?)://'), '');
+  s = s.split('/').first;
+  if (!s.contains(':')) s = '$s:${Config.vrataVodje}';
+  return Uri.tryParse('ws://$s/ws');
 }

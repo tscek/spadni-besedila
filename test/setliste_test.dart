@@ -10,7 +10,11 @@ import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/prijava.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/spil/spil.dart';
+import 'package:spadni_besedila/spil/streznik.dart';
+import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/setliste_zaslon.dart';
+import 'package:spadni_besedila/zasloni/spil_zaslon.dart';
 import 'package:spadni_besedila/zasloni/urejanje_setliste.dart';
 
 Map<String, dynamic> _podatki() => {
@@ -36,6 +40,30 @@ Map<String, dynamic> _podatki() => {
     ],
   },
 };
+
+class _Streznik implements StreznikVodje {
+  final poslano = <Map<String, dynamic>>[];
+
+  @override
+  Future<String> zacni(Baza baza, void Function(int) obSpremembi) async => 'http://10.0.0.2:8765';
+
+  @override
+  void poslji(String sporocilo) => poslano.add(jsonDecode(sporocilo) as Map<String, dynamic>);
+
+  @override
+  Future<void> ustavi() async {}
+}
+
+class _Sledilec extends Spil {
+  _Sledilec() : super(iskalec: () => const Stream.empty());
+
+  void dobi(StanjeSpila s) {
+    vloga = VlogaSpila.sledilec;
+    povezan = true;
+    stanje = s;
+    notifyListeners();
+  }
+}
 
 Future<(Baza, Api, List<Map<String, dynamic>>)> _baza() async {
   final poslano = <Map<String, dynamic>>[];
@@ -144,5 +172,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Poroka'), findsOneWidget);
     expect(find.textContaining('11. 2026 · 3 pesmi'), findsOneWidget);
+  });
+
+  testWidgets('vodja pošlje pesem iz setliste z mestom in tudi pesem izven setliste', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final streznik = _Streznik();
+    final spil = Spil(streznik: () => streznik);
+    await spil.zacniVoditi(baza);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: IgranjeZaslon(setlista: baza.setliste.first, baza: baza, prijava: Prijava(), spil: spil),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Vodim · 0'), findsOneWidget);
+    expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'c', 'setlista': 'x', 'indeks': 0});
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'a', 'setlista': 'x', 'indeks': 1});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: baza.pesem('b')!, baza: baza, prijava: Prijava(), spil: spil),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'b'});
+  });
+
+  testWidgets('sledilec samodejno pokaže pesem, ki jo izbere vodja', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final spil = _Sledilec();
+    final navigator = GlobalKey<NavigatorState>();
+    final prijava = Prijava();
+    SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigator,
+        home: SetlisteZaslon(baza: baza, prijava: prijava, spil: spil),
+      ),
+    );
+    expect(find.text('Špil'), findsOneWidget);
+
+    spil.dobi(const StanjeSpila(pesem: 'b'));
+    await tester.pumpAndSettle();
+    expect(find.text('1003  BOG TE ŽIVI'), findsOneWidget);
+    expect(find.text('Povezan'), findsOneWidget);
+
+    spil.dobi(const StanjeSpila(pesem: 'a', setlista: 'x', indeks: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('1002  BELO OBLEKO'), findsOneWidget);
+    expect(find.text('Sledim vodji · 2 / 3'), findsOneWidget);
+
+    // Nazaj na seznam: sledenje ostane, naslednja pesem vodje se spet odpre.
+    await tester.tap(find.text('Seznam'));
+    await tester.pumpAndSettle();
+    expect(find.text('Setliste'), findsOneWidget);
+    spil.dobi(const StanjeSpila(pesem: 'c'));
+    await tester.pumpAndSettle();
+    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
   });
 }

@@ -84,6 +84,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       appBar: AppBar(
         title: const Text('Pesmi'),
         actions: [
+          SpilGumb(spil: widget.spil, baza: baza, prijava: widget.prijava),
           IconButton(
             tooltip: 'Setliste',
             icon: const Icon(Icons.queue_music),
@@ -103,14 +104,11 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'odjava') widget.prijava.odjavi();
-              if (v == 'sledi') zacniSlediti(context, spil: widget.spil, baza: baza, prijava: widget.prijava);
             },
             itemBuilder: (_) => [
               PopupMenuItem(enabled: false, child: Text(widget.prijava.racun?.email ?? 'Ni prijave')),
               if (baza.zadnjaOsvezitev != null)
                 PopupMenuItem(enabled: false, child: Text('Osveženo: ${_datum(baza.zadnjaOsvezitev!)}')),
-              // V brskalniku z interneta se ni mogoče povezati z vodjo na lokalnem WiFi-ju (iPad odpre naslov vodje).
-              if (!kIsWeb) const PopupMenuItem(value: 'sledi', child: Text('Sledi vodji')),
               if (widget.prijava.racun != null) const PopupMenuItem(value: 'odjava', child: Text('Odjava')),
             ],
           ),
@@ -188,7 +186,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     if (pesem != null) {
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => PesemZaslon(pesem: pesem, baza: widget.baza, prijava: widget.prijava),
+          builder: (_) => PesemZaslon(pesem: pesem, baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
         ),
       );
     }
@@ -238,7 +236,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava),
+          builder: (_) => PesemZaslon(pesem: p, baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
         ),
       ),
     );

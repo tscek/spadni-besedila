@@ -34,8 +34,13 @@ Future<void> main() async {
     // iPad na špilu: aplikacija in podatki pridejo od vodje, sledimo mu takoj.
     baza.osvezi(Api(prijava.zeton));
     spil.sledi(Uri.parse('ws://${Uri.base.host}:${Uri.base.port}/ws'));
+  } else {
+    // Stalna vloga naprave (vodja ali sledilec), nastavljena z gumbom Špil.
+    zacniPrivzetoVlogo(spil, baza);
   }
-  runApp(SpadniBesedila(prijava: prijava, baza: baza, posodobitev: posodobitev, spil: spil));
+  final navigator = GlobalKey<NavigatorState>();
+  if (!Config.prekoVodje) SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+  runApp(SpadniBesedila(prijava: prijava, baza: baza, posodobitev: posodobitev, spil: spil, navigator: navigator));
   // Prijava se preveri v ozadju; seznam pesmi iz lokalne kopije je takoj na voljo tudi brez interneta.
   prijava.zacni();
 }
@@ -47,16 +52,19 @@ class SpadniBesedila extends StatelessWidget {
     required this.baza,
     required this.posodobitev,
     required this.spil,
+    this.navigator,
   });
 
   final Prijava prijava;
   final Baza baza;
   final Posodobitev posodobitev;
   final Spil spil;
+  final GlobalKey<NavigatorState>? navigator;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigator,
       title: 'Špadni besedila',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,

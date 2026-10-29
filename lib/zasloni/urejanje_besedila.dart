@@ -20,7 +20,7 @@ class UrejanjeBesedilaZaslon extends StatefulWidget {
   State<UrejanjeBesedilaZaslon> createState() => _UrejanjeBesedilaZaslonState();
 }
 
-class _UrejanjeBesedilaZaslonState extends State<UrejanjeBesedilaZaslon> {
+class _UrejanjeBesedilaZaslonState extends State<UrejanjeBesedilaZaslon> with OdprtoUrejanje {
   late final _vsebina = TextEditingController(text: widget.besedilo?.vsebina ?? '')..addListener(_spremenjeno);
   late final _opombe = TextEditingController(text: widget.besedilo?.opombe ?? '')..addListener(_spremenjeno);
   late String _vrsta = BesediloPesmi.vrste.contains(widget.besedilo?.vrsta)

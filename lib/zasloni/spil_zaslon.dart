@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,41 +8,271 @@ import '../config.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'pesem_zaslon.dart';
+import 'urejanje_pesmi.dart';
 
-/// Gumb vodje v vrstici igranja: zažene vodenje in pokaže naslov za sledilce.
-class VodjaGumb extends StatelessWidget {
-  const VodjaGumb({super.key, required this.spil, required this.baza, required this.obZacetku});
+/// Kaj naprava naredi ob zagonu aplikacije.
+enum PrivzetaVloga { sama, vodja, sledilec }
+
+const _kljucVloge = 'vloga_naprave';
+const _kljucVodje = 'zadnji_vodja';
+
+Future<PrivzetaVloga> privzetaVloga() async {
+  final v = (await SharedPreferences.getInstance()).getString(_kljucVloge);
+  return PrivzetaVloga.values.where((x) => x.name == v).firstOrNull ?? PrivzetaVloga.sama;
+}
+
+/// Ob zagonu: vodja začne voditi, sledilec poišče vodjo in se poveže.
+Future<void> zacniPrivzetoVlogo(Spil spil, Baza baza) async {
+  if (kIsWeb) return;
+  final prefs = await SharedPreferences.getInstance();
+  switch (await privzetaVloga()) {
+    case PrivzetaVloga.vodja when baza.smeVoditi && spil.lahkoVodi:
+      await spil.zacniVoditi(baza);
+    case PrivzetaVloga.sledilec:
+      spil.samodejnoSledi(zadnji: naslovWebSocket(prefs.getString(_kljucVodje) ?? ''));
+    default:
+  }
+}
+
+/// Gumb v zgornji vrstici vseh zaslonov: pokaže stanje špila in odpre nastavitve povezave.
+class SpilGumb extends StatelessWidget {
+  const SpilGumb({super.key, required this.spil, required this.baza, required this.prijava});
 
   final Spil spil;
   final Baza baza;
-
-  /// Pokliče se, ko vodenje steče, da vodja takoj pošlje trenutno pesem.
-  final VoidCallback obZacetku;
+  final Prijava prijava;
 
   @override
   Widget build(BuildContext context) {
+    // Spletna različica z interneta se z vodjo na WiFi-ju ne more povezati (iPad odpre naslov vodje).
+    if (kIsWeb && !Config.prekoVodje) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: spil,
       builder: (context, _) {
-        final vodim = spil.vloga == VlogaSpila.vodja;
-        return IconButton(
-          iconSize: 28,
-          tooltip: vodim ? 'Vodim špil (${spil.sledilcev} sledi)' : 'Vodi špil',
-          icon: Badge(
-            isLabelVisible: vodim,
-            label: Text('${spil.sledilcev}'),
-            child: Icon(vodim ? Icons.cast_connected : Icons.cast),
-          ),
-          onPressed: () async {
-            if (!vodim) {
-              await spil.zacniVoditi(baza);
-              obZacetku();
-            }
-            if (context.mounted) await pokaziNaslovVodje(context, spil);
-          },
+        final barve = Theme.of(context).colorScheme;
+        final (ikona, barva, besedilo) = switch (spil.vloga) {
+          VlogaSpila.vodja => (Icons.cast_connected, barve.primary, 'Vodim · ${spil.sledilcev}'),
+          VlogaSpila.sledilec when spil.povezan => (Icons.cast_connected, Colors.green, 'Povezan'),
+          VlogaSpila.sledilec => (Icons.cast, barve.error, 'Iščem vodjo'),
+          VlogaSpila.nic => (Icons.cast, barve.onSurfaceVariant, 'Špil'),
+        };
+        return TextButton.icon(
+          onPressed: () => _meni(context),
+          icon: Icon(ikona, color: barva),
+          label: Text(besedilo, style: TextStyle(color: barva)),
         );
       },
     );
+  }
+
+  Future<void> _meni(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => ListenableBuilder(
+      listenable: spil,
+      builder: (context, _) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: _moznosti(context)),
+        ),
+      ),
+    ),
+  );
+
+  List<Widget> _moznosti(BuildContext context) {
+    void zapri() => Navigator.pop(context);
+    final lahkoVodi = baza.smeVoditi && spil.lahkoVodi;
+    return [
+      ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: Text(switch (spil.vloga) {
+          VlogaSpila.vodja => 'Ta naprava vodi špil (sledi ${spil.sledilcev})',
+          VlogaSpila.sledilec when spil.povezan => 'Povezan z vodjo ${spil.naslovVodje ?? ''}',
+          VlogaSpila.sledilec =>
+            spil.naslovVodje == null ? 'Iščem vodjo na WiFi-ju …' : 'Povezujem se z vodjo ${spil.naslovVodje} …',
+          VlogaSpila.nic => 'Ni povezave z drugimi napravami',
+        }),
+        subtitle: spil.napaka == null ? null : Text(spil.napaka!),
+      ),
+      if (Config.prekoVodje)
+        ...[]
+      else ...[
+        if (spil.vloga == VlogaSpila.vodja) ...[
+          ListTile(
+            leading: const Icon(Icons.qr_code),
+            title: const Text('Pokaži kodo za iPade'),
+            onTap: () {
+              zapri();
+              pokaziNaslovVodje(context, spil);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.stop),
+            title: const Text('Končaj vodenje'),
+            onTap: () {
+              spil.ustavi();
+              zapri();
+            },
+          ),
+        ],
+        if (spil.vloga == VlogaSpila.sledilec) ...[
+          if (spil.stanje != null)
+            ListTile(
+              leading: const Icon(Icons.music_note),
+              title: const Text('Pokaži pesem vodje'),
+              onTap: () {
+                zapri();
+                pokaziSledenje(Navigator.of(context), spil: spil, baza: baza, prijava: prijava);
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.stop),
+            title: const Text('Nehaj slediti'),
+            onTap: () {
+              spil.ustavi();
+              zapri();
+            },
+          ),
+        ],
+        if (spil.vloga == VlogaSpila.nic) ...[
+          if (lahkoVodi)
+            ListTile(
+              leading: const Icon(Icons.cast),
+              title: const Text('Vodi špil'),
+              onTap: () async {
+                zapri();
+                await spil.zacniVoditi(baza);
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.cast_connected),
+            title: const Text('Sledi vodji'),
+            subtitle: const Text('Vodjo poišče sam na istem WiFi-ju'),
+            onTap: () async {
+              zapri();
+              final prefs = await SharedPreferences.getInstance();
+              spil.samodejnoSledi(zadnji: naslovWebSocket(prefs.getString(_kljucVodje) ?? ''));
+            },
+          ),
+        ],
+        if (spil.vloga != VlogaSpila.vodja)
+          ListTile(
+            leading: const Icon(Icons.edit),
+            title: const Text('Poveži z vpisanim naslovom'),
+            onTap: () {
+              zapri();
+              zacniSlediti(context, spil: spil, baza: baza, prijava: prijava);
+            },
+          ),
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: _IzbiraPrivzete(spil: spil, baza: baza, lahkoVodi: lahkoVodi),
+        ),
+      ],
+    ];
+  }
+}
+
+/// Nastavitev, ali je ta naprava ob zagonu vodja, sledilec ali sama zase.
+class _IzbiraPrivzete extends StatefulWidget {
+  const _IzbiraPrivzete({required this.spil, required this.baza, required this.lahkoVodi});
+
+  final Spil spil;
+  final Baza baza;
+  final bool lahkoVodi;
+
+  @override
+  State<_IzbiraPrivzete> createState() => _IzbiraPrivzeteState();
+}
+
+class _IzbiraPrivzeteState extends State<_IzbiraPrivzete> {
+  PrivzetaVloga? _vloga;
+
+  @override
+  void initState() {
+    super.initState();
+    privzetaVloga().then((v) {
+      if (mounted) setState(() => _vloga = v);
+    });
+  }
+
+  Future<void> _izberi(PrivzetaVloga v) async {
+    setState(() => _vloga = v);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kljucVloge, v.name);
+    // Izbira velja takoj, ne šele ob naslednjem zagonu.
+    final spil = widget.spil;
+    if (v == PrivzetaVloga.vodja && spil.vloga != VlogaSpila.vodja) await spil.zacniVoditi(widget.baza);
+    if (v == PrivzetaVloga.sledilec && spil.vloga != VlogaSpila.sledilec) {
+      if (spil.vloga == VlogaSpila.vodja) await spil.ustavi();
+      spil.samodejnoSledi(zadnji: naslovWebSocket(prefs.getString(_kljucVodje) ?? ''));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _vloga;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Ob zagonu aplikacije je ta naprava', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        if (v != null)
+          SegmentedButton<PrivzetaVloga>(
+            selected: {v},
+            onSelectionChanged: (x) => _izberi(x.first),
+            segments: [
+              const ButtonSegment(value: PrivzetaVloga.sama, label: Text('Sama')),
+              ButtonSegment(value: PrivzetaVloga.vodja, label: const Text('Vodja'), enabled: widget.lahkoVodi),
+              const ButtonSegment(value: PrivzetaVloga.sledilec, label: Text('Sledilec')),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+/// Pokaže zaslon sledenja (če še ni odprt) nad seznamom pesmi.
+void pokaziSledenje(NavigatorState navigator, {required Spil spil, required Baza baza, required Prijava prijava}) {
+  var odprt = false;
+  navigator.popUntil((r) {
+    odprt = r.settings.name == SledilecZaslon.ime;
+    return true;
+  });
+  if (odprt) return;
+  navigator.popUntil((r) => r.isFirst);
+  navigator.push(
+    MaterialPageRoute<void>(
+      settings: const RouteSettings(name: SledilecZaslon.ime),
+      builder: (_) => SledilecZaslon(spil: spil, baza: baza, prijava: prijava),
+    ),
+  );
+}
+
+/// Sledilec: ko vodja izbere drugo pesem, jo samodejno pokaže, kjerkoli je član v aplikaciji.
+/// Med urejanjem ne zapre zaslona (ne izgubi sprememb), pesem se pokaže ob naslednji menjavi.
+class SamodejnoSledenje {
+  SamodejnoSledenje({required this.spil, required this.baza, required this.prijava, required this.navigator}) {
+    spil.addListener(_sprememba);
+  }
+
+  final Spil spil;
+  final Baza baza;
+  final Prijava prijava;
+  final GlobalKey<NavigatorState> navigator;
+  StanjeSpila? _zadnje;
+
+  void _sprememba() {
+    if (spil.vloga != VlogaSpila.sledilec) {
+      _zadnje = null;
+      return;
+    }
+    final s = spil.stanje;
+    if (s == null || s == _zadnje) return;
+    _zadnje = s;
+    final nav = navigator.currentState;
+    if (nav == null || OdprtoUrejanje.odprtih > 0) return;
+    pokaziSledenje(nav, spil: spil, baza: baza, prijava: prijava);
   }
 }
 
@@ -103,7 +334,7 @@ Future<void> zacniSlediti(
   required Baza baza,
   required Prijava prijava,
 }) async {
-  const kljuc = 'zadnji_vodja';
+  const kljuc = _kljucVodje;
   final prefs = await SharedPreferences.getInstance();
   if (!context.mounted) return;
   final c = TextEditingController(text: prefs.getString(kljuc) ?? '192.168.');
@@ -128,34 +359,22 @@ Future<void> zacniSlediti(
   final ws = naslovWebSocket(vnos ?? '');
   if (ws == null || !context.mounted) return;
   await prefs.setString(kljuc, vnos!.trim());
-  spil.sledi(ws);
+  spil.samodejnoSledi(zadnji: ws);
   if (!context.mounted) return;
-  await Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => SledilecZaslon(spil: spil, baza: baza, prijava: prijava),
-    ),
-  );
-}
-
-/// Iz vnosa, kot je "192.168.1.5", "192.168.1.5:8765" ali "http://192.168.1.5:8765", naredi naslov WebSocketa.
-Uri? naslovWebSocket(String vnos) {
-  var s = vnos.trim();
-  if (s.isEmpty) return null;
-  s = s.replaceFirst(RegExp(r'^(https?|wss?)://'), '');
-  s = s.split('/').first;
-  if (!s.contains(':')) s = '$s:${Config.vrataVodje}';
-  return Uri.tryParse('ws://$s/ws');
+  pokaziSledenje(Navigator.of(context), spil: spil, baza: baza, prijava: prijava);
 }
 
 /// Sledilec: kaže pesem, ki jo je izbral vodja.
 class SledilecZaslon extends StatelessWidget {
   const SledilecZaslon({super.key, required this.spil, required this.baza, required this.prijava, this.koren = false});
 
+  static const ime = '/sledilec';
+
   final Spil spil;
   final Baza baza;
   final Prijava prijava;
 
-  /// Prvi zaslon (iPad, odprt prek vodje): namesto »Nehaj slediti« ponudi seznam pesmi.
+  /// Prvi zaslon (iPad, odprt prek vodje): brez gumba za nazaj na seznam.
   final bool koren;
 
   @override
@@ -168,7 +387,10 @@ class SledilecZaslon extends StatelessWidget {
         final vrstica = _vrstica(context, s);
         if (p == null) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Špil')),
+            appBar: AppBar(
+              title: const Text('Špil'),
+              actions: [SpilGumb(spil: spil, baza: baza, prijava: prijava)],
+            ),
             bottomNavigationBar: vrstica,
             body: Center(
               child: Padding(
@@ -183,7 +405,15 @@ class SledilecZaslon extends StatelessWidget {
             ),
           );
         }
-        return PesemZaslon(key: ValueKey(s), pesem: p, baza: baza, prijava: prijava, spodaj: vrstica);
+        return PesemZaslon(
+          key: ValueKey(s),
+          pesem: p,
+          baza: baza,
+          prijava: prijava,
+          spil: spil,
+          stanje: s,
+          spodaj: vrstica,
+        );
       },
     );
   }
@@ -215,7 +445,7 @@ class SledilecZaslon extends StatelessWidget {
                   children: [
                     Text(
                       [
-                        spil.povezan ? 'Sledim vodji' : 'Ni povezave z vodjo',
+                        spil.povezan ? 'Sledim vodji' : 'Iščem vodjo …',
                         if (vrsta != null && i != null) '${i + 1} / ${vrsta.length}',
                         if (opomba.isNotEmpty) opomba,
                       ].join(' · '),
@@ -231,13 +461,12 @@ class SledilecZaslon extends StatelessWidget {
                   ],
                 ),
               ),
+              // Sledenje ostane vklopljeno: ob naslednji pesmi vodje se zaslon spet odpre.
               if (!koren)
-                TextButton(
-                  onPressed: () {
-                    spil.ustavi();
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Nehaj slediti'),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.list),
+                  label: const Text('Seznam'),
                 ),
             ],
           ),

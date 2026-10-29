@@ -23,7 +23,7 @@ class _Vnos {
   String opomba;
 }
 
-class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> {
+class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with OdprtoUrejanje {
   late final _ime = TextEditingController(text: widget.setlista?.ime ?? '')..addListener(_spremenjeno);
   late final _opombe = TextEditingController(text: widget.setlista?.opombe ?? '')..addListener(_spremenjeno);
   final _koda = TextEditingController();
