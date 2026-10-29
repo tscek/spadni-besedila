@@ -110,6 +110,31 @@ void main() {
     });
   });
 
+  test('api: prekinjeno povezavo ponovi, nato javi napako brez žetona', () async {
+    var klici = 0;
+    final api = Api(
+      () async => 'skrivni-zeton',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async {
+        klici++;
+        if (klici < 3) throw http.ClientException('Connection reset by peer', r.url);
+        return http.Response(jsonEncode({'verzija': 11}), 200);
+      }),
+    );
+    expect((await api.verzija())['verzija'], 11);
+    expect(klici, 3);
+
+    final mrtev = Api(
+      () async => 'skrivni-zeton',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async => throw http.ClientException('Connection reset by peer', r.url)),
+    );
+    await expectLater(
+      mrtev.verzija(),
+      throwsA(isA<ApiNapaka>().having((e) => e.sporocilo, 'sporocilo', isNot(contains('skrivni-zeton')))),
+    );
+  });
+
   test('baza: osvežitev shrani podatke in PDF-je lokalno', () async {
     final mapa = await Directory.systemTemp.createTemp('baza');
     addTearDown(() => mapa.delete(recursive: true));

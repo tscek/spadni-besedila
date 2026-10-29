@@ -47,10 +47,25 @@ class Api {
 
   Future<void> dnevnik(List<Map<String, dynamic>> vrstice) => _post({'akcija': 'dnevnik', 'vrstice': vrstice});
 
+  /// Kolikokrat ponovimo klic, ko povezava pade (npr. "Connection reset by peer" na slabem WiFi-ju).
+  static const poskusi = 3;
+
   Future<Map<String, dynamic>> _get(Map<String, String> parametri) async {
     final uri = Uri.parse(_url).replace(queryParameters: {...parametri, 'zeton': await _zeton()});
-    final odg = await _client.get(uri);
+    final odg = await _sPonovitvijo(() => _client.get(uri));
     return _odgovor(odg);
+  }
+
+  Future<http.Response> _sPonovitvijo(Future<http.Response> Function() klic, {int poskusov = poskusi}) async {
+    for (var i = 1; ; i++) {
+      try {
+        return await klic();
+      } on http.ClientException {
+        // Sporočilo napake vsebuje celoten naslov z žetonom, zato ga ne prikažemo.
+        if (i >= poskusov) throw ApiNapaka('Ni povezave s strežnikom. Preveri internet in poskusi znova.');
+        await Future<void>.delayed(Duration(milliseconds: 500 * i));
+      }
+    }
   }
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> telo) async {
@@ -58,11 +73,12 @@ class Api {
       ..followRedirects = false
       ..headers['Content-Type'] = 'text/plain;charset=utf-8'
       ..body = jsonEncode({...telo, 'zeton': await _zeton()});
-    var odg = await http.Response.fromStream(await _client.send(zahteva));
+    // POST ne ponavljamo: če je skripta zahtevo že izvedla, bi se zapis podvojil.
+    var odg = await _sPonovitvijo(() async => http.Response.fromStream(await _client.send(zahteva)), poskusov: 1);
     // Apps Script po POST preusmeri na stran z rezultatom, ki jo je treba prebrati z GET.
     final naprej = odg.headers['location'];
     if (odg.statusCode == 302 && naprej != null) {
-      odg = await _client.get(Uri.parse(naprej));
+      odg = await _sPonovitvijo(() => _client.get(Uri.parse(naprej)));
     }
     return _odgovor(odg);
   }
