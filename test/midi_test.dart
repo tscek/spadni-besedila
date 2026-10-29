@@ -89,6 +89,18 @@ void main() {
     });
     expect(k.obOdprtju(p).map((u) => u.ukaz.zapis), ['CC 15 0 7', 'CC 9 12 127']);
     expect(k.obZaprtju(p).map((u) => u.ukaz.zapis), ['PC 5 3']);
+
+    // Splošna makra veljata za vse pesmi: odprtje pred ukazi pesmi, zaprtje za njimi.
+    final s = KnjiznicaMidi.izTabel({
+      ..._tabele,
+      'Makri': [
+        ...?_tabele['Makri'],
+        {'ID': 'o', 'Ime': KnjiznicaMidi.makroOdprtja, 'Ukazi': 'PC 1 1'},
+        {'ID': 'z', 'Ime': KnjiznicaMidi.makroZaprtja, 'Ukazi': 'PC 1 2'},
+      ],
+    });
+    expect(s.obOdprtju(p).map((u) => u.ukaz.zapis), ['PC 1 1', 'CC 15 0 7', 'CC 9 12 127']);
+    expect(s.obZaprtju(p).map((u) => u.ukaz.zapis), ['PC 5 3', 'PC 1 2']);
   });
 
   test('pošiljanje na naprave po izhodih in zaprtje prejšnje pesmi', () async {

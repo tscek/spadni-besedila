@@ -49,6 +49,7 @@ dependencies:
   url_launcher: ^6.3.3
   flutter_midi_command: ^1.4.0
   flutter_midi_command_ble: ^1.4.0
+  wakelock_plus: ^1.8.0
 
 dev_dependencies:
   flutter_test:

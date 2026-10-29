@@ -230,6 +230,17 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                     ),
                 ], 'Ni še ukazov.'),
                 _seznam([
+                  for (final (ime, opis) in [
+                    (KnjiznicaMidi.makroOdprtja, 'Pošlje se ob odprtju vsake pesmi, pred ukazi pesmi.'),
+                    (KnjiznicaMidi.makroZaprtja, 'Pošlje se ob zaprtju vsake pesmi, za ukazi pesmi.'),
+                  ])
+                    if (k.makro(ime) == null)
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: Text('Dodaj makro »$ime«'),
+                        subtitle: Text(opis),
+                        onTap: () => _urediMakro(context, Makro(ime: ime, koraki: const [])),
+                      ),
                   for (final m in k.makri)
                     ListTile(
                       title: Text(m.ime),
@@ -674,14 +685,14 @@ class _MakroZaslonState extends State<_MakroZaslon> {
     final smeUrejati = widget.baza.smeUrejati;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.makro == null ? 'Nov makro' : 'Makro'),
+        title: Text((widget.makro?.id ?? '').isEmpty ? 'Nov makro' : 'Makro'),
         actions: [
           IconButton(
             tooltip: 'Preizkusi',
             icon: const Icon(Icons.play_arrow),
             onPressed: () => preizkusiMidi(context, k, _koraki.join('; ')),
           ),
-          if (widget.makro != null && smeUrejati)
+          if ((widget.makro?.id ?? '').isNotEmpty && smeUrejati)
             IconButton(
               tooltip: 'Izbriši makro',
               icon: const Icon(Icons.delete_outline),

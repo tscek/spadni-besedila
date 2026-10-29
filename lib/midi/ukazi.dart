@@ -332,11 +332,19 @@ class KnjiznicaMidi {
     return out;
   }
 
-  /// Ukazi ob odprtju pesmi: najprej ukaz pesmi (MIDI ob odprtju), nato makro ob odprtju.
-  List<PoslaniUkaz> obOdprtju(Pesem p) =>
-      razsiri('${besedilo(p.vrstica['MIDI ob odprtju'])}; ${besedilo(p.vrstica['Makro ob odprtju'])}');
+  /// Makra s tema imenoma veljata za vse pesmi.
+  static const makroOdprtja = 'Ob odprtju vsake pesmi';
+  static const makroZaprtja = 'Ob zaprtju vsake pesmi';
 
-  List<PoslaniUkaz> obZaprtju(Pesem p) => razsiri(besedilo(p.vrstica['Makro ob zaprtju']));
+  /// Ukazi ob odprtju pesmi: najprej splošni makro, nato ukaz pesmi (MIDI ob odprtju) in makro ob odprtju.
+  List<PoslaniUkaz> obOdprtju(Pesem p) => razsiri(
+    '${makro(makroOdprtja)?.ime ?? ''}; '
+    '${besedilo(p.vrstica['MIDI ob odprtju'])}; ${besedilo(p.vrstica['Makro ob odprtju'])}',
+  );
+
+  /// Ukazi ob zaprtju pesmi: najprej makro pesmi, nato splošni makro.
+  List<PoslaniUkaz> obZaprtju(Pesem p) =>
+      razsiri('${besedilo(p.vrstica['Makro ob zaprtju'])}; ${makro(makroZaprtja)?.ime ?? ''}');
 }
 
 int _stevilo(dynamic v, int privzeto) =>

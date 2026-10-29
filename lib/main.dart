@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'api.dart';
 import 'config.dart';
@@ -59,9 +61,21 @@ Future<void> main() async {
   }
   final navigator = GlobalKey<NavigatorState>();
   if (!Config.prekoVodje) SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+  // Med igranjem se zaslon ne sme ugasniti: ob zagonu in ob vsaki vrnitvi v aplikacijo.
+  _zaslonPrizgan();
+  AppLifecycleListener(onResume: _zaslonPrizgan);
   runApp(SpadniBesedila(prijava: prijava, baza: baza, posodobitev: posodobitev, spil: spil, navigator: navigator));
   // Prijava se preveri v ozadju; seznam pesmi iz lokalne kopije je takoj na voljo tudi brez interneta.
   prijava.zacni();
+}
+
+void _zaslonPrizgan() => WakelockPlus.enable().catchError((_) {});
+
+/// Brskalnik (Safari) dovoli prižgan zaslon šele po dotiku, zato ga ob dotiku zahtevamo znova, če ga še nima.
+Future<void> _zaslonPrizganObDotiku() async {
+  try {
+    if (!await WakelockPlus.enabled) await WakelockPlus.enable();
+  } catch (_) {}
 }
 
 class SpadniBesedila extends StatelessWidget {
@@ -82,6 +96,10 @@ class SpadniBesedila extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Listener(onPointerDown: kIsWeb ? (_) => _zaslonPrizganObDotiku() : null, child: _aplikacija());
+  }
+
+  Widget _aplikacija() {
     return MaterialApp(
       navigatorKey: navigator,
       title: 'Špadni besedila',

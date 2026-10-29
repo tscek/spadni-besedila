@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
+import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import 'midi_zaslon.dart';
@@ -476,7 +477,8 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           PoljeMidi(oznaka: stolpec, vnos: _vnosi[stolpec]!, knjiznica: widget.baza.midi, pomoc: pomoc),
         Text(
           'Ukaze in makre izbereš z +, lahko jih je več (ločeni s ;). Pošlje jih vsaka naprava, '
-          'ki ima vklopljen MIDI (Nastavitve MIDI).',
+          'ki ima vklopljen MIDI (Nastavitve MIDI). Za vse pesmi veljata še makra '
+          '»${KnjiznicaMidi.makroOdprtja}« in »${KnjiznicaMidi.makroZaprtja}« (MIDI ukazi in makri → Makri).',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
