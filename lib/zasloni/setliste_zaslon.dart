@@ -195,23 +195,67 @@ class IgranjeZaslon extends StatefulWidget {
 class _IgranjeZaslonState extends State<IgranjeZaslon> {
   late int _i = widget.zacetek;
 
-  void _pojdi(int i) => setState(() => _i = i);
+  /// Pesem izven setliste, vrinjena za [_i] (s seznamčka ali iz iskalnika); naslednja je spet [_i] + 1.
+  Pesem? _vmes;
 
-  /// Nožno stikalo: naslednja in prejšnja pesem v setlisti.
-  bool _dejanje(DejanjeMidi d, int i, int dolzina) {
-    if (d != DejanjeMidi.naslednja && d != DejanjeMidi.prejsnja) return false;
-    final j = i + (d == DejanjeMidi.naslednja ? 1 : -1);
-    if (j >= 0 && j < dolzina) _pojdi(j);
-    return true;
-  }
+  void _pojdi(int i) => setState(() {
+    _i = i;
+    _vmes = null;
+  });
+
+  void _vrini(Pesem p) => setState(() => _vmes = p);
 
   List<(SetlistaPesem, Pesem)> get _vrsta => [
     for (final v in widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[])
       if (widget.baza.pesem(v.pesem) case final p?) (v, p),
   ];
 
+  /// Kaj pride naslednje: izbrana pesem s seznamčka (tiste »na konec« šele po zadnji pesmi setliste) ali naslednja v setlisti.
+  Pesem? _izbrana(int i, int dolzina) {
+    final n = widget.spil?.prvaNaslednja(naKonec: i + 1 >= dolzina);
+    return n == null ? null : widget.baza.pesem(n.pesem);
+  }
+
+  void _naprej(int i, int dolzina) {
+    final izbrana = _izbrana(i, dolzina);
+    if (izbrana != null) {
+      _vrini(izbrana);
+    } else if (i + 1 < dolzina) {
+      _pojdi(i + 1);
+    }
+  }
+
+  void _nazaj(int i) {
+    if (_vmes != null) {
+      _pojdi(i);
+    } else if (i > 0) {
+      _pojdi(i - 1);
+    }
+  }
+
+  /// Nožno stikalo: naslednja in prejšnja pesem v setlisti, izbrana pesem s seznamčka.
+  bool _dejanje(DejanjeMidi d, int i, int dolzina) {
+    switch (d) {
+      case DejanjeMidi.naslednja:
+        _naprej(i, dolzina);
+      case DejanjeMidi.prejsnja:
+        _nazaj(i);
+      case DejanjeMidi.izbrana:
+        if (widget.spil?.prvaNaslednja() case final n?) {
+          if (widget.baza.pesem(n.pesem) case final p?) _vrini(p);
+        }
+      default:
+        return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: widget.spil ?? widget.baza, builder: (context, _) => _zaslon(context));
+  }
+
+  Widget _zaslon(BuildContext context) {
     final vrsta = _vrsta;
     if (vrsta.isEmpty) {
       return Scaffold(
@@ -220,50 +264,35 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
       );
     }
     final i = _i.clamp(0, vrsta.length - 1);
-    final (v, p) = vrsta[i];
-    final naslednja = i + 1 < vrsta.length ? vrsta[i + 1].$2 : null;
-    final tema = Theme.of(context);
-    return NaMidi(
-      dejanje: (d) => _dejanje(d, i, vrsta.length),
-      child: _pesem(context, vrsta, i, v, p, naslednja, tema),
-    );
+    return NaMidi(dejanje: (d) => _dejanje(d, i, vrsta.length), child: _pesem(context, vrsta, i));
   }
 
-  Widget _pesem(
-    BuildContext context,
-    List<(SetlistaPesem, Pesem)> vrsta,
-    int i,
-    SetlistaPesem v,
-    Pesem p,
-    Pesem? naslednja,
-    ThemeData tema,
-  ) {
+  Widget _pesem(BuildContext context, List<(SetlistaPesem, Pesem)> vrsta, int i) {
+    final tema = Theme.of(context);
+    final (v, pesemSetliste) = vrsta[i];
+    final vmes = _vmes;
+    final p = vmes ?? pesemSetliste;
+    final izbrana = _izbrana(i, vrsta.length);
+    final naslednja = izbrana ?? (i + 1 < vrsta.length ? vrsta[i + 1].$2 : null);
     return PesemZaslon(
-      key: ValueKey('${p.id}-$i'),
-      // Pesem iz iskalnika: če je v setlisti, skoči nanjo, sicer se odpre nad setlisto.
+      key: ValueKey('${p.id}-$i-${vmes != null}'),
+      // Pesem iz iskalnika ali seznamčka: če je v setlisti, skoči nanjo, sicer se vrine za trenutno.
       odpri: (izbrana) {
         final j = vrsta.indexWhere((e) => e.$2.id == izbrana.id);
-        if (j >= 0) {
-          _pojdi(j);
-        } else {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) =>
-                  PesemZaslon(pesem: izbrana, baza: widget.baza, prijava: widget.prijava, spil: widget.spil),
-            ),
-          );
-        }
+        j >= 0 ? _pojdi(j) : _vrini(izbrana);
       },
       pesem: p,
       baza: widget.baza,
       prijava: widget.prijava,
       spil: widget.spil,
       // Indeks v celotni setlisti (tudi pesmi, ki jih ni več v repertoarju), da se ujema pri sledilcih.
-      stanje: StanjeSpila(
-        pesem: p.id,
-        setlista: widget.setlista.id,
-        indeks: (widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[]).indexOf(v),
-      ),
+      stanje: vmes != null
+          ? StanjeSpila(pesem: vmes.id)
+          : StanjeSpila(
+              pesem: p.id,
+              setlista: widget.setlista.id,
+              indeks: (widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[]).indexOf(v),
+            ),
       spodaj: Material(
         color: tema.colorScheme.surfaceContainer,
         child: SafeArea(
@@ -276,19 +305,23 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                   iconSize: 36,
                   tooltip: 'Prejšnja pesem',
                   icon: const Icon(Icons.skip_previous),
-                  onPressed: i > 0 ? () => _pojdi(i - 1) : null,
+                  onPressed: i > 0 || vmes != null ? () => _nazaj(i) : null,
                 ),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '${i + 1} / ${vrsta.length}${v.opomba.isEmpty ? '' : ' · ${v.opomba}'}',
+                        vmes != null
+                            ? 'Izven setliste (za ${i + 1} / ${vrsta.length})'
+                            : '${i + 1} / ${vrsta.length}${v.opomba.isEmpty ? '' : ' · ${v.opomba}'}',
                         style: tema.textTheme.labelLarge,
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        naslednja == null ? 'Konec setliste' : 'Naslednja: ${naslednja.koda} ${naslednja.naslov}',
+                        naslednja == null
+                            ? 'Konec setliste'
+                            : '${izbrana != null ? 'Izbrana' : 'Naslednja'}: ${naslednja.koda} ${naslednja.naslov}',
                         style: tema.textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -299,7 +332,7 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                   iconSize: 36,
                   tooltip: 'Naslednja pesem',
                   icon: const Icon(Icons.skip_next),
-                  onPressed: naslednja != null ? () => _pojdi(i + 1) : null,
+                  onPressed: naslednja != null ? () => _naprej(i, vrsta.length) : null,
                 ),
               ],
             ),

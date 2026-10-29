@@ -21,15 +21,21 @@ StreznikVodje? ustvariStreznik() => StreznikIo();
 class StreznikIo implements StreznikVodje {
   HttpServer? _streznik;
   final _odjemalci = <WebSocket>{};
-  String? _zadnje;
+  final _zadnje = <String, String>{};
+  void Function(Map<String, dynamic>)? _obSporocilu;
   Map<String, Uint8List> _splet = {};
   void Function(int)? _obSpremembi;
   RawDatagramSocket? _oddajnik;
   Timer? _oddajanje;
 
   @override
-  Future<String> zacni(Baza baza, void Function(int sledilcev) obSpremembi) async {
+  Future<String> zacni(
+    Baza baza,
+    void Function(int sledilcev) obSpremembi, {
+    void Function(Map<String, dynamic> sporocilo)? obSporocilu,
+  }) async {
     _obSpremembi = obSpremembi;
+    _obSporocilu = obSporocilu;
     _splet = await _naloziSplet();
     final s = await HttpServer.bind(InternetAddress.anyIPv4, Config.vrataVodje, shared: true);
     _streznik = s;
@@ -81,7 +87,9 @@ class StreznikIo implements StreznikVodje {
 
   @override
   void poslji(String sporocilo) {
-    _zadnje = sporocilo;
+    try {
+      _zadnje[(jsonDecode(sporocilo) as Map)['vrsta']?.toString() ?? ''] = sporocilo;
+    } catch (_) {}
     for (final ws in _odjemalci.toList()) {
       try {
         ws.add(sporocilo);
@@ -112,9 +120,16 @@ class StreznikIo implements StreznikVodje {
       ws.pingInterval = const Duration(seconds: 5);
       _odjemalci.add(ws);
       _obSpremembi?.call(_odjemalci.length);
-      if (_zadnje != null) ws.add(_zadnje);
+      for (final m in _zadnje.values) {
+        ws.add(m);
+      }
       ws.listen(
-        null,
+        (m) {
+          try {
+            final j = jsonDecode(m as String);
+            if (j is Map<String, dynamic>) _obSporocilu?.call(j);
+          } catch (_) {}
+        },
         onDone: () {
           _odjemalci.remove(ws);
           _obSpremembi?.call(_odjemalci.length);

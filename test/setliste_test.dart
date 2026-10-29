@@ -45,7 +45,11 @@ class _Streznik implements StreznikVodje {
   final poslano = <Map<String, dynamic>>[];
 
   @override
-  Future<String> zacni(Baza baza, void Function(int) obSpremembi) async => 'http://10.0.0.2:8765';
+  Future<String> zacni(
+    Baza baza,
+    void Function(int) obSpremembi, {
+    void Function(Map<String, dynamic>)? obSporocilu,
+  }) async => 'http://10.0.0.2:8765';
 
   @override
   void poslji(String sporocilo) => poslano.add(jsonDecode(sporocilo) as Map<String, dynamic>);
@@ -120,6 +124,43 @@ void main() {
     expect(baza.setliste.any((s) => s.id == 'x'), isFalse);
     expect(baza.pesmiSetlist['x'], isNull);
     expect(poslano.last['izbrisi'], isTrue);
+  });
+
+  testWidgets('igranje po setlisti s seznamčkom: izbrana pesem se vrine, »na konec« pride po setlisti', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: IgranjeZaslon(setlista: baza.setliste.first, baza: baza, prijava: Prijava(), spil: spil),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
+
+    spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
+    spil.dodajNaslednjo(const Naslednja(pesem: 'c', naKonec: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Izbrana: 1003 BOG TE ŽIVI'), findsOneWidget);
+    expect(find.text('Naslednja: 1003 BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
+
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('1003  BOG TE ŽIVI'), findsOneWidget);
+    expect(find.text('Izven setliste (za 1 / 3)'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), ['c']); // odprta gre s seznamčka
+
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 3'), findsOneWidget);
+    expect(find.text('Izbrana: 1004 ČEŠNJE'), findsOneWidget);
+    await tester.tap(find.byTooltip('Naslednja pesem'));
+    await tester.pumpAndSettle();
+    expect(find.text('Izven setliste (za 3 / 3)'), findsOneWidget);
+    expect(spil.naslednje, isEmpty);
   });
 
   testWidgets('igranje po setlisti: naslednja in prejšnja pesem', (tester) async {

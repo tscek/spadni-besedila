@@ -38,6 +38,21 @@ class StanjeSpila {
   int get hashCode => Object.hash(pesem, setlista, indeks);
 }
 
+/// Pesem v seznamčku naslednjih: kdo jo je dodal in ali gre (v setlisti) na konec.
+@immutable
+class Naslednja {
+  const Naslednja({required this.pesem, this.kdo = '', this.naKonec = false});
+
+  factory Naslednja.izJson(Map<String, dynamic> j) =>
+      Naslednja(pesem: j['pesem'] as String, kdo: j['kdo'] as String? ?? '', naKonec: j['naKonec'] == true);
+
+  final String pesem;
+  final String kdo;
+  final bool naKonec;
+
+  Map<String, dynamic> vJson() => {'pesem': pesem, if (kdo.isNotEmpty) 'kdo': kdo, if (naKonec) 'naKonec': true};
+}
+
 enum VlogaSpila { nic, vodja, sledilec }
 
 /// Sinhronizacija na špilu prek lokalnega WiFi-ja (brez interneta).
@@ -53,6 +68,12 @@ class Spil extends ChangeNotifier {
 
   VlogaSpila vloga = VlogaSpila.nic;
   StanjeSpila? stanje;
+
+  /// Seznamček naslednjih pesmi; hrani ga vodja, sledilci dobijo kopijo (brez špila je samo na tej napravi).
+  List<Naslednja> naslednje = const [];
+
+  /// Vodja: pesem, ki jo je sledilec s pravico zamenjal vsem; aplikacija jo odpre tudi na vodji.
+  final zahtevanaPesem = ValueNotifier<StanjeSpila?>(null);
   String? napaka;
 
   /// Vodja: naslov, ki ga odprejo iPadi (npr. http://192.168.1.5:8765).
@@ -100,12 +121,13 @@ class Spil extends ChangeNotifier {
       naslov = await s.zacni(baza, (n) {
         sledilcev = n;
         notifyListeners();
-      });
+      }, obSporocilu: _odSledilca);
       _streznik = s;
       vloga = VlogaSpila.vodja;
       napaka = null;
       stanje = _prikazano ?? stanje;
       if (stanje != null) s.poslji(jsonEncode(stanje!.vJson()));
+      _objaviNaslednje();
     } catch (e) {
       napaka = 'Strežnika ni bilo mogoče zagnati: $e';
     }
@@ -113,10 +135,88 @@ class Spil extends ChangeNotifier {
   }
 
   /// Zaslon s pesmijo pove, kaj kaže; vodja to pošlje sledilcem.
+  /// Pesem, ki se odpre, gre s seznamčka naslednjih (pri vodji ali brez špila).
   void prikazujem(StanjeSpila s) {
     _prikazano = s;
     if (vloga == VlogaSpila.vodja) objavi(s);
+    if (vloga != VlogaSpila.sledilec && naslednje.any((n) => n.pesem == s.pesem)) {
+      _nastaviNaslednje([...naslednje.where((n) => n.pesem != s.pesem)]);
+    }
   }
+
+  /// Doda pesem med naslednje (lahko vsak). Sledilec jo pošlje vodji, ta pa seznamček vsem.
+  void dodajNaslednjo(Naslednja n) => _spremeni({'ukaz': 'dodaj', ...n.vJson()});
+
+  /// Odstrani [i]-to pesem s seznamčka.
+  void odstraniNaslednjo(int i) => _spremeni({'ukaz': 'odstrani', 'i': i, 'pesem': naslednje[i].pesem});
+
+  /// Sledilec s pravico: vsem (tudi vodji) pokaže to pesem.
+  void zamenjajVsem(StanjeSpila s) {
+    if (vloga == VlogaSpila.sledilec) {
+      _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.vJson()});
+    } else {
+      zahtevanaPesem.value = s;
+    }
+  }
+
+  /// Prva pesem s seznamčka, ki je na vrsti; z [naKonec] false brez tistih za konec setliste.
+  Naslednja? prvaNaslednja({bool naKonec = true}) => naslednje.where((n) => naKonec || !n.naKonec).firstOrNull;
+
+  void _spremeni(Map<String, dynamic> ukaz) {
+    if (vloga == VlogaSpila.sledilec) {
+      _posljiVodji({'vrsta': 'ukaz', ...ukaz});
+    } else {
+      _izvedi(ukaz);
+    }
+  }
+
+  void _posljiVodji(Map<String, dynamic> sporocilo) {
+    try {
+      _kanal?.sink.add(jsonEncode(sporocilo));
+    } catch (_) {}
+  }
+
+  /// Vodja: sporočilo sledilca.
+  void _odSledilca(Map<String, dynamic> j) {
+    if (j['vrsta'] != 'ukaz') return;
+    if (j['ukaz'] == 'prikazi' && j['stanje'] is Map) {
+      zahtevanaPesem.value = StanjeSpila.izJson((j['stanje'] as Map).cast<String, dynamic>());
+      return;
+    }
+    _izvedi(j);
+  }
+
+  void _izvedi(Map<String, dynamic> u) {
+    final pesem = u['pesem']?.toString() ?? '';
+    // Indeks velja, če se ujema pesem (seznamček se je medtem lahko spremenil).
+    int indeks() {
+      final i = (u['i'] as num?)?.toInt() ?? -1;
+      return i >= 0 && i < naslednje.length && naslednje[i].pesem == pesem
+          ? i
+          : naslednje.indexWhere((n) => n.pesem == pesem);
+    }
+
+    switch (u['ukaz']) {
+      case 'dodaj' when pesem.isNotEmpty:
+        _nastaviNaslednje([...naslednje, Naslednja.izJson(u)]);
+      case 'odstrani':
+        final i = indeks();
+        if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));
+    }
+  }
+
+  void _nastaviNaslednje(List<Naslednja> n) {
+    naslednje = List.unmodifiable(n);
+    _objaviNaslednje();
+    notifyListeners();
+  }
+
+  void _objaviNaslednje() => _streznik?.poslji(
+    jsonEncode({
+      'vrsta': 'naslednje',
+      'seznam': [for (final n in naslednje) n.vJson()],
+    }),
+  );
 
   /// Sledilec: poišče vodjo na WiFi-ju (vodja svoj naslov oddaja vsaki 2 s) in se z njim poveže.
   /// Če je podan [zadnji] naslov, se z njim poveže takoj, dokler se vodja ne oglasi.
@@ -184,6 +284,12 @@ class Spil extends ChangeNotifier {
           if (j['vrsta'] == 'stanje') {
             stanje = StanjeSpila.izJson(j);
             notifyListeners();
+          } else if (j['vrsta'] == 'naslednje') {
+            naslednje = List.unmodifiable([
+              for (final n in (j['seznam'] as List?) ?? const [])
+                if (n is Map) Naslednja.izJson(n.cast<String, dynamic>()),
+            ]);
+            notifyListeners();
           }
         },
         onError: (Object _) => _prekinjeno(kanal),
@@ -220,6 +326,8 @@ class Spil extends ChangeNotifier {
     await _iskanje?.cancel();
     _iskanje = null;
     najdeniVodje.clear();
+    // Kopija vodjevega seznamčka ne velja več.
+    if (vloga == VlogaSpila.sledilec) naslednje = const [];
     _ustaviSledenje();
     _naslovVodje = null;
     await _streznik?.ustavi();

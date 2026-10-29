@@ -153,6 +153,41 @@ void main() {
     expect(midi.dnevnik.single.opis, startsWith('Delay ON: CC'));
   });
 
+  test('seznamček naslednjih: vsi dodajajo in vidijo, odprta pesem gre s seznamčka', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    final sledilec = Spil();
+    addTearDown(() async {
+      await sledilec.ustavi();
+      await vodja.ustavi();
+    });
+    await vodja.zacniVoditi(baza);
+    vodja.dodajNaslednjo(const Naslednja(pesem: 'a', kdo: 'Tomaž'));
+
+    // Sledilec, ki se poveže kasneje, takoj dobi seznamček.
+    sledilec.sledi(Uri.parse('ws://127.0.0.1:${Config.vrataVodje}/ws'));
+    await _pocakaj(() => sledilec.naslednje.length == 1);
+
+    // Sledilec doda pesem; vodja jo doda in vsem pošlje nov seznamček.
+    sledilec.dodajNaslednjo(const Naslednja(pesem: 'b', kdo: 'Nina', naKonec: true));
+    await _pocakaj(() => vodja.naslednje.length == 2 && sledilec.naslednje.length == 2);
+    expect(sledilec.naslednje.last.kdo, 'Nina');
+    expect(vodja.prvaNaslednja(naKonec: false)?.pesem, 'a');
+
+    // Vodja odpre pesem s seznamčka: gre z njega pri vseh.
+    vodja.prikazujem(const StanjeSpila(pesem: 'a'));
+    await _pocakaj(() => sledilec.naslednje.length == 1);
+    expect(vodja.prvaNaslednja(naKonec: false), isNull);
+    expect(vodja.prvaNaslednja()?.pesem, 'b');
+
+    sledilec.odstraniNaslednjo(0);
+    await _pocakaj(() => vodja.naslednje.isEmpty && sledilec.naslednje.isEmpty);
+
+    // Sledilec s pravico zamenja pesem vsem: vodja dobi zahtevo, da jo odpre.
+    sledilec.zamenjajVsem(const StanjeSpila(pesem: 'b'));
+    await _pocakaj(() => vodja.zahtevanaPesem.value?.pesem == 'b');
+  });
+
   test('sledilec sam najde vodjo in dobi tudi pesmi izven setliste', () async {
     final baza = await _baza();
     final vodja = Spil();

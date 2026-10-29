@@ -13,6 +13,7 @@ import '../spil/spil.dart';
 import 'besedilo_risanje.dart';
 import 'iskalnik_pesmi.dart';
 import 'midi_zaslon.dart';
+import 'naslednje.dart';
 import 'pdf_risanje.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -160,6 +161,14 @@ class _PesemZaslonState extends State<PesemZaslon> {
       setState(() => _iskalnik = true);
       return true;
     }
+    // Izbrana pesem s seznamčka; v setlisti in pri sledenju (odpri je podan) naslednjo vodi zaslon okoli pesmi.
+    final izbrana = widget.spil?.prvaNaslednja();
+    if (izbrana != null &&
+        (d == DejanjeMidi.izbrana || (d == DejanjeMidi.naslednja && widget.odpri == null)) &&
+        widget.baza.pesem(izbrana.pesem) != null) {
+      _odpri(widget.baza.pesem(izbrana.pesem)!);
+      return true;
+    }
     final seznam = widget.seznam;
     if (seznam != null && (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja)) {
       final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + (d == DejanjeMidi.naslednja ? 1 : -1);
@@ -174,7 +183,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     return NaMidi(
       dejanje: _dejanje,
       child: ListenableBuilder(
-        listenable: Listenable.merge([widget.baza, Midi.aplikacija]),
+        listenable: Listenable.merge([widget.baza, Midi.aplikacija, ?widget.spil]),
         builder: (context, _) => _zaslon(context),
       ),
     );
@@ -238,6 +247,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
         title: Text('${p.koda}  ${p.naslov}'),
         actions: [
           if (widget.spil case final spil?) SpilGumb(spil: spil, baza: widget.baza, prijava: widget.prijava),
+          if (widget.spil case final spil?)
+            IconButton(
+              tooltip: 'Dodaj med naslednje',
+              icon: const Icon(Icons.playlist_add),
+              onPressed: () => dodajMedNaslednje(context, spil, widget.baza, p),
+            ),
           IconButton(
             tooltip: 'Išči pesem',
             icon: const Icon(Icons.search),
@@ -272,10 +287,14 @@ class _PesemZaslonState extends State<PesemZaslon> {
         ],
       ),
       body: _telo(context),
-      bottomNavigationBar: switch ((_vrsticaGumbov(context), widget.spodaj)) {
-        (null, final spodaj) => spodaj,
-        (final gumbi?, null) => gumbi,
-        (final gumbi?, final spodaj?) => Column(mainAxisSize: MainAxisSize.min, children: [gumbi, spodaj]),
+      bottomNavigationBar: switch ([
+        ?vrsticaNaslednjih(context, widget.spil, widget.baza, _odpri),
+        ?_vrsticaGumbov(context),
+        ?widget.spodaj,
+      ]) {
+        [] => null,
+        [final en] => en,
+        final vse => Column(mainAxisSize: MainAxisSize.min, children: vse),
       },
     );
   }

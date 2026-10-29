@@ -10,6 +10,7 @@ import '../prijava.dart';
 import '../spil/spil.dart';
 import 'midi_zaslon.dart';
 import 'iskalnik_pesmi.dart';
+import 'naslednje.dart';
 import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
@@ -52,6 +53,10 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         izbira?.potrdi();
       case DejanjeMidi.iskalnik:
         _iskanjeFokus.requestFocus();
+      case DejanjeMidi.izbrana:
+        final p = widget.baza.pesem(widget.spil.prvaNaslednja()?.pesem ?? '');
+        if (p == null) return false;
+        _odpri(p, [p]);
       default:
         return false;
     }
@@ -105,6 +110,11 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
 
   Widget _zaslon(BuildContext context, Baza baza, List<String> zvrsti, List<Pesem> pesmi) {
     return Scaffold(
+      bottomNavigationBar: ListenableBuilder(
+        listenable: widget.spil,
+        builder: (context, _) =>
+            vrsticaNaslednjih(context, widget.spil, baza, (p) => _odpri(p, pesmi)) ?? const SizedBox.shrink(),
+      ),
       floatingActionButton: baza.smeUrejati
           ? FloatingActionButton.extended(
               onPressed: _novaPesem,
@@ -292,6 +302,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         ],
       ),
       onTap: () => _odpri(p, seznam),
+      onLongPress: () => dodajMedNaslednje(context, widget.spil, widget.baza, p),
     );
   }
 

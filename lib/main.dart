@@ -8,6 +8,7 @@ import 'baza.dart';
 import 'posodobitev.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
+import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
 import 'midi/midi.dart';
 import 'zasloni/seznam_zaslon.dart';
@@ -61,6 +62,18 @@ Future<void> main() async {
   }
   final navigator = GlobalKey<NavigatorState>();
   if (!Config.prekoVodje) SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+  // Vodja: sledilec s pravico je izbral pesem za vse; odpre se tudi pri vodji (in se tako pošlje vsem).
+  spil.zahtevanaPesem.addListener(() {
+    final s = spil.zahtevanaPesem.value;
+    final p = s == null ? null : baza.pesem(s.pesem);
+    if (p == null) return;
+    spil.zahtevanaPesem.value = null;
+    navigator.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil, stanje: s),
+      ),
+    );
+  });
   // Med igranjem se zaslon ne sme ugasniti: ob zagonu in ob vsaki vrnitvi v aplikacijo.
   _zaslonPrizgan();
   AppLifecycleListener(onResume: _zaslonPrizgan);

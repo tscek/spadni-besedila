@@ -4,8 +4,14 @@ import 'streznik_web.dart' if (dart.library.io) 'streznik_io.dart' as izvedba;
 /// Strežnik vodje na lokalnem WiFi-ju: ponuja spletno različico in podatke iPadom ter
 /// pošilja stanje špila vsem sledilcem prek WebSocketa.
 abstract class StreznikVodje {
-  /// Zažene strežnik in vrne naslov, ki ga odprejo sledilci.
-  Future<String> zacni(Baza baza, void Function(int sledilcev) obSpremembi);
+  /// Zažene strežnik in vrne naslov, ki ga odprejo sledilci. [obSporocilu] dobi sporočila sledilcev.
+  Future<String> zacni(
+    Baza baza,
+    void Function(int sledilcev) obSpremembi, {
+    void Function(Map<String, dynamic> sporocilo)? obSporocilu,
+  });
+
+  /// Pošlje sporočilo vsem sledilcem; zadnje sporočilo vsake vrste dobi tudi sledilec, ki se poveže kasneje.
   void poslji(String sporocilo);
   Future<void> ustavi();
 }
