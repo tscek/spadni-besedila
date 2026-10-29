@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -8,9 +9,12 @@ import '../risbe.dart';
 /// PDF z osebnim slojem risb in opomb. V načinu risanja je premikanje PDF-ja izklopljeno,
 /// da poteze s prstom ali pisalom rišejo, namesto da bi drsele po strani.
 class PdfZRisanjem extends StatefulWidget {
-  const PdfZRisanjem({super.key, required this.pot, required this.pesem, required this.risbe});
+  const PdfZRisanjem({super.key, required this.pdf, required this.ime, required this.pesem, required this.risbe});
 
-  final String pot;
+  final Uint8List pdf;
+
+  /// Ime vira za pdfrx (Drive ID), da se dokument ob ponovnem izrisu ne naloži znova.
+  final String ime;
   final String pesem;
   final Risbe risbe;
 
@@ -198,8 +202,9 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        PdfViewer.file(
-          widget.pot,
+        PdfViewer.data(
+          widget.pdf,
+          sourceName: widget.ime,
           params: PdfViewerParams(panEnabled: !_risem, scaleEnabled: !_risem, pageOverlaysBuilder: _sloj),
         ),
         if (_risem) Positioned(left: 0, right: 0, bottom: 0, child: _orodjarna(context)),

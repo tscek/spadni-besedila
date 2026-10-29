@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 
 import 'api.dart';
+import 'shramba/shramba.dart';
 
 /// Osebne risbe in opombe člana nad PDF-ji. Koordinate so relativne na stran (0..1),
 /// zato ostanejo na istem mestu ne glede na velikost zaslona ali povečavo.
@@ -113,38 +113,34 @@ class Risba {
   Risba kopija() => Risba.izBesedila(vBesedilo());
 }
 
-/// Shramba risb: lokalne datoteke `risbe/<pesem>.json`, kopija na Drivu prek skripte.
+/// Shramba risb: lokalno pod ključi `risbe/<pesem>.json`, kopija na Drivu prek skripte.
 /// Spremembe, ki še niso na strežniku, so zapisane v `risbe/_neposlano.json`.
 class Risbe {
-  Risbe(this._koren);
+  Risbe(this._shramba);
 
-  final Future<Directory> Function() _koren;
+  final Shramba _shramba;
   Api? api;
   Set<String>? _neposlano;
   Timer? _odlozenoPosiljanje;
 
-  Future<Directory> _mapa() async => Directory('${(await _koren()).path}/risbe');
-  Future<File> _datoteka(String pesem) async => File('${(await _mapa()).path}/$pesem.json');
-  Future<File> _datotekaNeposlanih() async => File('${(await _mapa()).path}/_neposlano.json');
+  static String _kljuc(String pesem) => 'risbe/$pesem.json';
+  static const _kljucNeposlanih = 'risbe/_neposlano.json';
 
   Future<Set<String>> _neposlane() async {
     if (_neposlano != null) return _neposlano!;
-    final f = await _datotekaNeposlanih();
-    _neposlano = await f.exists() ? (jsonDecode(await f.readAsString()) as List).cast<String>().toSet() : <String>{};
+    final s = await _shramba.beriBesedilo(_kljucNeposlanih);
+    _neposlano = s != null ? (jsonDecode(s) as List).cast<String>().toSet() : <String>{};
     return _neposlano!;
   }
 
-  Future<void> _zapisiNeposlane() async {
-    final f = await _datotekaNeposlanih();
-    await f.parent.create(recursive: true);
-    await f.writeAsString(jsonEncode((await _neposlane()).toList()));
-  }
+  Future<void> _zapisiNeposlane() async =>
+      _shramba.pisiBesedilo(_kljucNeposlanih, jsonEncode((await _neposlane()).toList()));
 
   Future<Risba> nalozi(String pesem) async {
-    final f = await _datoteka(pesem);
-    if (!await f.exists()) return Risba();
+    final s = await _shramba.beriBesedilo(_kljuc(pesem));
+    if (s == null) return Risba();
     try {
-      return Risba.izBesedila(await f.readAsString());
+      return Risba.izBesedila(s);
     } on FormatException {
       return Risba();
     }
@@ -153,12 +149,10 @@ class Risbe {
   /// Shrani lokalno takoj, na strežnik pa nekaj sekund kasneje (več potez v enem pošiljanju).
   Future<void> shrani(String pesem, Risba risba) async {
     risba.spremenjeno = DateTime.now().toUtc();
-    final f = await _datoteka(pesem);
-    await f.parent.create(recursive: true);
     if (risba.prazna) {
-      if (await f.exists()) await f.delete();
+      await _shramba.izbrisi(_kljuc(pesem));
     } else {
-      await f.writeAsString(risba.vBesedilo());
+      await _shramba.pisiBesedilo(_kljuc(pesem), risba.vBesedilo());
     }
     (await _neposlane()).add(pesem);
     await _zapisiNeposlane();
@@ -172,8 +166,7 @@ class Risbe {
     if (a == null) return;
     final neposlano = await _neposlane();
     for (final pesem in neposlano.toList()) {
-      final f = await _datoteka(pesem);
-      final vsebina = await f.exists() ? await f.readAsString() : '';
+      final vsebina = await _shramba.beriBesedilo(_kljuc(pesem)) ?? '';
       try {
         await a.risba(pesem, vsebina);
         neposlano.remove(pesem);
@@ -203,9 +196,7 @@ class Risbe {
       }
       final lokalna = await nalozi(e.key);
       if (nova.spremenjeno.isAfter(lokalna.spremenjeno)) {
-        final f = await _datoteka(e.key);
-        await f.parent.create(recursive: true);
-        await f.writeAsString(vsebina);
+        await _shramba.pisiBesedilo(_kljuc(e.key), vsebina);
       }
     }
   }

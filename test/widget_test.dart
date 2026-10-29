@@ -8,6 +8,7 @@ import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/chordpro.dart';
 import 'package:spadni_besedila/models.dart';
+import 'package:spadni_besedila/shramba/shramba_datoteke.dart';
 
 void main() {
   group('chordpro', () {
@@ -171,16 +172,16 @@ void main() {
       }),
     );
 
-    final baza = Baza(mapa: mapa);
+    final baza = Baza(shramba: ShrambaDatoteke(() async => mapa));
     await baza.osvezi(api);
 
     expect(baza.napaka, isNull);
     expect(baza.pesmi.map((p) => p.koda), ['1002', '2001']);
     expect(baza.besedilaPesmi['b']!.single.vsebina, '[C]La');
-    expect(await (await baza.datotekaPdf('drive1')).readAsBytes(), pdfBytes);
+    expect(await baza.pdf('drive1'), pdfBytes);
     expect(baza.urednikSkupine, ['ea98d692']);
 
-    final ponovno = Baza(mapa: mapa);
+    final ponovno = Baza(shramba: ShrambaDatoteke(() async => mapa));
     await ponovno.nalozi();
     expect(ponovno.pesmi.length, 2);
   });

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/risbe.dart';
+import 'package:spadni_besedila/shramba/shramba_datoteke.dart';
 
 Risba _primer() => Risba()
   ..potezeStrani(1).add(
@@ -58,7 +59,7 @@ void main() {
       }),
     );
 
-    final risbe = Risbe(() async => mapa);
+    final risbe = Risbe(ShrambaDatoteke(() async => mapa));
     await risbe.shrani('moja', _primer());
     expect((await risbe.nalozi('moja')).opombe[2]!.single.besedilo, 'Refren 2x');
 

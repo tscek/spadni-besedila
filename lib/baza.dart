@@ -1,21 +1,19 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'api.dart';
 import 'models.dart';
 import 'risbe.dart';
+import 'shramba/shramba.dart';
 
-/// Lokalna kopija baze: podatki v baza.json, PDF-ji v mapi pdf/. Na špilu se bere samo od tu.
+/// Lokalna kopija baze: podatki v baza.json, PDF-ji pod pdf/. Na špilu se bere samo od tu.
 class Baza extends ChangeNotifier {
-  Baza({this.mapa}) {
-    risbe = Risbe(_koren);
+  Baza({Shramba? shramba}) : shramba = shramba ?? Shramba() {
+    risbe = Risbe(this.shramba);
   }
 
-  /// Mapa za lokalno kopijo; privzeto podatkovna mapa aplikacije.
-  Directory? mapa;
+  final Shramba shramba;
   List<Pesem> pesmi = [];
   Map<String, List<PdfDatoteka>> pdfjiPesmi = {};
   Map<String, List<BesediloPesmi>> besedilaPesmi = {};
@@ -33,15 +31,15 @@ class Baza extends ChangeNotifier {
   String? stanje;
   String? napaka;
 
-  Future<Directory> _koren() async => mapa ??= await getApplicationSupportDirectory();
-  Future<File> _datotekaPodatkov() async => File('${(await _koren()).path}/baza.json');
-  Future<File> datotekaPdf(String driveId) async => File('${(await _koren()).path}/pdf/$driveId.pdf');
+  static const _kljucPodatkov = 'baza.json';
+  static String _kljucPdf(String driveId) => 'pdf/$driveId.pdf';
+
+  /// Lokalno shranjen PDF ali null, če še ni prenesen.
+  Future<Uint8List?> pdf(String driveId) => shramba.beriBajte(_kljucPdf(driveId));
 
   Future<void> nalozi() async {
-    final f = await _datotekaPodatkov();
-    if (await f.exists()) {
-      _uporabi(jsonDecode(await f.readAsString()) as Map<String, dynamic>);
-    }
+    final s = await shramba.beriBesedilo(_kljucPodatkov);
+    if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
     notifyListeners();
   }
 
@@ -80,16 +78,14 @@ class Baza extends ChangeNotifier {
     notifyListeners();
     try {
       final podatki = await api.podatki();
-      final f = await _datotekaPodatkov();
-      await f.parent.create(recursive: true);
-      await f.writeAsString(jsonEncode(podatki));
+      await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(podatki));
       _uporabi(podatki);
 
-      final vsi = pdfjiPesmi.values.expand((l) => l).toList();
-      final manjkajo = <PdfDatoteka>[];
-      for (final p in vsi) {
-        if (!await (await datotekaPdf(p.driveId)).exists()) manjkajo.add(p);
-      }
+      final preneseni = await shramba.kljuci('pdf/');
+      final manjkajo = [
+        for (final p in pdfjiPesmi.values.expand((l) => l))
+          if (!preneseni.contains(_kljucPdf(p.driveId))) p,
+      ];
       var koncanih = 0;
       final neuspeli = <String>[];
       final vrsta = List.of(manjkajo);
@@ -99,13 +95,7 @@ class Baza extends ChangeNotifier {
         while (vrsta.isNotEmpty) {
           final p = vrsta.removeLast();
           try {
-            final bytes = await api.pdf(p.driveId);
-            final cilj = await datotekaPdf(p.driveId);
-            await cilj.parent.create(recursive: true);
-            // Najprej začasna datoteka, da prekinjen prenos ne pusti pokvarjenega PDF-ja.
-            final zacasna = File('${cilj.path}.del');
-            await zacasna.writeAsBytes(bytes, flush: true);
-            await zacasna.rename(cilj.path);
+            await shramba.pisiBajte(_kljucPdf(p.driveId), await api.pdf(p.driveId));
           } catch (e) {
             neuspeli.add(p.driveId);
           }
@@ -190,9 +180,7 @@ class Baza extends ChangeNotifier {
       vrstice.add(vrstica);
     }
     tabele[tabela] = vrstice;
-    final f = await _datotekaPodatkov();
-    await f.parent.create(recursive: true);
-    await f.writeAsString(jsonEncode(_podatki));
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
     _uporabi(_podatki);
     notifyListeners();
   }

@@ -1,14 +1,15 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:idb_shim/idb_client_memory.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/chordpro.dart';
 import 'package:spadni_besedila/models.dart';
+import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/zasloni/urejanje_besedila.dart';
 import 'package:spadni_besedila/zasloni/urejanje_pesmi.dart';
 
@@ -21,8 +22,8 @@ void main() {
   });
 
   test('urejanje: shrani pesem in besedilo v lokalno kopijo, brisanje odstrani besedilo', () async {
-    final mapa = await Directory.systemTemp.createTemp('urejanje');
-    addTearDown(() => mapa.delete(recursive: true));
+    // Ista shramba kot v brskalniku (IndexedDB), le v pomnilniku.
+    final shramba = ShrambaIdb(newIdbFactoryMemory());
     final poslano = <Map<String, dynamic>>[];
     final api = Api(
       () async => 'zeton',
@@ -70,7 +71,7 @@ void main() {
       }),
     );
 
-    final baza = Baza(mapa: mapa);
+    final baza = Baza(shramba: shramba);
     await baza.osvezi(api);
     expect(baza.smeUrejatiPesem(baza.pesmi.first), isTrue);
     expect(baza.smeUrejatiPesem(baza.pesmi.last), isFalse);
@@ -84,7 +85,7 @@ void main() {
     expect(baza.besedilaPesmi['nova']!.single.vsebina, '[C]La');
 
     // Spremembe ostanejo tudi po ponovnem zagonu brez interneta.
-    final ponovno = Baza(mapa: mapa);
+    final ponovno = Baza(shramba: shramba);
     await ponovno.nalozi();
     expect(ponovno.pesmi.first.naslov, 'Popravljena');
     expect(ponovno.besedilaPesmi['nova'], isNotNull);

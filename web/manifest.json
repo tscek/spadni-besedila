@@ -1,12 +1,12 @@
 {
-    "name": "spadni_besedila",
-    "short_name": "spadni_besedila",
+    "name": "Špadni besedila",
+    "short_name": "Besedila",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#1E1B13",
+    "theme_color": "#1E1B13",
+    "description": "Besedila, akordi in note ansambla Špadni fantje.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
@@ -31,5 +31,6 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "lang": "sl"
 }

@@ -1,75 +1,140 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'config.dart';
 
-/// Google prijava. ID žeton velja eno uro, zato se pred vsakim klicem osveži brez interakcije.
+/// Google prijava. ID žeton velja eno uro, zato se pred iztekom osveži brez interakcije.
+///
+/// Na Androidu prijava teče prek sistemskega okna, v brskalniku prek Googlovega gumba
+/// (glej `gumb_prijave_web.dart`) in samodejne prijave One Tap; v obeh primerih
+/// rezultat pride po toku [GoogleSignIn.authenticationEvents].
 class Prijava extends ChangeNotifier {
   final _gsi = GoogleSignIn.instance;
   GoogleSignInAccount? racun;
   String? napaka;
-  bool _pripravljena = false;
+  Future<void>? _priprava;
+
+  String? _idZeton;
+  Completer<void>? _cakamZeton;
 
   bool get nastavljena => Config.googleServerClientId.isNotEmpty;
 
-  Future<void> zacni() async {
+  Future<void> zacni() => _priprava ??= _zacni();
+
+  Future<void> _zacni() async {
     if (!nastavljena) return;
-    await _gsi.initialize(serverClientId: Config.googleServerClientId);
-    _pripravljena = true;
+    // V brskalniku je isti "Web application" client ID clientId, na Androidu serverClientId.
+    await _gsi.initialize(
+      clientId: kIsWeb ? Config.googleServerClientId : null,
+      serverClientId: kIsWeb ? null : Config.googleServerClientId,
+    );
+    _gsi.authenticationEvents.listen(
+      _dogodek,
+      onError: (Object e) {
+        if (e is GoogleSignInException && e.code == GoogleSignInExceptionCode.canceled) return;
+        napaka = 'Prijava ni uspela: ${e is GoogleSignInException ? (e.description ?? e.code.name) : e}';
+        notifyListeners();
+      },
+    );
     try {
-      racun = await _gsi.attemptLightweightAuthentication();
+      final r = await _gsi.attemptLightweightAuthentication();
+      if (r != null) _prijavljen(r);
     } catch (_) {
-      racun = null;
+      // brez interneta ali brez prejšnje prijave
     }
+  }
+
+  void _dogodek(GoogleSignInAuthenticationEvent e) {
+    switch (e) {
+      case GoogleSignInAuthenticationEventSignIn():
+        _prijavljen(e.user);
+      case GoogleSignInAuthenticationEventSignOut():
+        racun = null;
+        _idZeton = null;
+        notifyListeners();
+    }
+  }
+
+  void _prijavljen(GoogleSignInAccount r) {
+    racun = r;
+    napaka = null;
+    _idZeton = r.authentication.idToken;
+    _cakamZeton?.complete();
+    _cakamZeton = null;
     notifyListeners();
   }
 
+  /// Prijava s sistemskim oknom (Android). V brskalniku se uporabi Googlov gumb.
   Future<void> prijavi() async {
     napaka = null;
     try {
-      if (!_pripravljena) await zacni();
-      racun = await _gsi.authenticate();
+      await zacni();
+      _prijavljen(await _gsi.authenticate());
     } on GoogleSignInException catch (e) {
       napaka = e.code == GoogleSignInExceptionCode.canceled
           ? null
           : 'Prijava ni uspela: ${e.description ?? e.code.name}';
+      notifyListeners();
     } catch (e) {
       napaka = 'Prijava ni uspela: $e';
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> odjavi() async {
     await _gsi.signOut();
     racun = null;
-    _zeton = null;
+    _idZeton = null;
     notifyListeners();
   }
 
-  // ID žeton velja eno uro; isti uporabimo 45 minut, da vsak klic ne čaka na osvežitev.
-  Future<String>? _zeton;
-  DateTime _zetonVeljaDo = DateTime(0);
-
   /// Veljaven ID žeton za klic na strežnik. Sočasni klici si delijo isto osvežitev.
-  Future<String> zeton() {
-    if (_zeton == null || DateTime.now().isAfter(_zetonVeljaDo)) {
-      _zetonVeljaDo = DateTime.now().add(const Duration(minutes: 45));
-      _zeton = _osveziZeton()
-        ..catchError((_) {
-          _zeton = null;
-          return '';
-        });
+  Future<String> zeton() async {
+    final z = _idZeton;
+    if (z != null && veljaVsaj(z, const Duration(minutes: 5))) return z;
+    final prvi = _cakamZeton == null;
+    final cakam = _cakamZeton ??= Completer<void>();
+    if (prvi) {
+      GoogleSignInAccount? r;
+      try {
+        r = await _gsi.attemptLightweightAuthentication();
+      } catch (_) {
+        r = null;
+      }
+      if (r != null) {
+        _prijavljen(r);
+      } else if (!kIsWeb) {
+        // Na Androidu je odgovor takojšen; brez računa nima smisla čakati.
+        _cakamZeton = null;
+        if (!cakam.isCompleted) cakam.completeError(StateError('Nisi prijavljen'));
+        cakam.future.ignore();
+        throw StateError('Nisi prijavljen');
+      }
     }
-    return _zeton!;
+    try {
+      // V brskalniku nov žeton pride po toku dogodkov, ko One Tap prijavi uporabnika.
+      await cakam.future.timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      if (identical(_cakamZeton, cakam)) _cakamZeton = null;
+      throw StateError('Prijava je potekla. Prijavi se znova.');
+    }
+    final nov = _idZeton;
+    if (nov == null) throw StateError('Nisi prijavljen');
+    return nov;
   }
+}
 
-  Future<String> _osveziZeton() async {
-    final osvezen = await _gsi.attemptLightweightAuthentication();
-    if (osvezen != null) racun = osvezen;
-    final t = racun?.authentication.idToken;
-    if (t == null) throw StateError('Nisi prijavljen');
-    return t;
+/// Ali JWT žeton velja še vsaj [rezerva] (po polju exp).
+bool veljaVsaj(String jwt, Duration rezerva) {
+  try {
+    final deli = jwt.split('.');
+    final vsebina = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(deli[1])))) as Map<String, dynamic>;
+    final poteka = DateTime.fromMillisecondsSinceEpoch((vsebina['exp'] as num).toInt() * 1000);
+    return DateTime.now().add(rezerva).isBefore(poteka);
+  } catch (_) {
+    return false;
   }
 }

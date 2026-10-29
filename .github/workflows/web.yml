@@ -1,0 +1,47 @@
+name: Spletna različica
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.8"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Gradnja
+        run: |
+          flutter build web --release --no-web-resources-cdn \
+            --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }}
+
+      - name: Ali je Firebase nastavljen
+        id: firebase
+        env:
+          KLJUC: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJEKT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$KLJUC" ] || [ -z "$PROJEKT" ]; then
+            echo "::warning::Ni FIREBASE_SERVICE_ACCOUNT ali FIREBASE_PROJECT_ID, spletna različica ni objavljena."
+            echo "objavi=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "objavi=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Objava na Firebase Hosting
+        if: steps.firebase.outputs.objavi == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          channelId: live

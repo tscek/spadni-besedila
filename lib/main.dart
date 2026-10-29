@@ -19,7 +19,11 @@ Future<void> main() async {
   prijava.addListener(() {
     final api = prijava.racun != null ? Api(prijava.zeton) : null;
     baza.risbe.api = api;
-    if (api != null && !prijavljen) posodobitev.preveri(api);
+    if (api != null && !prijavljen) {
+      posodobitev.preveri(api);
+      // Prva prijava na novi napravi: takoj prenesi pesmi.
+      if (baza.pesmi.isEmpty) baza.osvezi(api);
+    }
     prijavljen = api != null;
   });
   runApp(SpadniBesedila(prijava: prijava, baza: baza, posodobitev: posodobitev));
@@ -46,7 +50,7 @@ class SpadniBesedila extends StatelessWidget {
         listenable: Listenable.merge([prijava, baza, posodobitev]),
         builder: (context, _) {
           if (prijava.racun == null && baza.pesmi.isEmpty) {
-            return PrijavaZaslon(prijava: prijava, onPrijavljen: () => baza.osvezi(Api(prijava.zeton)));
+            return PrijavaZaslon(prijava: prijava);
           }
           return SeznamZaslon(prijava: prijava, baza: baza, posodobitev: posodobitev);
         },

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,7 +26,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   static const _kljucPisave = 'velikost_pisave';
   double _pisava = 22;
   bool _prikaziBesedilo = true;
-  File? _pdf;
+  Uint8List? _pdf;
+  bool _pdfPrebran = false;
 
   /// Trenutni podatki pesmi iz baze (po urejanju se spremenijo).
   Pesem get _pesem => widget.baza.pesmi.where((p) => p.id == widget.pesem.id).firstOrNull ?? widget.pesem;
@@ -38,8 +39,13 @@ class _PesemZaslonState extends State<PesemZaslon> {
     super.initState();
     _prikaziBesedilo = _besedila.isNotEmpty;
     if (_pdfji.isNotEmpty) {
-      widget.baza.datotekaPdf(_pdfji.first.driveId).then((f) {
-        if (mounted) setState(() => _pdf = f);
+      widget.baza.pdf(_pdfji.first.driveId).then((b) {
+        if (mounted) {
+          setState(() {
+            _pdf = b;
+            _pdfPrebran = true;
+          });
+        }
       });
     }
     SharedPreferences.getInstance().then((p) {
@@ -126,12 +132,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
       return BesediloPogled(vsebina: _besedila.first.vsebina, velikost: _pisava);
     }
     if (_pdfji.isNotEmpty) {
-      final f = _pdf;
-      if (f == null) return const Center(child: CircularProgressIndicator());
-      if (!f.existsSync()) {
+      if (!_pdfPrebran) return const Center(child: CircularProgressIndicator());
+      final pdf = _pdf;
+      if (pdf == null) {
         return const Center(child: Text('PDF še ni prenesen. Osveži iz baze, ko imaš internet.'));
       }
-      return PdfZRisanjem(pot: f.path, pesem: widget.pesem.id, risbe: widget.baza.risbe);
+      return PdfZRisanjem(pdf: pdf, ime: _pdfji.first.driveId, pesem: widget.pesem.id, risbe: widget.baza.risbe);
     }
     if (widget.baza.smeUrejatiPesem(_pesem)) {
       return Center(

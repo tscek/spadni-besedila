@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -6,6 +7,7 @@ import '../models.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
 import 'pesem_zaslon.dart';
+import 'prijava_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
 class SeznamZaslon extends StatefulWidget {
@@ -34,12 +36,19 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Za osvežitev se prijavi z Google računom (potreben je internet).')));
-      widget.prijava.prijavi().then((_) {
+      _prijava().then((_) {
         if (widget.prijava.racun != null) _osveziZApi();
       });
       return;
     }
     _osveziZApi();
+  }
+
+  /// V brskalniku prijava potrebuje Googlov gumb, zato odpre zaslon za prijavo.
+  Future<void> _prijava() async {
+    if (!kIsWeb) return widget.prijava.prijavi();
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => PrijavaZaslon(prijava: widget.prijava, zapriObPrijavi: true)));
   }
 
   void _osveziZApi() {
