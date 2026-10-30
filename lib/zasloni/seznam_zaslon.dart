@@ -56,6 +56,32 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   /// Mapa »Za vajo«: vse pesmi s klicaji.
   bool _klicaji = false;
 
+  /// Okno za izbiro zasedbe je odprto (da se ne odpre dvakrat).
+  bool _izbiramZasedbo = false;
+
+  /// Član v več zasedbah izbere, katere pesmi gleda; izbira se zapomni na napravi.
+  Future<void> _izberiZasedbo() async {
+    final baza = widget.baza;
+    _izbiramZasedbo = true;
+    final id = await showDialog<String>(
+      context: context,
+      barrierDismissible: !baza.moraIzbratiZasedbo,
+      builder: (context) => SimpleDialog(
+        title: const Text('Zasedba'),
+        children: [
+          for (final z in baza.mojeZasedbe)
+            ListTile(
+              title: Text(z.ime),
+              trailing: z.id == baza.zasedba ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, z.id),
+            ),
+        ],
+      ),
+    );
+    _izbiramZasedbo = false;
+    if (id != null) await baza.izberiZasedbo(id);
+  }
+
   void _odpriMapo(String? mapa, {bool arhiv = false, bool klicaji = false}) => setState(() {
     _vMapi = true;
     _mapa = mapa;
@@ -154,6 +180,12 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   @override
   Widget build(BuildContext context) {
     final baza = widget.baza;
+    if (baza.moraIzbratiZasedbo && !_izbiramZasedbo) {
+      _izbiramZasedbo = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _izberiZasedbo();
+      });
+    }
     final vMapi = _arhiv
         ? baza.arhiv
         : _klicaji
@@ -274,7 +306,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 onPressed: () => setState(() => _vMapi = false),
               )
             : null,
-        title: Text(_vMapi ? _imeMape : 'Mape'),
+        title: Text(
+          _vMapi
+              ? _imeMape
+              : baza.mojeZasedbe.length > 1
+              ? baza.mojeZasedbe.where((z) => z.id == baza.zasedba).firstOrNull?.ime ?? 'Mape'
+              : 'Mape',
+        ),
         actions: [
           if (_vMapi) _razvrscanje(),
           SpilGumb(spil: widget.spil, baza: baza, prijava: widget.prijava),
@@ -304,6 +342,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               if (v == 'odjava') widget.prijava.odjavi();
               if (v == 'odigrane') Odigrane.aplikacija.ponastavi();
               if (v == 'prijava') _prijava();
+              if (v == 'zasedba') _izberiZasedbo();
               if (v == 'nastavitve') {
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => NastavitveZaslon(baza: baza)));
               }
@@ -326,6 +365,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 const PopupMenuItem(value: 'odjava', child: Text('Odjava'))
               else
                 const PopupMenuItem(value: 'prijava', child: Text('Prijava')),
+              if (baza.mojeZasedbe.length > 1)
+                PopupMenuItem(
+                  value: 'zasedba',
+                  child: Text(
+                    'Zamenjaj zasedbo (${baza.mojeZasedbe.where((z) => z.id == baza.zasedba).firstOrNull?.ime ?? '-'})',
+                  ),
+                ),
               const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'odigrane',

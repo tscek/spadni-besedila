@@ -91,6 +91,7 @@ class Nastavitve extends ChangeNotifier {
   static const _zgoraj = 'zgornja_vrstica';
   static const _prelom = 'prelom_vrstic';
   static const _oblacek = 'oblacek_tonalitete';
+  static const _zasedba = 'zasedba';
   static const _poljaIskalnika = 'polja_iskalnika';
   static const _razvrstiIskalnik = 'razvrsti_iskalnik';
   static const _pisavaPesmi = 'pisava_pesmi_';
@@ -108,6 +109,9 @@ class Nastavitve extends ChangeNotifier {
 
   /// Besedilo se ob večji pisavi prelomi v novo vrstico (sicer je stran širša od zaslona).
   bool prelom = true;
+
+  /// Izbrana zasedba (ID), če je član v več zasedbah; prikažejo se njene pesmi in setliste.
+  String zasedba = '';
 
   /// Tonaliteta v oblačku v zgornjem desnem kotu pesmi (pod zgornjo vrstico).
   bool oblacekTonalitete = false;
@@ -207,6 +211,7 @@ class Nastavitve extends ChangeNotifier {
     }
     prelom = p.getBool(_prelom) ?? prelom;
     oblacekTonalitete = p.getBool(_oblacek) ?? oblacekTonalitete;
+    zasedba = p.getString(_zasedba) ?? zasedba;
     poljaIskalnika = seznam(_poljaIskalnika, PoljePesmi.values) ?? poljaIskalnika;
     razvrstiIskalnik = PoljePesmi.values.asNameMap()[p.getString(_razvrstiIskalnik)];
     final zg = seznam(_zgoraj, InfoVrstice.values);
@@ -259,6 +264,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviPrelom(bool v) {
     prelom = v;
     return _shrani((p) => p.setBool(_prelom, v));
+  }
+
+  Future<void> nastaviZasedbo(String v) {
+    zasedba = v;
+    return _shrani((p) => p.setString(_zasedba, v));
   }
 
   Future<void> nastaviOblacekTonalitete(bool v) {

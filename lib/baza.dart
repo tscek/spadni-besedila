@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api.dart';
 import 'models.dart';
+import 'nastavitve.dart';
 import 'config.dart';
 import 'midi/ukazi.dart';
 import 'risbe.dart';
@@ -211,10 +212,13 @@ class Baza extends ChangeNotifier {
     for (final k in t('Klicaji').map(KlicajPesmi.izVrstice).where((k) => k.id.isNotEmpty)) {
       klicaji.putIfAbsent(k.pesem, () => []).add(k);
     }
+    vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
+    final zasedba = this.zasedba;
+    bool zaZasedbo(List<String> z) => zasedba.isEmpty || z.isEmpty || z.contains(zasedba);
     pesmi = [
       for (final r in t('Pesmi'))
         if (Pesem.izVrstice(r, klicaji: klicaji[besedilo(r['ID'])]?.length ?? 0) case final p
-            when p.id.isNotEmpty && p.aktivna)
+            when p.id.isNotEmpty && p.aktivna && zaZasedbo(p.skupine))
           p,
     ]..sort((a, b) => a.kodaStevilka.compareTo(b.kodaStevilka));
     _poId = {for (final p in pesmi) p.id: p};
@@ -232,9 +236,13 @@ class Baza extends ChangeNotifier {
       besedilaPesmi.putIfAbsent(b.pesem, () => []).add(b);
     }
 
-    setliste = t('Setliste').map(Setlista.izVrstice).where((s) => s.id.isNotEmpty).toList()
-      // Najnovejše najprej, brez datuma na konec.
-      ..sort((a, b) => (b.datum ?? DateTime(0)).compareTo(a.datum ?? DateTime(0)));
+    setliste =
+        t('Setliste')
+            .map(Setlista.izVrstice)
+            .where((s) => s.id.isNotEmpty && zaZasedbo([if (s.skupina.isNotEmpty) s.skupina]))
+            .toList()
+          // Najnovejše najprej, brez datuma na konec.
+          ..sort((a, b) => (b.datum ?? DateTime(0)).compareTo(a.datum ?? DateTime(0)));
     pesmiSetlist = {};
     for (final p in t('Setlista pesmi').map(SetlistaPesem.izVrstice).where((p) => p.pesem.isNotEmpty)) {
       pesmiSetlist.putIfAbsent(p.setlista, () => []).add(p);
@@ -251,7 +259,6 @@ class Baza extends ChangeNotifier {
     vrste = t('Vrste').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
       ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     midi = KnjiznicaMidi.izTabel(tabele);
-    vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     zadnjaOsvezitev = DateTime.tryParse(podatki['cas']?.toString() ?? '');
   }
 
@@ -412,6 +419,35 @@ class Baza extends ChangeNotifier {
     for (final p in pesmi)
       if (!p.vArhivu && p.zaVajo) p,
   ];
+
+  /// ID-ji zasedb prijavljenega člana, kot jih pošlje skripta (stara skripta jih ne pošlje: brez izbire).
+  List<String> get zasedbeClana {
+    final z = (_podatki['clan'] as Map?)?['Zasedbe'];
+    return z is List ? [for (final x in z) besedilo(x)] : const [];
+  }
+
+  /// Zasedbe člana z imeni (za izbiro).
+  List<Skupina> get mojeZasedbe => [
+    for (final id in zasedbeClana) skupine.where((s) => s.id == id).firstOrNull ?? Skupina(id: id, ime: id),
+  ];
+
+  /// Zasedba, katere pesmi so prikazane: izbrana, edina ali prazno (vse, ki jih je skripta poslala).
+  String get zasedba {
+    final z = zasedbeClana;
+    final izbrana = Nastavitve.aplikacija.zasedba;
+    if (z.contains(izbrana)) return izbrana;
+    return z.length == 1 ? z.first : '';
+  }
+
+  /// Član je v več zasedbah in še ni izbral, katero gleda.
+  bool get moraIzbratiZasedbo => zasedbeClana.length > 1 && !zasedbeClana.contains(Nastavitve.aplikacija.zasedba);
+
+  /// Zamenja prikazano zasedbo (zapomni si jo na napravi).
+  Future<void> izberiZasedbo(String id) async {
+    await Nastavitve.aplikacija.nastaviZasedbo(id);
+    _uporabi(_podatki);
+    notifyListeners();
+  }
 
   /// ID prijavljenega člana (prazno, če ni prijave).
   String get clanId => besedilo((_podatki['clan'] as Map?)?['ID']);

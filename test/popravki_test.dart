@@ -83,6 +83,49 @@ void main() {
     Runda.aplikacija = Runda();
   });
 
+  test('zasedbe: član v dveh izbere eno, pesmi in setliste po zasedbi', () async {
+    final baza = Baza(shramba: _Pomnilnik());
+    final podatki = {
+      'clan': {
+        'ID': 'C',
+        'Zasedbe': ['s1', 's2'],
+      },
+      'tabele': {
+        'Skupine': [
+          {'ID': 's1', 'Ime': 'Špadni fantje'},
+          {'ID': 's2', 'Ime': 'Trijorijo'},
+        ],
+        'Pesmi': [
+          {'ID': 'a', 'Naslov': 'OBE', 'Skupine': 's1, s2', 'Aktivna': true},
+          {'ID': 'b', 'Naslov': 'ŠPADNI', 'Skupine': 's1', 'Aktivna': true},
+          {'ID': 'c', 'Naslov': 'TRIJORIJO', 'Skupine': 's2', 'Aktivna': true},
+        ],
+        'Setliste': [
+          {'ID': 'x', 'Ime': 'Poroka', 'Skupina': 's2'},
+        ],
+      },
+    };
+    await baza.osvezi(
+      Api(
+        () async => 'z',
+        url: 'https://example.com/exec',
+        client: MockClient((r) async => http.Response.bytes(utf8.encode(jsonEncode(podatki)), 200)),
+      ),
+    );
+    expect(baza.moraIzbratiZasedbo, isTrue);
+    expect(baza.mojeZasedbe.map((z) => z.ime), ['Špadni fantje', 'Trijorijo']);
+    expect(baza.pesmi.length, 3); // dokler ne izbere, vidi vse
+
+    await baza.izberiZasedbo('s2');
+    expect(baza.moraIzbratiZasedbo, isFalse);
+    expect(baza.pesmi.map((p) => p.id), unorderedEquals(['a', 'c']));
+    expect(baza.setliste.single.id, 'x');
+    await baza.izberiZasedbo('s1');
+    expect(baza.pesmi.map((p) => p.id), unorderedEquals(['a', 'b']));
+    expect(baza.setliste, isEmpty);
+    expect(Nastavitve.aplikacija.zasedba, 's1'); // zapomni se
+  });
+
   test('mape, harmonike, status in razvrščanje po poljih', () async {
     final (baza, _) = await _baza();
     expect(baza.mape.map((m) => m.ime), ['Narodno-zabavne', 'Zabavne']);
