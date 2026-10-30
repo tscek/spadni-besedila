@@ -189,7 +189,7 @@ class StreznikIo implements StreznikVodje {
   }
 
   /// iPad pošlje risbo, ki jo je član naredil na špilu; vodja jo shrani in kasneje pošlje na Drive.
-  /// Klicaj »za vajo« vodja shrani zase in ga pošlje naprej. Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
+  /// Klicaj vodja shrani zase in ga pošlje naprej. Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
   Future<String> _apiPost(String telo, Baza baza) async {
     final Object? j;
     try {
@@ -203,13 +203,16 @@ class StreznikIo implements StreznikVodje {
       final brez = await midi.izIpada((j['ukazi'] as List?) ?? const [], baza.midi);
       return jsonEncode({'vklopljen': true, 'brezNaprave': brez});
     }
-    if (j is Map && j['akcija'] == 'zaVajo') {
-      // Klicaj s špila: vodja ga shrani in pošlje na strežnik, ko ima internet.
-      final pesem = j['pesem']?.toString() ?? '';
-      await baza.nastaviZaVajo(baza.risbeClanov.api, pesem, j['vrednost'] == true);
-      return jsonEncode({
-        'vrstica': baza.vrsticaPesmi(pesem) ?? {'ID': pesem},
-      });
+    if (j is Map && j['akcija'] == 'klicaj' && j['klicaj'] is Map) {
+      // Klicaj s špila: vodja ga shrani (z imenom člana z iPada) in pošlje na strežnik, ko ima internet.
+      final k = (j['klicaj'] as Map).cast<String, dynamic>();
+      if (j['izbrisi'] == true) {
+        await baza.izbrisiKlicaj(baza.risbeClanov.api, k['ID']?.toString() ?? '');
+        return jsonEncode({'izbrisano': k['ID']});
+      }
+      final vrstica = {...k, 'Član': (k['Član'] ?? '').toString().isEmpty ? j['clan'] ?? '' : k['Član']};
+      await baza.shraniKlicaj(baza.risbeClanov.api, vrstica);
+      return jsonEncode({'vrstica': vrstica});
     }
     if (j is Map && j['akcija'] == 'risba') {
       final clan = j['clan']?.toString() ?? '';

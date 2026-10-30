@@ -42,7 +42,7 @@ void main() {
     test('iskanje brez šumnikov', () {
       final p = Pesem(id: 'x', koda: '1004', naslov: 'ČE DVE LJUBICI IMAŠ', izvajalec: 'Modrijani');
       expect(p.ustreza('ce dve'), isTrue);
-      expect(p.ustreza('10'), isTrue);
+      expect(p.ustreza('10'), isFalse); // po kodi se ne išče več
       expect(p.ustreza('modri'), isTrue);
       expect(p.ustreza('slak'), isFalse);
     });

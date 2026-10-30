@@ -4,14 +4,17 @@ import 'package:flutter/material.dart';
 
 import '../chordpro.dart' as cp;
 import '../midi/ukazi.dart';
+import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
 import '../risbe.dart';
 import 'pdf_risanje.dart';
 import 'pesem_zaslon.dart';
 
-/// Besedilo kot stran stalne širine z risbami, oznakami in opombami (enako kot pri PDF-ju).
-/// Vrstice se vedno prelomijo enako, zato risba ostane na istem mestu na vsakem zaslonu;
-/// večja pisava stran le poveča. Risbe besedila so v isti risbi pesmi kot stran 0.
+/// Besedilo kot stran z risbami, oznakami in opombami (enako kot pri PDF-ju). Risbe besedila so v isti
+/// risbi pesmi kot stran 0, koordinate so v enotah strani širine [sirinaStrani].
+/// Brez preloma ([prelom] false) se vrstice vedno prelomijo enako in večja pisava stran le poveča
+/// (premikanje tudi vstran). S prelomom je stran vedno široka kot zaslon in se ob večji pisavi
+/// prelomi v več vrstic; risbe ostanejo na istem mestu strani, zato se lahko zamaknejo glede na besedilo.
 /// Z dvema prstoma (ščip) se besedilo poveča ali pomanjša, tudi med risanjem.
 class BesediloZRisanjem extends StatefulWidget {
   const BesediloZRisanjem({
@@ -23,6 +26,8 @@ class BesediloZRisanjem extends StatefulWidget {
     required this.risanje,
     required this.knjiznica,
     this.obPovecavi,
+    this.prelom = false,
+    this.klicaji = const [],
   });
 
   /// Širina strani v logičnih točkah in pisava, pri kateri je povečava 1.
@@ -41,6 +46,12 @@ class BesediloZRisanjem extends StatefulWidget {
 
   /// Konec ščipa: nova povečava (shrani se kot velikost pisave).
   final ValueChanged<double>? obPovecavi;
+
+  /// Vrstice se prelomijo na širino zaslona.
+  final bool prelom;
+
+  /// Klicaji pesmi (na besedilu so tisti s stranjo 0).
+  final List<KlicajPesmi> klicaji;
 
   @override
   State<BesediloZRisanjem> createState() => _BesediloZRisanjemState();
@@ -71,6 +82,9 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   KnjiznicaMidi get knjiznica => widget.knjiznica;
+
+  @override
+  List<KlicajPesmi> get klicaji => widget.klicaji;
 
   @override
   bool mojaStran(int stran) => stran == BesediloZRisanjem.stran;
@@ -161,9 +175,11 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   Widget build(BuildContext context) {
-    const sirina = BesediloZRisanjem.sirinaStrani;
+    const enota = BesediloZRisanjem.sirinaStrani;
     final premikanje = risem ? const NeverScrollableScrollPhysics() : null;
     final povecava = _zacasna ?? widget.povecava;
+    // S prelomom je stran ožja (v enotah strani), prikazana pa čez cel zaslon: pisava je enako velika.
+    final sirina = widget.prelom ? math.max(enota / povecava, 150.0) : enota;
     _vrstice = cp.razcleni(widget.vsebina);
     if (_kljuci.length != _vrstice.length) _kljuci = [for (final _ in _vrstice) GlobalKey()];
     final vrstice = BesediloPogled.vrstice(context, widget.vsebina, BesediloZRisanjem.osnovnaPisava);
@@ -176,8 +192,9 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
           onPointerCancel: _gor,
           child: LayoutBuilder(
             builder: (context, omejitve) {
-              // Pri povečavi 1 je stran široka kot zaslon; večja pisava jo poveča (premikanje tudi vstran).
-              final prikazano = math.max(omejitve.maxWidth * povecava, 1.0);
+              // Pri povečavi 1 je stran široka kot zaslon; večja pisava jo poveča (premikanje tudi vstran),
+              // s prelomom pa ostane široka kot zaslon.
+              final prikazano = math.max(omejitve.maxWidth * (widget.prelom ? 1 : povecava), 1.0);
               return SingleChildScrollView(
                 controller: _navpicno,
                 physics: premikanje,
@@ -199,12 +216,18 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
                             width: sirina,
                             child: _Stran(
                               kljuc: _stranKljuc,
-                              podlaga: (velikost) => podlagaStrani(BesediloZRisanjem.stran, velikost, enotaY: sirina),
-                              sloj: (velikost) =>
-                                  slojStrani(BesediloZRisanjem.stran, velikost, enotaY: sirina, zOznakami: false),
+                              podlaga: (velikost) =>
+                                  podlagaStrani(BesediloZRisanjem.stran, velikost, enotaX: enota, enotaY: enota),
+                              sloj: (velikost) => slojStrani(
+                                BesediloZRisanjem.stran,
+                                velikost,
+                                enotaX: enota,
+                                enotaY: enota,
+                                zOznakami: false,
+                              ),
                               // Prostor pod kratkim besedilom za opombe.
                               child: Container(
-                                constraints: const BoxConstraints(minHeight: sirina),
+                                constraints: const BoxConstraints(minHeight: enota),
                                 padding: const EdgeInsets.all(16),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,

@@ -545,7 +545,7 @@ class _GumbDialog extends StatefulWidget {
 
 class _GumbDialogState extends State<_GumbDialog> {
   late final _ime = TextEditingController(text: widget.gumb?.ime ?? '');
-  late final _ukazi = TextEditingController(text: widget.gumb?.ukazi ?? '');
+  late final _ukazi = TextEditingController(text: berljivZapis(widget.gumb?.ukazi ?? ''));
   late final _koda = TextEditingController(text: widget.baza.pesem(widget.gumb?.pesem ?? '')?.koda ?? '');
   late final _zaporedje = TextEditingController(text: '${widget.gumb?.zaporedje ?? ''}');
   late String _barva = widget.gumb?.barva ?? '';
@@ -664,7 +664,7 @@ class _MakroZaslon extends StatefulWidget {
 class _MakroZaslonState extends State<_MakroZaslon> {
   late final _ime = TextEditingController(text: widget.makro?.ime ?? '');
   late final _izhod = TextEditingController(text: widget.makro?.izhod ?? '');
-  late final List<String> _koraki = [...?widget.makro?.koraki];
+  late final List<String> _koraki = [for (final k in widget.makro?.koraki ?? const <String>[]) berljivZapis(k)];
 
   Makro get _makro => Makro(
     id: widget.makro?.id ?? '',
@@ -806,9 +806,23 @@ class _IzbiraMidiState extends State<_IzbiraMidi> {
             if (neposreden != null)
               ListTile(
                 leading: const Icon(Icons.add),
-                title: Text(_iskanje.text.trim()),
+                title: Text(neposreden.zapis),
                 subtitle: Text(neposreden.opis(k.imeKanala(neposreden.kanal))),
-                onTap: () => Navigator.pop(context, _iskanje.text.trim()),
+                onTap: () => Navigator.pop(context, neposreden.zapis),
+              )
+            else
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Sestavi ukaz (CC / PC / Nota)'),
+                subtitle: const Text('Brez imena, samo za to mesto'),
+                onTap: () async {
+                  final navigator = Navigator.of(context);
+                  final zapis = await showDialog<String>(
+                    context: context,
+                    builder: (_) => SestaviUkaz(knjiznica: k),
+                  );
+                  if (zapis != null) navigator.pop(zapis);
+                },
               ),
             Expanded(
               child: ListView(
@@ -827,6 +841,108 @@ class _IzbiraMidiState extends State<_IzbiraMidi> {
         ),
       ),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči'))],
+    );
+  }
+}
+
+/// Ukaz brez imena: vrsta, kanal, številka in vrednost. Vrne zapis, npr. »CC 15 0 1«.
+class SestaviUkaz extends StatefulWidget {
+  const SestaviUkaz({super.key, required this.knjiznica, this.zacetni});
+
+  final KnjiznicaMidi knjiznica;
+  final MidiUkaz? zacetni;
+
+  @override
+  State<SestaviUkaz> createState() => _SestaviUkazState();
+}
+
+class _SestaviUkazState extends State<SestaviUkaz> {
+  late VrstaUkaza _vrsta = widget.zacetni?.vrsta ?? VrstaUkaza.cc;
+  late int _kanal = widget.zacetni?.kanal ?? 1;
+  late final _stevilka = TextEditingController(text: '${widget.zacetni?.stevilka ?? 0}');
+  late final _vrednost = TextEditingController(text: '${widget.zacetni?.vrednost ?? 127}');
+  String? _napaka;
+
+  @override
+  void dispose() {
+    _stevilka.dispose();
+    _vrednost.dispose();
+    super.dispose();
+  }
+
+  MidiUkaz? _ukaz() {
+    final st = int.tryParse(_stevilka.text.trim());
+    final vr = _vrsta == VrstaUkaza.pc ? 127 : int.tryParse(_vrednost.text.trim());
+    if (st == null || st < 0 || st > 127 || vr == null || vr < 0 || vr > 127) {
+      setState(() => _napaka = 'Številka in vrednost morata biti od 0 do 127.');
+      return null;
+    }
+    return MidiUkaz(vrsta: _vrsta, kanal: _kanal, stevilka: st, vrednost: vr);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final k = widget.knjiznica;
+    return AlertDialog(
+      title: const Text('Sestavi ukaz'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<VrstaUkaza>(
+              segments: [for (final v in VrstaUkaza.values) ButtonSegment(value: v, label: Text(v.oznaka))],
+              selected: {_vrsta},
+              onSelectionChanged: (s) => setState(() => _vrsta = s.first),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: _kanal,
+              decoration: const InputDecoration(labelText: 'Kanal'),
+              items: [
+                for (var c = 1; c <= 16; c++)
+                  DropdownMenuItem(value: c, child: Text(k.imeKanala(c).isEmpty ? '$c' : '$c · ${k.imeKanala(c)}')),
+              ],
+              onChanged: (v) => setState(() => _kanal = v ?? 1),
+            ),
+            TextField(
+              controller: _stevilka,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText:
+                    '${switch (_vrsta) {
+                      VrstaUkaza.pc => 'Program',
+                      VrstaUkaza.cc => 'Kontroler (CC)',
+                      VrstaUkaza.nota => 'Nota',
+                    }} (0–127)',
+              ),
+            ),
+            if (_vrsta != VrstaUkaza.pc)
+              TextField(
+                controller: _vrednost,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _vrsta == VrstaUkaza.nota ? 'Hitrost (0–127)' : 'Vrednost (0–127)',
+                ),
+              ),
+            if (_napaka case final n?)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(n, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+        FilledButton(
+          onPressed: () {
+            final u = _ukaz();
+            if (u != null) Navigator.pop(context, u.zapis);
+          },
+          child: const Text('Dodaj'),
+        ),
+      ],
     );
   }
 }

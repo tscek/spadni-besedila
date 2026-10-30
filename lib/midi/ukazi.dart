@@ -232,6 +232,13 @@ MidiUkaz? razcleniUkaz(String t) {
   );
 }
 
+/// Zapis ukazov v berljivi obliki: kode iz SongBooka (npr. 3|7|15|0|1) postanejo »CC 15 0 1«,
+/// klic makra (3|10|Ime) postane ime makra; ostalo ostane, kot je.
+String berljivZapis(String zapis) => [
+  for (final k in razdeliZapis(zapis))
+    if (k.startsWith('3|10|')) k.substring(5) else if (k.startsWith('3|')) razcleniUkaz(k)?.zapis ?? k else k,
+].join('; ');
+
 /// Vsi ukazi, makri in imena kanalov zasedbe.
 class KnjiznicaMidi {
   KnjiznicaMidi({this.ukazi = const [], this.makri = const [], this.kanali = const {}, this.gumbi = const []});

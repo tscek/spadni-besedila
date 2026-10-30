@@ -29,11 +29,12 @@ class Pesem {
     this.status = StatusPesmi.narejen,
     this.harmonika = '',
     this.midiZaUvod = '',
-    this.zaVajo = false,
+    this.klicaji = 0,
     this.ocena = 0,
   });
 
-  factory Pesem.izVrstice(Zapis r) => Pesem(
+  /// [klicaji] je število klicajev pesmi (list Klicaji).
+  factory Pesem.izVrstice(Zapis r, {int klicaji = 0}) => Pesem(
     id: besedilo(r['ID']),
     koda: besedilo(r['Koda']),
     naslov: besedilo(r['Naslov']),
@@ -52,7 +53,7 @@ class Pesem {
     status: StatusPesmi.iz(besedilo(r['Status'])),
     harmonika: besedilo(r['Harmonika']),
     midiZaUvod: besedilo(r['MIDI za uvod']),
-    zaVajo: daNe(r['Za vajo']),
+    klicaji: klicaji,
     ocena: (int.tryParse(besedilo(r['Ocena'])) ?? 0).clamp(0, 5),
   );
 
@@ -78,8 +79,10 @@ class Pesem {
   /// MIDI ukaz za uvod (npr. »PC 1 23«), neposredno zapisan, brez imena iz knjižnice.
   final String midiZaUvod;
 
-  /// Rdeč klicaj: pesem je treba ponoviti na vaji.
-  final bool zaVajo;
+  /// Število rdečih klicajev (mesta, ki jih je treba ponoviti na vaji).
+  final int klicaji;
+
+  bool get zaVajo => klicaji > 0;
 
   /// Ocena 1 do 5 (0 = brez).
   final int ocena;
@@ -92,11 +95,11 @@ class Pesem {
 
   int get kodaStevilka => int.tryParse(koda) ?? 1 << 30;
 
-  /// Iskanje po kodi, naslovu ali izvajalcu, brez razlike med velikimi in malimi črkami ter šumniki.
+  /// Iskanje po naslovu ali izvajalcu, brez razlike med velikimi in malimi črkami ter šumniki.
   bool ustreza(String iskanje) {
     final q = poenostavi(iskanje);
     if (q.isEmpty) return true;
-    return koda.startsWith(q) || poenostavi(naslov).contains(q) || poenostavi(izvajalec).contains(q);
+    return poenostavi(naslov).contains(q) || poenostavi(izvajalec).contains(q);
   }
 }
 
@@ -183,17 +186,67 @@ enum PoljePesmi {
 
 /// Mapa pesmi (list Mape), npr. Narodno-zabavne ali Vaje zabavne.
 class Mapa {
-  Mapa({required this.id, required this.ime, this.vrstniRed = 0});
+  Mapa({required this.id, required this.ime, this.vrstniRed = 0, this.pavza = ''});
 
-  factory Mapa.izVrstice(Zapis r) =>
-      Mapa(id: besedilo(r['ID']), ime: besedilo(r['Ime']), vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 0);
+  factory Mapa.izVrstice(Zapis r) => Mapa(
+    id: besedilo(r['ID']),
+    ime: besedilo(r['Ime']),
+    vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 0,
+    pavza: besedilo(r['Pavza']),
+  );
 
   final String id;
   final String ime;
   final int vrstniRed;
+
+  /// ID pesmi, ki se odpre z izbiro »Pavza« v iskalniku.
+  final String pavza;
 }
 
-/// Harmonika z barvo (list Harmonike).
+/// Klicaj na mestu v besedilu (stran 0) ali na strani PDF-ja; x in y sta relativna kot pri risbah.
+class KlicajPesmi {
+  KlicajPesmi({
+    required this.id,
+    required this.pesem,
+    required this.stran,
+    required this.x,
+    required this.y,
+    this.clan = '',
+    this.cas,
+  });
+
+  factory KlicajPesmi.izVrstice(Zapis r) => KlicajPesmi(
+    id: besedilo(r['ID']),
+    pesem: besedilo(r['Pesem']),
+    stran: int.tryParse(besedilo(r['Stran'])) ?? 0,
+    x: double.tryParse(besedilo(r['X']).replaceAll(',', '.')) ?? 0,
+    y: double.tryParse(besedilo(r['Y']).replaceAll(',', '.')) ?? 0,
+    clan: besedilo(r['Član']),
+    cas: DateTime.tryParse(besedilo(r['Čas']))?.toLocal(),
+  );
+
+  final String id;
+  final String pesem;
+  final int stran;
+  final double x;
+  final double y;
+
+  /// ID člana, ki je klicaj dodal.
+  final String clan;
+  final DateTime? cas;
+
+  Zapis vVrstico() => {
+    'ID': id,
+    'Pesem': pesem,
+    'Stran': stran,
+    'X': x,
+    'Y': y,
+    'Član': clan,
+    'Čas': (cas ?? DateTime.now()).toUtc().toIso8601String(),
+  };
+}
+
+/// Ime z barvo (list Harmonike, enako list Vrste).
 class Harmonika {
   Harmonika({required this.id, required this.ime, this.barva = '', this.vrstniRed = 0});
 

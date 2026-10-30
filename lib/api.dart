@@ -80,6 +80,10 @@ class Api {
   Future<Map<String, dynamic>> zaVajo(String pesem, bool vrednost) =>
       _post({'akcija': 'zaVajo', 'pesem': pesem, 'vrednost': vrednost});
 
+  /// Klicaj na mestu v pesmi (sme vsak član); z [izbrisi] ga odstrani.
+  Future<Map<String, dynamic>> klicaj(Map<String, dynamic> klicaj, {bool izbrisi = false}) =>
+      _post({'akcija': 'klicaj', 'klicaj': klicaj, 'izbrisi': izbrisi});
+
   /// Doda PDF pesmi (na Drive v mapo PDF). Vrne {vrstica} lista PDF.
   Future<Map<String, dynamic>> dodajPdf(String pesem, String ime, String vrsta, Uint8List bajti) =>
       _post({'akcija': 'pdfDodaj', 'pesem': pesem, 'ime': ime, 'vrsta': vrsta, 'base64': base64Encode(bajti)});

@@ -51,19 +51,35 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   String? _mapa;
   bool _arhiv = false;
 
-  void _odpriMapo(String? mapa, {bool arhiv = false}) => setState(() {
+  /// Mapa »Za vajo«: vse pesmi s klicaji.
+  bool _klicaji = false;
+
+  void _odpriMapo(String? mapa, {bool arhiv = false, bool klicaji = false}) => setState(() {
     _vMapi = true;
     _mapa = mapa;
     _arhiv = arhiv;
+    _klicaji = klicaji;
     _vrsta = '';
     _iskanje.clear();
   });
 
   String get _imeMape => _arhiv
       ? 'Arhiv'
+      : _klicaji
+      ? 'Za vajo'
       : _mapa == null
       ? 'Vse pesmi'
       : widget.baza.mapa(_mapa!)?.ime ?? 'Pesmi';
+
+  /// Ključ, pod katerim si odprta mapa zapomni razvrščanje.
+  String get _kljucMape => _arhiv
+      ? 'arhiv'
+      : _klicaji
+      ? 'klicaji'
+      : _mapa ?? PesemZaslon.vse;
+
+  /// Prava mapa (ne arhiv ali »Za vajo«), v kateri išče iskalnik in v katero gre nova pesem.
+  bool get _pravaMapa => _vMapi && !_arhiv && !_klicaji;
 
   /// Nožno stikalo na seznamu: gor in dol premikata izbiro, potrdi odpre pesem, iskalnik gre v iskanje.
   bool _dejanje(DejanjeMidi d) {
@@ -98,7 +114,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         prijava: widget.prijava,
         spil: widget.spil,
         seznam: seznam,
-        mapa: izMape && _vMapi && !_arhiv ? (_mapa ?? PesemZaslon.vse) : p.mapa,
+        mapa: izMape && _pravaMapa ? (_mapa ?? PesemZaslon.vse) : p.mapa,
       ),
     ),
   );
@@ -135,11 +151,16 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   @override
   Widget build(BuildContext context) {
     final baza = widget.baza;
-    final vMapi = _arhiv ? baza.arhiv : baza.pesmiMape(_mapa);
+    final vMapi = _arhiv
+        ? baza.arhiv
+        : _klicaji
+        ? baza.pesmiSKlicaji
+        : baza.pesmiMape(_mapa);
     final vrste = vMapi.map((p) => p.vrsta).where((z) => z.isNotEmpty).toSet().toList()..sort();
     final n = Nastavitve.aplikacija;
+    final (polje, padajoce) = n.razvrscanjeMape(_kljucMape);
     final pesmi = vMapi.where((p) => (_vrsta.isEmpty || p.vrsta == _vrsta) && p.ustreza(_iskanje.text)).toList()
-      ..sort((a, b) => n.padajoce ? n.razvrsti.primerjaj(b, a) : n.razvrsti.primerjaj(a, b));
+      ..sort((a, b) => padajoce ? polje.primerjaj(b, a) : polje.primerjaj(a, b));
 
     return PopScope(
       canPop: !_vMapi,
@@ -149,25 +170,30 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       child: NaMidi(
         dejanje: _dejanje,
         child: ListenableBuilder(
-          listenable: Listenable.merge([n, Odigrane.aplikacija]),
+          listenable: Listenable.merge([n, Odigrane.aplikacija, baza]),
           builder: (context, _) => _zaslon(context, baza, vrste, pesmi),
         ),
       ),
     );
   }
 
+  /// Razvrščanje si vsaka mapa zapomni posebej.
   Widget _razvrscanje() {
     final n = Nastavitve.aplikacija;
+    final (izbrano, padajoce) = n.razvrscanjeMape(_kljucMape);
     return PopupMenuButton<PoljePesmi>(
       tooltip: 'Razvrsti',
       icon: const Icon(Icons.sort),
-      onSelected: (polje) => n.nastaviRazvrscanje(polje, polje == n.razvrsti && !n.padajoce),
+      onSelected: (polje) => n.nastaviRazvrscanje(polje, polje == izbrano && !padajoce, mapa: _kljucMape),
       itemBuilder: (_) => [
         for (final polje in PoljePesmi.values)
           CheckedPopupMenuItem(
             value: polje,
-            checked: polje == n.razvrsti,
-            child: Text(polje == n.razvrsti ? '${polje.ime} ${n.padajoce ? '↓' : '↑'}' : polje.ime),
+            checked: polje == izbrano,
+            child: Text(
+              '${polje == PoljePesmi.koda ? 'Vrstni red v bazi' : polje.ime}'
+              '${polje == izbrano ? ' ${padajoce ? '↓' : '↑'}' : ''}',
+            ),
           ),
       ],
     );
@@ -190,6 +216,15 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         for (final m in baza.mape)
           mapa(Icons.folder_outlined, m.ime, baza.pesmiMape(m.id).length, () => _odpriMapo(m.id)),
         mapa(Icons.library_music_outlined, 'Vse', baza.pesmiMape(null).length, () => _odpriMapo(null)),
+        if (baza.pesmiSKlicaji.isNotEmpty)
+          Card(
+            child: ListTile(
+              leading: const Klicaj(velikost: 24),
+              title: Text('Za vajo (klicaji)', style: tema.textTheme.titleMedium),
+              trailing: Text('${baza.pesmiSKlicaji.length}'),
+              onTap: () => _odpriMapo(null, klicaji: true),
+            ),
+          ),
         if (baza.arhiv.isNotEmpty)
           mapa(Icons.archive_outlined, 'Arhiv', baza.arhiv.length, () => _odpriMapo(null, arhiv: true)),
       ],
@@ -204,7 +239,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             vrsticaNaslednjih(context, widget.spil, baza, (p) => _odpri(p, pesmi, izMape: false)) ??
             const SizedBox.shrink(),
       ),
-      floatingActionButton: baza.smeUrejati && _vMapi && !_arhiv
+      floatingActionButton: baza.smeUrejati && _pravaMapa
           ? FloatingActionButton.extended(
               onPressed: _novaPesem,
               icon: const Icon(Icons.add),
@@ -232,7 +267,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                   baza: widget.baza,
                   prijava: widget.prijava,
                   spil: widget.spil,
-                  mapa: _vMapi && !_arhiv ? _mapa : null,
+                  mapa: _pravaMapa ? _mapa : null,
                 ),
               ),
             ),
@@ -297,7 +332,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                         onChanged: (_) => setState(() {}),
                         onSubmitted: (_) => _izbira.currentState?.potrdi(),
                         decoration: InputDecoration(
-                          hintText: 'Išči po kodi, naslovu ali izvajalcu',
+                          hintText: 'Išči po naslovu ali izvajalcu',
                           prefixIcon: const Icon(Icons.search),
                           suffixIcon: _iskanje.text.isEmpty
                               ? null
@@ -318,6 +353,10 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                               Padding(
                                 padding: const EdgeInsets.only(right: 8),
                                 child: ChoiceChip(
+                                  avatar: switch (barvaVrste(baza, z)) {
+                                    final b? => CircleAvatar(backgroundColor: b, radius: 6),
+                                    null => null,
+                                  },
                                   label: Text(z.isEmpty ? 'Vse' : z),
                                   selected: _vrsta == z,
                                   onSelected: (_) => setState(() => _vrsta = z),
@@ -406,35 +445,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   Widget _vrstica(BuildContext context, Pesem p, bool izbrana, List<Pesem> seznam) {
     final n = Nastavitve.aplikacija;
     final polja = n.poljaSeznama.where((x) => x != PoljePesmi.naslov);
-    final besedila = [
-      for (final x in polja)
-        if (x != PoljePesmi.status && x != PoljePesmi.ocena && x != PoljePesmi.harmonika)
-          if (x.vrednost(p) case final v when v.isNotEmpty) v,
-    ];
-    final harmonika = polja.contains(PoljePesmi.harmonika) && p.harmonika.isNotEmpty;
+    final deli = poljaVPodnaslovu(context, widget.baza, p, polja.toList());
     final imaPodnaslov = polja.any((x) => x != PoljePesmi.status && x != PoljePesmi.ocena);
     return ListTile(
       selected: izbrana,
       selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
       title: NaslovZOznakami(pesem: p),
-      subtitle: imaPodnaslov
-          ? Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: besedila.join(' · ')),
-                  if (harmonika) ...[
-                    if (besedila.isNotEmpty) const TextSpan(text: ' · '),
-                    TextSpan(
-                      text: p.harmonika,
-                      style: TextStyle(color: barvaHarmonike(widget.baza, p.harmonika), fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            )
-          : null,
+      subtitle: imaPodnaslov ? Text.rich(TextSpan(children: deli), maxLines: 1, overflow: TextOverflow.ellipsis) : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

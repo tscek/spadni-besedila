@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../api.dart';
 import '../baza.dart';
 import '../config.dart';
 import '../models.dart';
@@ -57,6 +58,12 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
               subtitle: const Text('Odpre pesem v spletni različici'),
               onTap: () => Navigator.pop(context, 'povezava'),
             ),
+            if (p.zaVajo)
+              ListTile(
+                leading: const Klicaj(velikost: 22),
+                title: Text(p.klicaji > 1 ? 'Odstrani klicaje (${p.klicaji})' : 'Odstrani klicaj'),
+                onTap: () => Navigator.pop(context, 'klicaji'),
+              ),
             if (ureja) ...[
               const Divider(),
               ListTile(
@@ -78,6 +85,13 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
                 ),
                 onTap: () => Navigator.pop(context, 'arhiv'),
               ),
+              if (baza.mapa(p.mapa) case final m? when m.pavza != p.id)
+                ListTile(
+                  leading: const Icon(Icons.pause_circle_outline),
+                  title: const Text('Nastavi kot pavzo mape'),
+                  subtitle: Text('Izbira »Pavza« v iskalniku (${m.ime}) odpre to pesem'),
+                  onTap: () => Navigator.pop(context, 'pavza'),
+                ),
             ],
           ],
         ),
@@ -86,6 +100,25 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
   );
   if (izbira == null || !context.mounted) return;
   switch (izbira) {
+    case 'klicaji':
+      final api = apiZaKlicaje(baza, prijava);
+      for (final k in List.of(baza.klicaji[p.id] ?? const <KlicajPesmi>[])) {
+        await baza.izbrisiKlicaj(api, k.id);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Klicaji odstranjeni: ${p.naslov}')));
+      }
+    case 'pavza':
+      final m = baza.mapa(p.mapa)!;
+      final messenger = ScaffoldMessenger.of(context);
+      final api = apiZaUrejanje(context, prijava, baza: baza);
+      if (api == null) return;
+      try {
+        await baza.shraniMidi(api, 'Mape', {'ID': m.id, 'Ime': m.ime, 'Vrstni red': m.vrstniRed, 'Pavza': p.id});
+        messenger.showSnackBar(SnackBar(content: Text('Pavza v mapi ${m.ime}: ${p.naslov}')));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+      }
     case 'vsem':
       spil.zamenjajVsem(StanjeSpila(pesem: p.id));
     case 'povezava':
@@ -120,6 +153,13 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
       }, p.vArhivu ? 'Vrnjeno iz arhiva: ${p.naslov}' : 'Arhivirano: ${p.naslov}');
   }
 }
+
+/// Povezava za klicaje in dnevnik: na iPadu prek vodje, sicer s prijavo; brez nje se počaka (null).
+Api? apiZaKlicaje(Baza baza, Prijava prijava) => Config.prekoVodje
+    ? baza.risbe.api
+    : prijava.prijavljen
+    ? Api(prijava.zeton)
+    : null;
 
 /// Shrani nekaj podatkov pesmi (naslov gre zraven, ker ga skripta zahteva).
 Future<void> _shrani(BuildContext context, Baza baza, Prijava prijava, Pesem p, Zapis podatki, String sporocilo) async {

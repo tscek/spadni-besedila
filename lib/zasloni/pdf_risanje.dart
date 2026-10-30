@@ -7,9 +7,11 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
+import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
 import '../risbe.dart';
 import 'midi_zaslon.dart';
+import 'oznake.dart';
 
 /// PDF z osebnim slojem risb, opomb in gumbov. Med risanjem je premikanje s prstom izklopljeno,
 /// z dvema prstoma pa se PDF še vedno poveča ali pomanjša. Privzeto je vidna cela stran;
@@ -23,6 +25,7 @@ class PdfZRisanjem extends StatefulWidget {
     required this.risbe,
     required this.risanje,
     required this.knjiznica,
+    this.klicaji = const [],
   });
 
   final Uint8List pdf;
@@ -35,6 +38,9 @@ class PdfZRisanjem extends StatefulWidget {
   /// Ali je vklopljeno risanje (vklopi ga pridržanje na pesmi).
   final ValueNotifier<bool> risanje;
   final KnjiznicaMidi knjiznica;
+
+  /// Klicaji pesmi (na straneh PDF-ja so tisti s stranjo 1 in več).
+  final List<KlicajPesmi> klicaji;
 
   @override
   State<PdfZRisanjem> createState() => _PdfZRisanjemState();
@@ -75,6 +81,9 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 
   @override
   KnjiznicaMidi get knjiznica => widget.knjiznica;
+
+  @override
+  List<KlicajPesmi> get klicaji => widget.klicaji;
 
   // Stran 0 je besedilo pesmi, PDF ima strani od 1 naprej.
   @override
@@ -135,6 +144,13 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   String get pesem;
   ValueNotifier<bool> get risanje;
   KnjiznicaMidi get knjiznica;
+
+  /// Klicaji pesmi; narisani so na svojih straneh in utripajo.
+  List<KlicajPesmi> get klicaji;
+
+  // Izrisane strani: ključ za iskanje točke pod prstom in enota relativnih koordinat.
+  final _kljuciStrani = <int, GlobalKey>{};
+  final _enoteStrani = <int, Size>{};
 
   /// Ali stran pripada temu prikazu (»Izbriši vse« briše samo te strani).
   bool mojaStran(int stran);
@@ -419,23 +435,65 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   String get opisIzbrisa => 'Izbrišem vse risbe, oznake, opombe in gumbe na tej pesmi?';
 
+  // ---------- Klicaji (mesto na strani) ----------
+
+  /// Stran in relativna točka pod [globalno] (npr. trojni dotik); null, če ni nad nobeno stranjo.
+  ({int stran, Offset tocka})? naStrani(Offset globalno) {
+    for (final MapEntry(key: stran, value: kljuc) in _kljuciStrani.entries) {
+      final telo = kljuc.currentContext?.findRenderObject();
+      final enota = _enoteStrani[stran];
+      if (telo is! RenderBox || !telo.attached || !telo.hasSize || enota == null) continue;
+      final l = telo.globalToLocal(globalno);
+      if ((Offset.zero & telo.size).contains(l)) {
+        return (stran: stran, tocka: Offset(l.dx / enota.width, l.dy / enota.height));
+      }
+    }
+    return null;
+  }
+
+  /// Klicaj blizu [globalno] (dotik ali pridržanje na klicaju).
+  KlicajPesmi? klicajPri(Offset globalno) {
+    KlicajPesmi? najblizji;
+    var razdalja = 40.0;
+    for (final k in klicaji) {
+      final telo = _kljuciStrani[k.stran]?.currentContext?.findRenderObject();
+      final enota = _enoteStrani[k.stran];
+      if (telo is! RenderBox || !telo.attached || !telo.hasSize || enota == null) continue;
+      final g = telo.localToGlobal(Offset(k.x * enota.width, k.y * enota.height));
+      final d = (g - globalno).distance;
+      if (d < razdalja) {
+        razdalja = d;
+        najblizji = k;
+      }
+    }
+    return najblizji;
+  }
+
   // ---------- Prikaz ----------
 
   /// Označeno besedilo pod besedilom strani (barva za črkami).
-  Widget podlagaStrani(int stran, Size velikost, {double? enotaY}) => IgnorePointer(
+  Widget podlagaStrani(int stran, Size velikost, {double? enotaX, double? enotaY}) => IgnorePointer(
     child: CustomPaint(
       size: velikost,
       painter: _OznakeSlikar(
         oznake: List.of(_risba.oznake[stran] ?? const []),
-        enota: Size(velikost.width, enotaY ?? velikost.height),
+        enota: Size(enotaX ?? velikost.width, enotaY ?? velikost.height),
       ),
     ),
   );
 
-  /// Sloj risb nad stranjo velikosti [velikost]; [enotaY] je dolžina, s katero se množi y (privzeto višina).
-  /// Z [zOznakami] false so oznake narisane posebej pod besedilom ([podlagaStrani]).
-  Widget slojStrani(int stran, Size velikost, {double? enotaY, bool zOznakami = true}) {
-    final enota = Size(velikost.width, enotaY ?? velikost.height);
+  /// Sloj risb nad stranjo velikosti [velikost]; [enotaX] in [enotaY] sta dolžini, s katerima se množita
+  /// x in y (privzeto širina in višina). Z [zOznakami] false so oznake narisane posebej pod besedilom ([podlagaStrani]).
+  Widget slojStrani(int stran, Size velikost, {double? enotaX, double? enotaY, bool zOznakami = true}) {
+    final enota = Size(enotaX ?? velikost.width, enotaY ?? velikost.height);
+    _enoteStrani[stran] = enota;
+    return KeyedSubtree(
+      key: _kljuciStrani.putIfAbsent(stran, GlobalKey.new),
+      child: _sloj(stran, velikost, enota, zOznakami),
+    );
+  }
+
+  Widget _sloj(int stran, Size velikost, Size enota, bool zOznakami) {
     Offset rel(Offset l) => Offset(l.dx / enota.width, l.dy / enota.height);
     final risba = CustomPaint(
       size: velikost,
@@ -457,6 +515,14 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
             child: GumbVOpombah(gumb: g, velikost: enota.width * 0.03, knjiznica: knjiznica),
           ),
         ),
+      // Klicaj: točka je pod klicajem, klicaj stoji nad njo.
+      for (final k in klicaji)
+        if (k.stran == stran)
+          Positioned(
+            left: k.x * enota.width - enota.width * 0.02,
+            top: k.y * enota.height - enota.width * 0.07,
+            child: IgnorePointer(child: UtripajociKlicaj(velikost: enota.width * 0.08)),
+          ),
     ];
     if (!risem) {
       return SizedBox.fromSize(

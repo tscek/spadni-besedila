@@ -23,7 +23,7 @@ class NastavitveZaslon extends StatelessWidget {
           children: [
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
-              title: const Text('Velikost pisave besedila (ali ščip na besedilu)'),
+              title: const Text('Splošna velikost pisave besedila'),
               subtitle: Slider(
                 value: n.pisava,
                 min: 12,
@@ -32,6 +32,21 @@ class NastavitveZaslon extends StatelessWidget {
                 label: n.pisava.round().toString(),
                 onChanged: n.nastaviPisavo,
               ),
+            ),
+            ListTile(
+              title: const Text('Povečave posameznih pesmi'),
+              subtitle: Text(
+                'Ščip na besedilu ali PDF-ju se zapomni za tisto pesem. Pesmi s svojo pisavo: ${n.pisavePesmi.length}',
+              ),
+              trailing: TextButton(onPressed: n.ponastaviPovecavePesmi, child: const Text('Ponastavi')),
+            ),
+            SwitchListTile(
+              title: const Text('Prelom vrstic pri povečavi'),
+              subtitle: const Text(
+                'Večje besedilo gre v novo vrstico namesto čez rob. Risbe na besedilu se lahko zamaknejo.',
+              ),
+              value: n.prelom,
+              onChanged: n.nastaviPrelom,
             ),
             SwitchListTile(
               title: const Text('Akordi nad besedilom'),
@@ -78,8 +93,22 @@ class NastavitveZaslon extends StatelessWidget {
               ),
             const Divider(),
             const ListTile(
+              title: Text('Vrstica pod orodno vrstico pri pesmi'),
+              subtitle: Text('Trije deli; prazni se umaknejo, ostali si razdelijo širino. Vse »Nič« skrije vrstico.'),
+            ),
+            for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
+              ListTile(
+                title: Text(ime),
+                trailing: DropdownButton<InfoVrstice>(
+                  value: n.zgoraj[i],
+                  onChanged: (v) => v == null ? null : n.nastaviZgoraj(i, v),
+                  items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
+                ),
+              ),
+            const Divider(),
+            const ListTile(
               title: Text('Spodnja vrstica pri pesmi'),
-              subtitle: Text('Trije deli; iskanje je vedno desno'),
+              subtitle: Text('Trije deli; prazni se umaknejo. Iskanje je vedno desno'),
             ),
             for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
               ListTile(
@@ -90,6 +119,25 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
+            ListTile(
+              title: const Text('Iskalnik pesmi: podatki pod naslovom'),
+              subtitle: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final polje in PoljePesmi.values)
+                    if (polje != PoljePesmi.naslov && polje != PoljePesmi.spremenjeno && polje != PoljePesmi.koda)
+                      FilterChip(
+                        label: Text(polje.ime),
+                        selected: n.poljaIskalnika.contains(polje),
+                        onSelected: (da) => n.nastaviPoljaIskalnika([
+                          for (final x in PoljePesmi.values)
+                            if (x == polje ? da : n.poljaIskalnika.contains(x)) x,
+                        ]),
+                      ),
+                ],
+              ),
+            ),
             const Divider(),
             ListTile(
               title: const Text('Vrstica na seznamu pesmi'),

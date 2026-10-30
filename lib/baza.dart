@@ -27,6 +27,12 @@ class Baza extends ChangeNotifier {
   List<Vloga> vloge = [];
   List<Mapa> mape = [];
   List<Harmonika> harmonike = [];
+
+  /// Vrste pesmi z barvami (list Vrste).
+  List<Harmonika> vrste = [];
+
+  /// Klicaji po pesmih (skupni za vse člane).
+  Map<String, List<KlicajPesmi>> klicaji = {};
   KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};
@@ -54,7 +60,49 @@ class Baza extends ChangeNotifier {
     if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
     final n = await shramba.beriBesedilo(_kljucNeposlanih);
     if (n != null) neposlano = (jsonDecode(n) as List).cast<Map<String, dynamic>>();
+    final d = await shramba.beriBesedilo(_kljucDnevnika);
+    if (d != null) dnevnik = (jsonDecode(d) as List).cast<Map<String, dynamic>>();
     notifyListeners();
+  }
+
+  // ---------- Dnevnik odprtih pesmi ----------
+
+  static const _kljucDnevnika = 'dnevnik.json';
+
+  /// Zapisi odprtih pesmi, ki še niso na strežniku (list Dnevnik igranja).
+  List<Map<String, dynamic>> dnevnik = [];
+  bool _posiljamDnevnik = false;
+
+  /// Zabeleži odprto pesem; na strežnik gre takoj, ko je internet (sicer ob naslednji osvežitvi).
+  Future<void> zabelezi(Api? api, Map<String, dynamic> zapis) async {
+    dnevnik.add({'id': _novId(), ...zapis});
+    await shramba.pisiBesedilo(_kljucDnevnika, jsonEncode(dnevnik));
+    if (api != null) await posljiDnevnik(api);
+  }
+
+  Future<void> posljiDnevnik(Api api) async {
+    if (_posiljamDnevnik || dnevnik.isEmpty) return;
+    _posiljamDnevnik = true;
+    try {
+      final paket = List.of(dnevnik.take(200));
+      await api.dnevnik(paket);
+      final poslani = {for (final z in paket) z['id']};
+      dnevnik.removeWhere((z) => poslani.contains(z['id']));
+      await shramba.pisiBesedilo(_kljucDnevnika, jsonEncode(dnevnik));
+    } catch (_) {
+      // ostane za naslednjič
+    } finally {
+      _posiljamDnevnik = false;
+    }
+  }
+
+  static int _stevec = 0;
+
+  /// Kratek ID, ki ga določi naprava (klicaj, zapis dnevnika), da ga je mogoče izbrisati tudi brez interneta.
+  static String _novId() {
+    _stevec = (_stevec + 1) % 1296;
+    final t = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    return '${t.substring(t.length - 6)}${_stevec.toRadixString(36).padLeft(2, '0')}';
   }
 
   // ---------- Urejanje brez interneta ----------
@@ -98,6 +146,19 @@ class Baza extends ChangeNotifier {
   /// Pošlje spremembe, shranjene brez interneta. Ustavi se ob prvi napaki povezave.
   /// Spremembo, ki jo strežnik zavrne, zavrže in vrne opis; vrne null, če je vse poslano.
   Future<String?> posljiNeposlano(Api api) async {
+    // Hkrati pošilja samo en klic, da se ista sprememba ne pošlje dvakrat.
+    if (_posiljamNeposlano) return null;
+    _posiljamNeposlano = true;
+    try {
+      return await _posljiNeposlano(api);
+    } finally {
+      _posiljamNeposlano = false;
+    }
+  }
+
+  bool _posiljamNeposlano = false;
+
+  Future<String?> _posljiNeposlano(Api api) async {
     final zavrnjene = <String>[];
     while (neposlano.isNotEmpty) {
       final n = neposlano.first;
@@ -107,8 +168,11 @@ class Baza extends ChangeNotifier {
           final odg = await api.shraniPesem(podatki);
           await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
         } else if (n['akcija'] == 'zaVajo') {
-          final odg = await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
-          await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
+          // Star zapis klicaja (pred klicaji na mestu): samo še pošlje.
+          await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
+        } else if (n['akcija'] == 'klicaj') {
+          final odg = await api.klicaj(podatki, izbrisi: n['izbrisi'] == true);
+          if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Klicaji', v.cast<String, dynamic>());
         } else {
           final odg = await api.shraniBesedilo(podatki);
           if (n['zacasniId'] case final String z) await _zamenjajVrstico('Besedila', null, izbrisi: z);
@@ -120,7 +184,13 @@ class Baza extends ChangeNotifier {
         }
       } on ApiNapaka catch (e) {
         if (e is NiPovezave) break;
-        zavrnjene.add('${n['akcija'] == 'besedilo' ? 'Besedilo' : 'Pesem'}: $e');
+        zavrnjene.add(
+          '${switch (n['akcija']) {
+            'besedilo' => 'Besedilo',
+            'klicaj' => 'Klicaj',
+            _ => 'Pesem',
+          }}: $e',
+        );
       } catch (_) {
         break; // še vedno brez povezave
       }
@@ -137,8 +207,16 @@ class Baza extends ChangeNotifier {
     final tabele = (podatki['tabele'] as Map<String, dynamic>?) ?? {};
     List<Zapis> t(String ime) => ((tabele[ime] as List?) ?? []).cast<Map<String, dynamic>>();
 
-    pesmi = t('Pesmi').map(Pesem.izVrstice).where((p) => p.id.isNotEmpty && p.aktivna).toList()
-      ..sort((a, b) => a.kodaStevilka.compareTo(b.kodaStevilka));
+    klicaji = {};
+    for (final k in t('Klicaji').map(KlicajPesmi.izVrstice).where((k) => k.id.isNotEmpty)) {
+      klicaji.putIfAbsent(k.pesem, () => []).add(k);
+    }
+    pesmi = [
+      for (final r in t('Pesmi'))
+        if (Pesem.izVrstice(r, klicaji: klicaji[besedilo(r['ID'])]?.length ?? 0) case final p
+            when p.id.isNotEmpty && p.aktivna)
+          p,
+    ]..sort((a, b) => a.kodaStevilka.compareTo(b.kodaStevilka));
     _poId = {for (final p in pesmi) p.id: p};
 
     pdfjiPesmi = {};
@@ -170,6 +248,8 @@ class Baza extends ChangeNotifier {
       ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     harmonike = t('Harmonike').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
       ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
+    vrste = t('Vrste').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
+      ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     midi = KnjiznicaMidi.izTabel(tabele);
     vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     zadnjaOsvezitev = DateTime.tryParse(podatki['cas']?.toString() ?? '');
@@ -194,6 +274,7 @@ class Baza extends ChangeNotifier {
           return;
         }
       }
+      await posljiDnevnik(api);
       final podatki = await api.podatki();
       await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(podatki));
       _uporabi(podatki);
@@ -323,18 +404,67 @@ class Baza extends ChangeNotifier {
   /// Harmonika po imenu (stolpec Harmonika pri pesmi).
   Harmonika? harmonika(String ime) => harmonike.where((h) => h.ime == ime).firstOrNull;
 
-  /// Klicaj »za vajo«: takoj na napravi, na strežnik takoj ali, brez interneta, pozneje.
+  /// Vrsta pesmi z barvo po imenu (stolpec Vrsta pri pesmi).
+  Harmonika? vrsta(String ime) => vrste.where((h) => h.ime == ime).firstOrNull;
+
+  /// Pesmi s klicaji (brez arhiviranih), za mapo »Za vajo«.
+  List<Pesem> get pesmiSKlicaji => [
+    for (final p in pesmi)
+      if (!p.vArhivu && p.zaVajo) p,
+  ];
+
+  /// ID prijavljenega člana (prazno, če ni prijave).
+  String get clanId => besedilo((_podatki['clan'] as Map?)?['ID']);
+
+  /// Ime člana po ID-ju (npr. kdo je dodal klicaj).
+  String imeClanaZ(String id) => clani.where((c) => c.id == id).firstOrNull?.ime ?? id;
+
+  /// Nov klicaj na mestu ([stran] 0 je besedilo): takoj na napravi, na strežnik takoj ali pozneje.
   /// Brez [api] (npr. vodja brez prijave) počaka med neposlanimi.
-  Future<void> nastaviZaVajo(Api? api, String pesem, bool vrednost) async {
-    final stara = _vrstica('Pesmi', pesem);
-    if (stara == null) return;
-    final podatki = {'ID': pesem, 'Za vajo': vrednost};
-    neposlano.removeWhere((n) => n['akcija'] == 'zaVajo' && besedilo((n['podatki'] as Map)['ID']) == pesem);
-    neposlano.add({'akcija': 'zaVajo', 'podatki': podatki});
+  Future<KlicajPesmi> dodajKlicaj(Api? api, String pesem, int stran, double x, double y, {String? clan}) async {
+    final k = KlicajPesmi(
+      id: _novId(),
+      pesem: pesem,
+      stran: stran,
+      x: x,
+      y: y,
+      clan: clan ?? clanId,
+      cas: DateTime.now(),
+    );
+    await shraniKlicaj(api, k.vVrstico());
+    return k;
+  }
+
+  /// Shrani klicaj (tudi tistega, ki ga vodji pošlje iPad).
+  Future<void> shraniKlicaj(Api? api, Zapis vrstica) async {
+    neposlano.add({'akcija': 'klicaj', 'podatki': vrstica});
     await _shraniNeposlano();
-    await _zamenjajVrstico('Pesmi', {...stara, 'Za vajo': vrednost});
-    if (api != null) await posljiNeposlano(api);
-    notifyListeners();
+    await _zamenjajVrstico('Klicaji', vrstica);
+    if (api != null) await _posljiTiho(api);
+  }
+
+  Future<void> izbrisiKlicaj(Api? api, String id) async {
+    final vrstica = _vrstica('Klicaji', id) ?? {'ID': id};
+    // Klicaj, ki še ni bil poslan, se samo umakne.
+    final prej = neposlano.indexWhere(
+      (n) => n['akcija'] == 'klicaj' && n['izbrisi'] != true && besedilo((n['podatki'] as Map)['ID']) == id,
+    );
+    if (prej >= 0) {
+      neposlano.removeAt(prej);
+    } else {
+      neposlano.add({'akcija': 'klicaj', 'podatki': vrstica, 'izbrisi': true});
+    }
+    await _shraniNeposlano();
+    await _zamenjajVrstico('Klicaji', null, izbrisi: id);
+    if (api != null) await _posljiTiho(api);
+  }
+
+  Future<void> _posljiTiho(Api api) async {
+    try {
+      await posljiNeposlano(api);
+    } catch (_) {
+      // ostane med neposlanimi
+    }
   }
 
   /// Vrstica lista Pesmi, kot je v lokalni kopiji.

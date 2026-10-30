@@ -17,6 +17,7 @@ import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
+import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/naslednje.dart';
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/seznam_zaslon.dart';
@@ -30,6 +31,7 @@ const _tabele = {
       'Mapa': 'nz',
       'Harmonika': 'C-F-B',
       'Tonaliteta': 'F',
+      'Vrsta': 'Valček',
       'Ocena': 4,
       'Aktivna': true,
     },
@@ -40,17 +42,19 @@ const _tabele = {
       'Mapa': 'nz',
       'Harmonika': 'B-Es-As',
       'Tonaliteta': 'B',
+      'Vrsta': 'Polka',
       'Aktivna': true,
     },
     {'ID': 'c', 'Koda': 3, 'Naslov': 'ZABAVNA', 'Mapa': 'zab', 'Status': 'V delu', 'Aktivna': true},
     {'ID': 'd', 'Koda': 4, 'Naslov': 'STARA', 'Mapa': 'nz', 'Status': 'Arhiv', 'Aktivna': true},
+    {'ID': 'e', 'Koda': 5, 'Naslov': '0 PAVZA', 'Mapa': 'nz', 'Aktivna': true},
   ],
   'Besedila': [
     {'ID': 't', 'Pesem': 'a', 'Besedilo': '[C]Belo obleko [G7]si že nosila\nla la la'},
   ],
   'Mape': [
     {'ID': 'zab', 'Ime': 'Zabavne', 'Vrstni red': 2},
-    {'ID': 'nz', 'Ime': 'Narodno-zabavne', 'Vrstni red': 1},
+    {'ID': 'nz', 'Ime': 'Narodno-zabavne', 'Vrstni red': 1, 'Pavza': 'e'},
   ],
   'Harmonike': [
     {'ID': 'h1', 'Ime': 'C-F-B', 'Barva': '#1E88E5', 'Vrstni red': 1},
@@ -82,26 +86,35 @@ void main() {
   test('mape, harmonike, status in razvrščanje po poljih', () async {
     final (baza, _) = await _baza();
     expect(baza.mape.map((m) => m.ime), ['Narodno-zabavne', 'Zabavne']);
-    expect(baza.pesmiMape('nz').map((p) => p.id), ['a', 'b']); // arhivirana ni v mapi
-    expect(baza.pesmiMape(null).map((p) => p.id), ['a', 'b', 'c']);
+    expect(baza.pesmiMape('nz').map((p) => p.id), ['a', 'b', 'e']); // arhivirana ni v mapi
+    expect(baza.pesmiMape(null).map((p) => p.id), ['a', 'b', 'c', 'e']);
+    expect(baza.mapa('nz')!.pavza, 'e');
     expect(baza.arhiv.single.id, 'd');
     expect(baza.harmonika('B-Es-As')?.argb, 0xFFE53935);
     expect(baza.pesem('c')!.status, StatusPesmi.vDelu);
     expect(baza.pesem('a')!.ocena, 4);
 
     final pesmi = baza.pesmiMape(null)..sort(PoljePesmi.naslov.primerjaj);
-    expect(pesmi.map((p) => p.naslov), ['AVSENIK', 'BELO OBLEKO', 'ZABAVNA']);
+    expect(pesmi.map((p) => p.naslov), ['0 PAVZA', 'AVSENIK', 'BELO OBLEKO', 'ZABAVNA']);
     pesmi.sort(PoljePesmi.tonaliteta.primerjaj);
     expect(pesmi.first.tonaliteta, 'F'); // F je pred B, prazna na koncu
     expect(menjaHarmoniko(baza.pesem('a'), baza.pesem('b')), isTrue);
     expect(menjaHarmoniko(baza.pesem('a'), baza.pesem('c')), isFalse); // brez harmonike
   });
 
-  test('klicaj za vajo brez interneta počaka in se pošlje pozneje', () async {
+  test('klicaji na mestu: brez interneta počakajo, več na pesem, brisanje še neposlanega', () async {
     final (baza, _) = await _baza();
-    await baza.nastaviZaVajo(null, 'a', true);
-    expect(baza.pesem('a')!.zaVajo, isTrue);
-    expect(baza.neposlano.single['akcija'], 'zaVajo');
+    final k1 = await baza.dodajKlicaj(null, 'a', 0, 0.5, 0.2, clan: 'C');
+    final k2 = await baza.dodajKlicaj(null, 'a', 1, 0.1, 0.9, clan: 'C');
+    expect(baza.pesem('a')!.klicaji, 2);
+    expect(baza.pesmiSKlicaji.single.id, 'a');
+    expect(baza.klicaji['a']!.first.x, 0.5);
+    expect(baza.neposlano.map((n) => n['akcija']), ['klicaj', 'klicaj']);
+
+    // Klicaj, ki še ni bil poslan, se ob brisanju samo umakne iz čakanja.
+    await baza.izbrisiKlicaj(null, k2.id);
+    expect(baza.pesem('a')!.klicaji, 1);
+    expect(baza.neposlano, hasLength(1));
 
     final poslano = <Map<String, dynamic>>[];
     final api = Api(
@@ -110,21 +123,42 @@ void main() {
       client: MockClient((r) async {
         final telo = jsonDecode(r.body) as Map<String, dynamic>;
         poslano.add(telo);
+        final k = telo['klicaj'] as Map<String, dynamic>;
         return http.Response.bytes(
-          utf8.encode(
-            jsonEncode({
-              'vrstica': {...(_tabele['Pesmi']!.first), 'Za vajo': telo['vrednost']},
-            }),
-          ),
+          utf8.encode(jsonEncode(telo['izbrisi'] == true ? {'izbrisano': k['ID']} : {'vrstica': k})),
           200,
         );
       }),
     );
     expect(await baza.posljiNeposlano(api), isNull);
-    expect(poslano.single['akcija'], 'zaVajo');
-    expect(poslano.single['vrednost'], isTrue);
+    expect(poslano.single['akcija'], 'klicaj');
+    expect((poslano.single['klicaj'] as Map)['ID'], k1.id);
+    expect((poslano.single['klicaj'] as Map)['Član'], 'C');
+
+    await baza.izbrisiKlicaj(api, k1.id);
+    expect(poslano.last['izbrisi'], isTrue);
+    expect(baza.pesem('a')!.zaVajo, isFalse);
     expect(baza.neposlano, isEmpty);
-    expect(baza.pesem('a')!.zaVajo, isTrue);
+  });
+
+  test('dnevnik odprtih pesmi počaka na internet in se pošlje v paketu', () async {
+    final (baza, _) = await _baza();
+    await baza.zabelezi(null, {'pesem': 'a', 'trajanje': 120});
+    await baza.zabelezi(null, {'pesem': 'b', 'trajanje': 30});
+    expect(baza.dnevnik, hasLength(2));
+    final poslano = <Map<String, dynamic>>[];
+    final api = Api(
+      () async => 'z',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async {
+        poslano.add(jsonDecode(r.body) as Map<String, dynamic>);
+        return http.Response(jsonEncode({'zapisano': 2}), 200);
+      }),
+    );
+    await baza.posljiDnevnik(api);
+    expect(poslano.single['akcija'], 'dnevnik');
+    expect((poslano.single['vrstice'] as List).map((v) => v['pesem']), ['a', 'b']);
+    expect(baza.dnevnik, isEmpty);
   });
 
   test('odigrane pesmi in časovnik runde se zapomnijo', () async {
@@ -213,6 +247,9 @@ void main() {
     await tester.runAsync(() async => baza = (await _baza()).$1);
     await tester.pumpWidget(
       MaterialApp(
+        // Brez animacij klicaj ne utripa (sicer pumpAndSettle nikoli ne konča).
+        builder: (context, child) =>
+            MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child!),
         home: PesemZaslon(pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
       ),
     );
@@ -227,10 +264,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.pumpAndSettle();
-    expect(baza.pesem('a')!.zaVajo, isTrue);
+    expect(baza.pesem('a')!.klicaji, 1);
     expect(find.text('!'), findsWidgets);
+    final k = baza.klicaji['a']!.single;
+    expect(k.stran, 0);
+    expect(k.x, inInclusiveRange(0, 1));
     await tester.pump(const Duration(seconds: 3)); // obvestilo izgine
     await tester.pumpAndSettle();
+
+    // Pridržanje na klicaju: kdo in kdaj, brisanje.
+    await tester.longPress(besedilo);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Dodal:'), findsOneWidget);
+    await tester.tap(find.text('Izbriši'));
+    await tester.pumpAndSettle();
+    expect(baza.pesem('a')!.klicaji, 0);
 
     await tester.longPress(besedilo);
     await tester.pumpAndSettle();
@@ -239,6 +287,41 @@ void main() {
     await tester.tap(find.text('Končano'));
     await tester.pumpAndSettle();
     expect(find.text('Končano'), findsNothing);
+  });
+
+  testWidgets('iskalnik: pavza na vrhu, hitri filtri, zapre se ob dotiku mimo', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    await Odigrane.aplikacija.oznaci('b');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Vrstica pod orodno vrstico: naslov in tonaliteta (naslova v orodni vrstici ni).
+    expect(find.text('BELO OBLEKO'), findsOneWidget);
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    final iskalnik = find.byType(IskalnikPesmi);
+    expect(find.descendant(of: iskalnik, matching: find.text('Pavza')), findsOneWidget);
+    expect(find.descendant(of: iskalnik, matching: find.text('0 PAVZA')), findsNothing);
+    // Odigrana pesem ima samo naslov (brez podatkov pod njim).
+    expect(find.descendant(of: iskalnik, matching: find.text('B')), findsNothing);
+    expect(find.descendant(of: iskalnik, matching: find.text('Valček')), findsWidgets);
+
+    await tester.tap(find.descendant(of: iskalnik, matching: find.widgetWithText(FilterChip, 'Polka')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: iskalnik, matching: find.text('AVSENIK')), findsOneWidget);
+    expect(find.descendant(of: iskalnik, matching: find.text('BELO OBLEKO')), findsNothing);
+
+    // Dotik mimo iskalnika ga zapre; ob ponovnem odprtju filtrov ni več.
+    await tester.tapAt(const Offset(20, 200));
+    await tester.pumpAndSettle();
+    expect(find.byType(IskalnikPesmi), findsNothing);
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byType(IskalnikPesmi), matching: find.text('BELO OBLEKO')), findsOneWidget);
   });
 }
 

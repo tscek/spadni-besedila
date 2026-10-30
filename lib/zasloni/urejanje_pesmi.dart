@@ -139,6 +139,8 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     }
     if (stolpec == 'Status') return p.status.ime;
     if (stolpec == 'Ocena') return p.ocena == 0 ? '' : '${p.ocena}';
+    // Stari zapis iz SongBooka (3|7|…) se pokaže kot CC / PC / Nota.
+    if (_poljaMidi.any((m) => m.$1 == stolpec)) return berljivZapis(besedilo(p.vrstica[stolpec]));
     return besedilo(p.vrstica[stolpec]);
   }
 
@@ -374,6 +376,17 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     void nastavi(String v) => setState(() => c.text = v);
     final okvir = InputDecoration(labelText: stolpec, border: const OutlineInputBorder());
     final Widget polje = switch (vnos) {
+      // Vrste imajo barve (seznam vrst, skupen vsem).
+      _Vnos.predlogi when stolpec == 'Vrsta' => Row(
+        children: [
+          Expanded(child: _ssPredlogi(stolpec)),
+          IconButton(
+            tooltip: 'Barve vrst',
+            icon: Icon(Icons.palette_outlined, color: barvaVrste(widget.baza, c.text)),
+            onPressed: () => _urediSeznam(vrste: true),
+          ),
+        ],
+      ),
       _Vnos.predlogi => _ssPredlogi(stolpec),
       _Vnos.tonaliteta => DropdownButtonFormField<String>(
         initialValue: c.text.isEmpty ? null : c.text,
@@ -417,7 +430,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           IconButton(
             tooltip: 'Uredi seznam harmonik',
             icon: const Icon(Icons.palette_outlined),
-            onPressed: _urediHarmonike,
+            onPressed: _urediSeznam,
           ),
         ],
       ),
@@ -508,11 +521,11 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     );
   }
 
-  /// Seznam harmonik z barvami (skupen vsem); harmonikaš vidi barvo v čakalni vrsti.
-  Future<void> _urediHarmonike() async {
+  /// Seznam harmonik ali vrst z barvami (skupen vsem); harmonikaš vidi barvo v čakalni vrsti.
+  Future<void> _urediSeznam({bool vrste = false}) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => _UrejanjeHarmonik(baza: widget.baza, api: widget.api),
+      builder: (context) => _UrejanjeBarv(baza: widget.baza, api: widget.api, vrste: vrste),
     );
     if (mounted) setState(() {});
   }
@@ -783,17 +796,23 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
 }
 
 /// Seznam harmonik z barvami: dodajanje, preimenovanje, barva in brisanje.
-class _UrejanjeHarmonik extends StatefulWidget {
-  const _UrejanjeHarmonik({required this.baza, required this.api});
+class _UrejanjeBarv extends StatefulWidget {
+  const _UrejanjeBarv({required this.baza, required this.api, this.vrste = false});
 
   final Baza baza;
   final Api api;
 
+  /// Seznam vrst (list Vrste) namesto harmonik.
+  final bool vrste;
+
   @override
-  State<_UrejanjeHarmonik> createState() => _UrejanjeHarmonikState();
+  State<_UrejanjeBarv> createState() => _UrejanjeBarvState();
 }
 
-class _UrejanjeHarmonikState extends State<_UrejanjeHarmonik> {
+class _UrejanjeBarvState extends State<_UrejanjeBarv> {
+  List<Harmonika> get _seznam => widget.vrste ? widget.baza.vrste : widget.baza.harmonike;
+  String get _tabela => widget.vrste ? 'Vrste' : 'Harmonike';
+
   static const _barve = [
     Colors.red,
     Colors.orange,
@@ -812,19 +831,23 @@ class _UrejanjeHarmonikState extends State<_UrejanjeHarmonik> {
 
   Future<void> _uredi(Harmonika? h) async {
     final ime = TextEditingController(text: h?.ime ?? '');
-    var barva = h?.barva ?? _hex(_barve[widget.baza.harmonike.length % _barve.length]);
+    var barva = h?.barva ?? _hex(_barve[_seznam.length % _barve.length]);
     final rezultat = await showDialog<String>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, nastavi) => AlertDialog(
-          title: Text(h == null ? 'Nova harmonika' : 'Uredi harmoniko'),
+          title: Text(
+            widget.vrste
+                ? (h == null ? 'Nova vrsta' : 'Uredi vrsto')
+                : (h == null ? 'Nova harmonika' : 'Uredi harmoniko'),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: ime,
                 autofocus: true,
-                decoration: const InputDecoration(labelText: 'Ime (npr. B-Es-As)'),
+                decoration: InputDecoration(labelText: widget.vrste ? 'Ime (npr. Valček)' : 'Ime (npr. B-Es-As)'),
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -859,11 +882,11 @@ class _UrejanjeHarmonikState extends State<_UrejanjeHarmonik> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _shranjujem = true);
     try {
-      await widget.baza.shraniMidi(widget.api, 'Harmonike', {
+      await widget.baza.shraniMidi(widget.api, _tabela, {
         if (h != null) 'ID': h.id,
         'Ime': novo,
         'Barva': barva,
-        'Vrstni red': h?.vrstniRed ?? widget.baza.harmonike.length + 1,
+        'Vrstni red': h?.vrstniRed ?? _seznam.length + 1,
       }, izbrisi: rezultat == 'izbrisi');
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
@@ -877,20 +900,20 @@ class _UrejanjeHarmonikState extends State<_UrejanjeHarmonik> {
     return ListenableBuilder(
       listenable: widget.baza,
       builder: (context, _) => AlertDialog(
-        title: const Text('Harmonike'),
+        title: Text(widget.vrste ? 'Vrste pesmi' : 'Harmonike'),
         content: SizedBox(
           width: 320,
           child: ListView(
             shrinkWrap: true,
             children: [
-              for (final h in widget.baza.harmonike)
+              for (final h in _seznam)
                 ListTile(
                   leading: CircleAvatar(radius: 12, backgroundColor: h.argb == null ? Colors.grey : Color(h.argb!)),
                   title: Text(h.ime),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: _shranjujem ? null : () => _uredi(h),
                 ),
-              if (widget.baza.harmonike.isEmpty) const ListTile(title: Text('Ni še harmonik.')),
+              if (_seznam.isEmpty) ListTile(title: Text(widget.vrste ? 'Ni še vrst.' : 'Ni še harmonik.')),
             ],
           ),
         ),

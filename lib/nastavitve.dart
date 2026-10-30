@@ -82,10 +82,25 @@ class Nastavitve extends ChangeNotifier {
   static const _minuteOdigrane = 'minute_odigrane';
   static const _spodaj = 'spodnja_vrstica';
   static const _poljaVrste = 'polja_cakalne_vrste';
+  static const _zgoraj = 'zgornja_vrstica';
+  static const _prelom = 'prelom_vrstic';
+  static const _poljaIskalnika = 'polja_iskalnika';
+  static const _razvrstiIskalnik = 'razvrsti_iskalnik';
+  static const _pisavaPesmi = 'pisava_pesmi_';
+  static const _razvrstiMape = 'razvrsti_mape_';
+  static const _padajoceMape = 'padajoce_mape_';
   static const _runda = 'runda_';
 
-  /// Velikost pisave besedila.
+  /// Splošna velikost pisave besedila (pesem ima lahko svojo, glej [pisavaZa]).
   double pisava = 22;
+
+  /// Velikost pisave, ki jo je član nastavil na posamezni pesmi (ščip ali gumba).
+  final Map<String, double> pisavePesmi = {};
+
+  double pisavaZa(String pesem) => pisavePesmi[pesem] ?? pisava;
+
+  /// Besedilo se ob večji pisavi prelomi v novo vrstico (sicer je stran širša od zaslona).
+  bool prelom = true;
 
   /// Pri pesmi z besedilom in PDF-jem najprej pokaži PDF.
   bool pdfNajprej = false;
@@ -106,14 +121,27 @@ class Nastavitve extends ChangeNotifier {
   /// Ikoni besedila in PDF-ja v vrstici seznama.
   bool ikoneSeznama = true;
 
+  /// Privzeto razvrščanje seznama; vsaka mapa si zapomni svoje ([razvrscanjeMape]).
   PoljePesmi razvrsti = PoljePesmi.koda;
   bool padajoce = false;
+  final Map<String, (PoljePesmi, bool)> _razvrscanjeMap = {};
+
+  (PoljePesmi, bool) razvrscanjeMape(String mapa) => _razvrscanjeMap[mapa] ?? (razvrsti, padajoce);
+
+  /// Podatki pod naslovom v iskalniku pesmi.
+  List<PoljePesmi> poljaIskalnika = const [PoljePesmi.izvajalec, PoljePesmi.tonaliteta];
+
+  /// Razvrščanje v iskalniku; null = kot v mapi.
+  PoljePesmi? razvrstiIskalnik;
 
   /// Po koliko minutah odprte pesmi se ta označi kot odigrana (0 = nikoli).
   int minuteOdigrane = 2;
 
   /// Levi, srednji in desni del spodnje vrstice pri pesmi.
   List<InfoVrstice> spodaj = const [InfoVrstice.tonalitetaHarmonika, InfoVrstice.naslednja, InfoVrstice.ura];
+
+  /// Vrstica pod orodno vrstico pri pesmi (trije deli kot spodaj).
+  List<InfoVrstice> zgoraj = const [InfoVrstice.naslov, InfoVrstice.tonaliteta, InfoVrstice.nic];
 
   /// Podatki pesmi v napisu čakalne vrste.
   List<PoljePesmi> poljaVrste = const [PoljePesmi.naslov, PoljePesmi.tonaliteta, PoljePesmi.harmonika];
@@ -154,6 +182,24 @@ class Nastavitve extends ChangeNotifier {
     ikoneSeznama = p.getBool(_ikoneSeznama) ?? ikoneSeznama;
     razvrsti = PoljePesmi.values.asNameMap()[p.getString(_razvrsti)] ?? razvrsti;
     padajoce = p.getBool(_padajoce) ?? padajoce;
+    _razvrscanjeMap.clear();
+    pisavePesmi.clear();
+    for (final k in p.getKeys()) {
+      if (k.startsWith(_razvrstiMape)) {
+        final mapa = k.substring(_razvrstiMape.length);
+        final polje = PoljePesmi.values.asNameMap()[p.getString(k)];
+        if (polje != null) _razvrscanjeMap[mapa] = (polje, p.getBool('$_padajoceMape$mapa') ?? false);
+      }
+      if (k.startsWith(_pisavaPesmi)) {
+        final v = p.getDouble(k);
+        if (v != null) pisavePesmi[k.substring(_pisavaPesmi.length)] = v;
+      }
+    }
+    prelom = p.getBool(_prelom) ?? prelom;
+    poljaIskalnika = seznam(_poljaIskalnika, PoljePesmi.values) ?? poljaIskalnika;
+    razvrstiIskalnik = PoljePesmi.values.asNameMap()[p.getString(_razvrstiIskalnik)];
+    final zg = seznam(_zgoraj, InfoVrstice.values);
+    if (zg != null && zg.length == 3) zgoraj = zg;
     minuteOdigrane = p.getInt(_minuteOdigrane) ?? minuteOdigrane;
     final sp = seznam(_spodaj, InfoVrstice.values);
     if (sp != null && sp.length == 3) spodaj = sp;
@@ -176,6 +222,47 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviPisavo(double v) {
     pisava = v.clamp(12, 64);
     return _shrani((p) => p.setDouble(_pisava, pisava));
+  }
+
+  /// Pisava ene pesmi; null pomeni splošno.
+  Future<void> nastaviPisavoPesmi(String pesem, double? v) {
+    if (v == null) {
+      pisavePesmi.remove(pesem);
+      return _shrani((p) => p.remove('$_pisavaPesmi$pesem'));
+    }
+    final x = v.clamp(12, 64).toDouble();
+    pisavePesmi[pesem] = x;
+    return _shrani((p) => p.setDouble('$_pisavaPesmi$pesem', x));
+  }
+
+  /// Vse pesmi spet s splošno pisavo in privzeto povečavo PDF-ja.
+  Future<void> ponastaviPovecavePesmi() async {
+    pisavePesmi.clear();
+    await _shrani((p) {
+      for (final k in p.getKeys().toList()) {
+        if (k.startsWith(_pisavaPesmi) || k.startsWith('pdf_zoom_')) p.remove(k);
+      }
+    });
+  }
+
+  Future<void> nastaviPrelom(bool v) {
+    prelom = v;
+    return _shrani((p) => p.setBool(_prelom, v));
+  }
+
+  Future<void> nastaviZgoraj(int del, InfoVrstice v) {
+    zgoraj = [...zgoraj]..[del] = v;
+    return _shrani((p) => p.setStringList(_zgoraj, [for (final x in zgoraj) x.name]));
+  }
+
+  Future<void> nastaviPoljaIskalnika(List<PoljePesmi> v) {
+    poljaIskalnika = List.unmodifiable(v);
+    return _shrani((p) => p.setStringList(_poljaIskalnika, [for (final x in v) x.name]));
+  }
+
+  Future<void> nastaviRazvrscanjeIskalnika(PoljePesmi? v) {
+    razvrstiIskalnik = v;
+    return _shrani((p) => v == null ? p.remove(_razvrstiIskalnik) : p.setString(_razvrstiIskalnik, v.name));
   }
 
   Future<void> nastaviPdfNajprej(bool v) {
@@ -213,7 +300,15 @@ class Nastavitve extends ChangeNotifier {
     return _shrani((p) => p.setBool(_ikoneSeznama, v));
   }
 
-  Future<void> nastaviRazvrscanje(PoljePesmi polje, bool padajoce) {
+  /// Razvrščanje seznama v [mapa]; brez mape (npr. v testih) se nastavi privzeto.
+  Future<void> nastaviRazvrscanje(PoljePesmi polje, bool padajoce, {String? mapa}) {
+    if (mapa != null) {
+      _razvrscanjeMap[mapa] = (polje, padajoce);
+      return _shrani((p) {
+        p.setString('$_razvrstiMape$mapa', polje.name);
+        p.setBool('$_padajoceMape$mapa', padajoce);
+      });
+    }
     razvrsti = polje;
     this.padajoce = padajoce;
     return _shrani((p) {

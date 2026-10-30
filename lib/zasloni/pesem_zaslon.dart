@@ -1,9 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../api.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../config.dart';
@@ -77,7 +77,7 @@ class PesemZaslon extends StatefulWidget {
 }
 
 class _PesemZaslonState extends State<PesemZaslon> {
-  double get _pisava => Nastavitve.aplikacija.pisava;
+  double get _pisava => Nastavitve.aplikacija.pisavaZa(widget.pesem.id);
   bool _prikaziBesedilo = true;
   Uint8List? _pdf;
   bool _pdfPrebran = false;
@@ -90,6 +90,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Ko je pesem dovolj dolgo odprta, se označi kot odigrana.
   Timer? _odigrana;
+
+  /// Kdaj je bila pesem odprta (za dnevnik).
+  final _odprto = DateTime.now();
+
+  /// Prikaz besedila ali PDF-ja: iz njega se prebere mesto dotika za klicaj.
+  var _vsebinaKljuc = GlobalKey();
+  RisanjeNaStrani? get _stran => switch (_vsebinaKljuc.currentState) {
+    final RisanjeNaStrani s => s,
+    _ => null,
+  };
+  List<KlicajPesmi> get _klicaji => widget.baza.klicaji[widget.pesem.id] ?? const [];
 
   // Pridržanje in trojni dotik na vsebini (tudi na PDF-ju, ki sam porabi geste).
   final _dotiki = <int, Offset>{};
@@ -140,10 +151,33 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _pridrzanje?.cancel();
     _risanje.dispose();
     Midi.aplikacija.zaprta(_pesem);
+    _zabelezi();
     super.dispose();
   }
 
-  Future<void> _spremeniPisavo(double d) => Nastavitve.aplikacija.nastaviPisavo(_pisava + d);
+  /// Dnevnik: vsaka pesem, odprta vsaj 10 s (iPad prek vodje ne beleži, ker beleži vodja).
+  void _zabelezi() {
+    final trajanje = DateTime.now().difference(_odprto).inSeconds;
+    if (trajanje < 10 || Config.prekoVodje) return;
+    final p = _pesem;
+    widget.baza.zabelezi(apiZaKlicaje(widget.baza, widget.prijava), {
+      'cas': _odprto.toUtc().toIso8601String(),
+      'pesem': p.id,
+      'naslov': p.naslov,
+      'trajanje': trajanje,
+      'mapa': p.mapa,
+      'setlista': widget.stanje?.setlista ?? '',
+      'vloga': switch (widget.spil?.vloga) {
+        VlogaSpila.vodja => 'Vodja',
+        VlogaSpila.sledilec => 'Sledilec',
+        _ => 'Sama',
+      },
+      'naprava': kIsWeb ? 'Splet' : defaultTargetPlatform.name,
+    });
+  }
+
+  /// Gumba in ščip spremenita pisavo samo te pesmi.
+  Future<void> _spremeniPisavo(double d) => Nastavitve.aplikacija.nastaviPisavoPesmi(widget.pesem.id, _pisava + d);
 
   /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
   Future<void> _uredi({int zavihek = 0}) async {
@@ -160,6 +194,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       setState(() {
         _pdf = null;
         _pdfPrebran = false;
+        _vsebinaKljuc = GlobalKey();
       });
       _naloziPdf();
     }
@@ -189,6 +224,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Iskalnik: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto); brez špila se odpre.
   void _izIskalnika(Pesem p, {bool naPrvo = false}) {
+    // Pavza se odpre takoj (ne gre v čakalno vrsto).
+    if (p.id == _pavza?.id) return _odpri(p);
     if (widget.izIskalnika case final f? when !naPrvo) {
       setState(() => _iskalnik = false);
       return f(p);
@@ -197,6 +234,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (spil == null) return _odpri(p);
     setState(() => _iskalnik = false);
     vCakalnoVrsto(context, spil, widget.baza, p, naPrvo: naPrvo);
+  }
+
+  /// Pesem za pavzo v mapi, v kateri išče iskalnik (prva izbira v iskalniku).
+  Pesem? get _pavza {
+    final mapa = widget.mapa == null || widget.mapa == PesemZaslon.vse ? _pesem.mapa : widget.mapa!;
+    return widget.baza.pesem(widget.baza.mapa(mapa)?.pavza ?? '');
   }
 
   /// Pesmi v iskalniku: najprej prednostne (playlista), nato ostale iz mape.
@@ -288,10 +331,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _dotiki[e.pointer] = e.position;
     _pridrzanje?.cancel();
     if (_dotiki.length > 1 || _risem || _iskalnik) return;
+    final kje = e.position;
     _pridrzanje = Timer(const Duration(milliseconds: 550), () {
       _tapi.clear();
       HapticFeedback.mediumImpact();
-      _risanje.value = true;
+      // Pridržanje na klicaju odpre podatke o njem, drugje vklopi risanje.
+      if (_stran?.klicajPri(kje) case final k?) {
+        _oknoKlicaja(k);
+      } else {
+        _risanje.value = true;
+      }
     });
   }
 
@@ -308,6 +357,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
       if (!kratek) _tapi.clear();
       return;
     }
+    final klicaj = _tapi.isEmpty ? _stran?.klicajPri(e.position) : null;
+    if (klicaj != null) {
+      _kdoKlicaj(klicaj);
+      return;
+    }
     final zdaj = DateTime.now();
     if (_tapi.isNotEmpty &&
         (zdaj.difference(_tapi.last) > const Duration(milliseconds: 450) ||
@@ -318,31 +372,61 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _zadnjiTap = e.position;
     if (_tapi.length >= 3) {
       _tapi.clear();
-      _preklopiKlicaj();
+      _dodajKlicaj(e.position);
     }
   }
 
-  /// Rdeč klicaj (za ponoviti na vaji) vklopi ali izklopi kdorkoli; vidijo ga vsi.
-  Future<void> _preklopiKlicaj() async {
+  /// Rdeč klicaj (za ponoviti na vaji) na mestu trojnega dotika; doda ga kdorkoli, vidijo ga vsi.
+  Future<void> _dodajKlicaj(Offset kje) async {
     final messenger = ScaffoldMessenger.of(context);
-    final nova = !_pesem.zaVajo;
     HapticFeedback.heavyImpact();
-    final Api? api = Config.prekoVodje
-        ? widget.baza.risbe.api
-        : widget.prijava.prijavljen
-        ? Api(widget.prijava.zeton)
-        : null;
-    try {
-      await widget.baza.nastaviZaVajo(api, widget.pesem.id, nova);
-    } catch (_) {
-      // ostane med neposlanimi
-    }
+    final mesto = _stran?.naStrani(kje);
+    final besedilo = _prikaziBesedilo && _besedila.isNotEmpty;
+    final clan = Config.prekoVodje ? await clanNaSpilu() : null;
+    await widget.baza.dodajKlicaj(
+      apiZaKlicaje(widget.baza, widget.prijava),
+      widget.pesem.id,
+      // Brez mesta (npr. PDF se še nalaga) gre klicaj v desni zgornji kot.
+      mesto?.stran ?? (besedilo ? BesediloZRisanjem.stran : 1),
+      mesto?.tocka.dx ?? 0.9,
+      mesto?.tocka.dy ?? 0.05,
+      clan: clan,
+    );
     messenger.showSnackBar(
       SnackBar(
         duration: const Duration(seconds: 2),
-        content: Text(nova ? 'Označeno za vajo: ${_pesem.naslov}' : 'Klicaj odstranjen'),
+        content: Text('Klicaj za vajo: ${_pesem.naslov}. Pridrži ga za podatke ali brisanje.'),
       ),
     );
+  }
+
+  String _opisKlicaja(KlicajPesmi k) {
+    final kdo = k.clan.isEmpty ? 'neznan član' : widget.baza.imeClanaZ(k.clan);
+    final c = k.cas;
+    String dv(int x) => x.toString().padLeft(2, '0');
+    return c == null ? kdo : '$kdo, ${c.day}. ${c.month}. ${c.year} ob ${dv(c.hour)}:${dv(c.minute)}';
+  }
+
+  void _kdoKlicaj(KlicajPesmi k) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(duration: const Duration(seconds: 3), content: Text('Klicaj: ${_opisKlicaja(k)}')));
+
+  /// Pridržan klicaj: kdo in kdaj ga je dodal, in brisanje.
+  Future<void> _oknoKlicaja(KlicajPesmi k) async {
+    final izbrisi = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: const Klicaj(velikost: 40),
+        title: const Text('Za ponoviti na vaji'),
+        content: Text('Dodal: ${_opisKlicaja(k)}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Izbriši')),
+          FilledButton(onPressed: () => Navigator.pop(c, false), child: const Text('Zapri')),
+        ],
+      ),
+    );
+    if (izbrisi != true) return;
+    await widget.baza.izbrisiKlicaj(apiZaKlicaje(widget.baza, widget.prijava), k.id);
   }
 
   @override
@@ -406,11 +490,26 @@ class _PesemZaslonState extends State<PesemZaslon> {
         child: Stack(
           children: [
             Positioned.fill(child: _vsebina(context)),
-            if (_pesem.zaVajo) const Positioned(top: 4, right: 12, child: IgnorePointer(child: Klicaj(velikost: 44))),
+            if (_klicajiDrugje case final n when n > 0)
+              Positioned(
+                top: 4,
+                right: 12,
+                child: Tooltip(
+                  message: _prikaziBesedilo ? 'Klicaji na PDF-ju' : 'Klicaji na besedilu',
+                  child: IgnorePointer(child: Klicaj(velikost: 28, stevilo: n)),
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  /// Klicaji, ki niso na prikazanem (npr. na PDF-ju, ko je odprto besedilo).
+  int get _klicajiDrugje {
+    final besedilo = _prikaziBesedilo && _besedila.isNotEmpty;
+    final prikazan = besedilo || _pdfji.isNotEmpty;
+    return _klicaji.where((k) => !prikazan || (k.stran == BesediloZRisanjem.stran) != besedilo).length;
   }
 
   Widget _telo(BuildContext context) {
@@ -419,6 +518,10 @@ class _PesemZaslonState extends State<PesemZaslon> {
       builder: (context, meje) => Stack(
         children: [
           _vsebinaZGestami(context),
+          // Dotik mimo iskalnika ga zapre.
+          Positioned.fill(
+            child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => setState(() => _iskalnik = false)),
+          ),
           Positioned(
             right: 16,
             bottom: 16,
@@ -426,7 +529,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
             height: (meje.maxHeight * 0.6).clamp(0, 520).toDouble(),
             child: IskalnikPesmi(
               key: _iskalnikKljuc,
+              baza: widget.baza,
               pesmi: _pesmiIskalnika,
+              pavza: _pavza,
               trenutna: widget.pesem,
               odpri: _izIskalnika,
               pridrzi: (p) => _izIskalnika(p, naPrvo: true),
@@ -487,24 +592,30 @@ class _PesemZaslonState extends State<PesemZaslon> {
     ];
   }
 
-  /// Podatek v enem od treh delov spodnje vrstice.
-  Widget _info(BuildContext context, InfoVrstice v, TextAlign poravnava) {
+  /// Podatek v enem od treh delov vrstice nad ali pod pesmijo; null, če ga ni (prazen del).
+  Widget? _info(BuildContext context, InfoVrstice v, TextAlign poravnava, {TextStyle? slog}) {
     final p = _pesem;
-    Widget napis(String s, {Color? barva}) => Text(
-      s,
-      textAlign: poravnava,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: barva, fontWeight: barva != null ? FontWeight.bold : null),
-    );
+    Widget? napis(String s, {Color? barva}) => s.isEmpty
+        ? null
+        : Text(
+            s,
+            textAlign: poravnava,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: (slog ?? const TextStyle()).copyWith(
+              color: barva,
+              fontWeight: barva != null ? FontWeight.bold : null,
+            ),
+          );
     final harmonika = barvaHarmonike(widget.baza, p.harmonika);
-    final vsebina = switch (v) {
-      InfoVrstice.nic => const SizedBox.shrink(),
+    final Widget? vsebina = switch (v) {
+      InfoVrstice.nic => null,
       InfoVrstice.naslov => napis(p.naslov),
       InfoVrstice.izvajalec => napis(p.izvajalec),
       InfoVrstice.avtorji => napis({p.avtorGlasbe, p.avtorBesedila}.where((x) => x.isNotEmpty).join(' / ')),
       InfoVrstice.tonaliteta => napis(p.tonaliteta),
       InfoVrstice.harmonika => napis(p.harmonika, barva: harmonika),
+      InfoVrstice.tonalitetaHarmonika when p.tonaliteta.isEmpty && p.harmonika.isEmpty => null,
       InfoVrstice.tonalitetaHarmonika => Text.rich(
         TextSpan(
           children: [
@@ -519,11 +630,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
         textAlign: poravnava,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: slog,
       ),
-      InfoVrstice.vrsta => napis(p.vrsta),
+      InfoVrstice.vrsta => napis(p.vrsta, barva: barvaVrste(widget.baza, p.vrsta)),
       InfoVrstice.tempo => napis(PoljePesmi.tempo.vrednost(p).isEmpty ? '' : '${PoljePesmi.tempo.vrednost(p)} BPM'),
       InfoVrstice.trajanje => napis(PoljePesmi.trajanje.vrednost(p)),
-      InfoVrstice.ocena => Zvezdice(ocena: p.ocena),
+      InfoVrstice.ocena => p.ocena == 0 ? null : Zvezdice(ocena: p.ocena),
       InfoVrstice.status => Row(
         mainAxisSize: MainAxisSize.min,
         children: [IkonaStatusa(p.status), const SizedBox(width: 4), Text(p.status.ime)],
@@ -534,11 +646,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
           'Naslednja: ${napisVrste(n)}',
           barva: menjaHarmoniko(p, n) ? barvaHarmonike(widget.baza, n.harmonika) : null,
         ),
-        null => const SizedBox.shrink(),
+        null => null,
       },
       InfoVrstice.ura => const Ura(),
       InfoVrstice.runda => const CasRunde(),
     };
+    if (vsebina == null) return null;
     return Align(
       alignment: switch (poravnava) {
         TextAlign.left => Alignment.centerLeft,
@@ -546,6 +659,37 @@ class _PesemZaslonState extends State<PesemZaslon> {
         _ => Alignment.center,
       },
       child: vsebina,
+    );
+  }
+
+  /// Trije deli s podatki; prazni deli se umaknejo, ostali si razdelijo celo širino.
+  List<Widget> _deliVrstice(BuildContext context, List<InfoVrstice> deli, {TextStyle? slog}) {
+    final polni = [
+      for (final (i, poravnava) in [(0, TextAlign.left), (1, TextAlign.center), (2, TextAlign.right)])
+        ?_info(context, deli[i], poravnava, slog: slog),
+    ];
+    return [
+      for (final w in polni) ...[Expanded(child: w), const SizedBox(width: 8)],
+      if (polni.isEmpty) const Spacer(),
+    ];
+  }
+
+  /// Vrstica pod orodno vrstico (npr. naslov in tonaliteta); null, če so vsi deli prazni.
+  PreferredSizeWidget? _zgornjaVrstica(BuildContext context) {
+    final deli = Nastavitve.aplikacija.zgoraj;
+    if (deli.every((d) => d == InfoVrstice.nic)) return null;
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(32),
+      child: SizedBox(
+        height: 32,
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            ..._deliVrstice(context, deli, slog: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(width: 8),
+          ],
+        ),
+      ),
     );
   }
 
@@ -562,10 +706,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
           child: Row(
             children: [
               const SizedBox(width: 12),
-              for (final (i, poravnava) in [(0, TextAlign.left), (1, TextAlign.center), (2, TextAlign.right)]) ...[
-                Expanded(child: _info(context, deli[i], poravnava)),
-                const SizedBox(width: 8),
-              ],
+              ..._deliVrstice(context, deli),
               ..._orodja(context, Mesto.spodaj),
               IconButton(
                 tooltip: 'Išči pesem',
@@ -585,13 +726,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
     final p = _pesem;
     return Scaffold(
       appBar: AppBar(
+        // Naslov je v vrstici pod orodno vrstico, če je izbran tam; zgoraj ostane prostor za orodja.
         title: Row(
           children: [
             OznakePesmi(pesem: p),
-            Flexible(child: Text(p.naslov, overflow: TextOverflow.ellipsis)),
+            if (!Nastavitve.aplikacija.zgoraj.contains(InfoVrstice.naslov))
+              Flexible(child: Text(p.naslov, overflow: TextOverflow.ellipsis)),
           ],
         ),
         actions: [..._orodja(context, Mesto.zgoraj), const SizedBox(width: 4)],
+        bottom: _zgornjaVrstica(context),
       ),
       body: _telo(context),
       bottomNavigationBar: Column(
@@ -609,13 +753,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
   Widget _vsebina(BuildContext context) {
     if (_prikaziBesedilo && _besedila.isNotEmpty) {
       return BesediloZRisanjem(
+        key: _vsebinaKljuc,
         vsebina: _besedila.first.vsebina,
         povecava: _pisava / BesediloZRisanjem.osnovnaPisava,
         pesem: widget.pesem.id,
         risbe: widget.baza.risbe,
         risanje: _risanje,
         knjiznica: widget.baza.midi,
-        obPovecavi: (v) => Nastavitve.aplikacija.nastaviPisavo(v * BesediloZRisanjem.osnovnaPisava),
+        prelom: Nastavitve.aplikacija.prelom,
+        klicaji: _klicaji,
+        obPovecavi: (v) =>
+            Nastavitve.aplikacija.nastaviPisavoPesmi(widget.pesem.id, v * BesediloZRisanjem.osnovnaPisava),
       );
     }
     if (_pdfji.isNotEmpty) {
@@ -625,13 +773,14 @@ class _PesemZaslonState extends State<PesemZaslon> {
         return const Center(child: Text('PDF še ni prenesen. Osveži iz baze, ko imaš internet.'));
       }
       return PdfZRisanjem(
-        key: ValueKey(_pdfji.first.driveId),
+        key: _vsebinaKljuc,
         pdf: pdf,
         ime: _pdfji.first.driveId,
         pesem: widget.pesem.id,
         risbe: widget.baza.risbe,
         risanje: _risanje,
         knjiznica: widget.baza.midi,
+        klicaji: _klicaji,
       );
     }
     if (widget.baza.smeUrejatiPesem(_pesem)) {
