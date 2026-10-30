@@ -67,3 +67,37 @@ jobs:
           name: Windows ${{ github.run_number }}
           body: Samodejna gradnja za Windows iz ${{ github.sha }}. Razpakiraj in zaženi spadni_besedila.exe.
           files: spadni-besedila-windows-${{ github.run_number }}.zip
+
+      # Posodobitev v aplikaciji (gumb Posodobi): ZIP gre prek skripte na Drive, tako kot APK za Android.
+      - name: Naloži posodobitev na Drive
+        shell: bash
+        env:
+          UPLOAD_KLJUC: ${{ secrets.UPLOAD_KLJUC }}
+        run: |
+          if [ -z "$UPLOAD_KLJUC" ]; then
+            echo "::warning::Ni skrivnosti UPLOAD_KLJUC, posodobitev ni naložena na Drive."
+            exit 0
+          fi
+          url=$(grep -o "https://script.google.com/macros/s/[^']*/exec" lib/config.dart)
+          # Majhen poskus najprej: le nova koda skripte pozna Windows in odgovori z "(windows)".
+          proba=$(curl -sS -L --max-time 60 -H "Content-Type: text/plain" \
+            --data '{"akcija":"naloziApk","kljuc":"preveri","platforma":"windows"}' "$url")
+          echo "Preverjanje skripte: $proba"
+          if ! echo "$proba" | grep -q "(windows)"; then
+            echo "::warning::Skripta še ne pozna posodobitev za Windows. V Apps Scriptu: Deploy > Manage deployments > New version."
+            exit 0
+          fi
+          python - <<'PY'
+          import base64, json, os
+          n = os.environ['GITHUB_RUN_NUMBER']
+          with open(f'spadni-besedila-windows-{n}.zip', 'rb') as f:
+              zip_ = base64.b64encode(f.read()).decode()
+          telo = {'akcija': 'naloziApk', 'platforma': 'windows', 'kljuc': os.environ['UPLOAD_KLJUC'],
+                  'verzija': int(n), 'ime': f'spadni-besedila-windows-{n}.zip', 'base64': zip_}
+          with open('telo.json', 'w') as f:
+              json.dump(telo, f)
+          PY
+          echo "Velikost zahteve: $(du -h telo.json | cut -f1)"
+          odgovor=$(curl -sS -L --max-time 300 -H "Content-Type: text/plain" --data-binary @telo.json "$url")
+          echo "$odgovor" | head -c 300; echo
+          echo "$odgovor" | grep -q '"verzija"' || { echo "::error::Nalaganje na Drive ni uspelo"; exit 1; }

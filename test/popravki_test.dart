@@ -339,6 +339,22 @@ void main() {
     await tester.pumpAndSettle();
     // Vrstica pod orodno vrstico: naslov in tonaliteta (naslova v orodni vrstici ni).
     expect(find.text('BELO OBLEKO'), findsOneWidget);
+    // Naslov dobi preostalo širino, tonaliteta le svojo.
+    expect(
+      tester.getSize(find.text('BELO OBLEKO')).width,
+      greaterThan(tester.getSize(find.descendant(of: find.byType(AppBar), matching: find.text('F'))).width),
+    );
+    expect(find.descendant(of: find.byType(AppBar), matching: find.byType(Expanded)), findsOneWidget);
+    // Tonaliteta v oblačku, ko je vklopljena.
+    await Nastavitve.aplikacija.nastaviOblacekTonalitete(true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(key: const ValueKey(2), pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('F'), findsNWidgets(2));
+    await Nastavitve.aplikacija.nastaviOblacekTonalitete(false);
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
     final iskalnik = find.byType(IskalnikPesmi);

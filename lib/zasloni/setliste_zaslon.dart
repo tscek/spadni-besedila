@@ -189,7 +189,7 @@ class SetlistaZaslon extends StatelessWidget {
   }
 }
 
-/// Igranje po setlisti: pesem čez cel zaslon, spodaj prejšnja/naslednja.
+/// Igranje po setlisti: pesem čez cel zaslon; pesmi playliste so v iskalniku označene, naprej in nazaj z nožnim stikalom ali podrsajem.
 class IgranjeZaslon extends StatefulWidget {
   const IgranjeZaslon({
     super.key,
@@ -298,7 +298,6 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
   }
 
   Widget _pesem(BuildContext context, List<(SetlistaPesem, Pesem)> vrsta, int i) {
-    final tema = Theme.of(context);
     final (v, pesemSetliste) = vrsta[i];
     final vmes = _vmes;
     final p = vmes ?? pesemSetliste;
@@ -313,6 +312,8 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
       },
       // Iskalnik: pesmi playliste na vrhu; pesem playliste se odpre, druga postane naslednja (playlista ostane ista).
       prednostne: [for (final e in vrsta) e.$2],
+      playlista: {for (final (j, e) in vrsta.indexed) e.$2.id: (st: j + 1, opomba: e.$1.opomba)},
+      naslednja: naslednja,
       mapa: widget.setlista.mapa.isEmpty ? PesemZaslon.vse : widget.setlista.mapa,
       izIskalnika: (izbrana) {
         final j = vrsta.indexWhere((e) => e.$2.id == izbrana.id);
@@ -333,52 +334,6 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
               setlista: widget.setlista.id,
               indeks: (widget.baza.pesmiSetlist[widget.setlista.id] ?? const <SetlistaPesem>[]).indexOf(v),
             ),
-      spodaj: Material(
-        color: tema.colorScheme.surfaceContainer,
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 64,
-            child: Row(
-              children: [
-                IconButton(
-                  iconSize: 36,
-                  tooltip: 'Prejšnja pesem',
-                  icon: const Icon(Icons.skip_previous),
-                  onPressed: i > 0 || vmes != null ? () => _nazaj(i) : null,
-                ),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        vmes != null
-                            ? 'Izven setliste (za ${i + 1} / ${vrsta.length})'
-                            : '${i + 1} / ${vrsta.length}${v.opomba.isEmpty ? '' : ' · ${v.opomba}'}',
-                        style: tema.textTheme.labelLarge,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        naslednja == null
-                            ? 'Konec setliste'
-                            : '${izbrana != null ? 'Izbrana' : 'Naslednja'}: ${napisVrste(naslednja)}',
-                        style: tema.textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  iconSize: 36,
-                  tooltip: 'Naslednja pesem',
-                  icon: const Icon(Icons.skip_next),
-                  onPressed: naslednja != null ? () => _naprej(i, vrsta.length) : null,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

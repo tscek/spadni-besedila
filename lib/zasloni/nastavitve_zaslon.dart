@@ -94,7 +94,10 @@ class NastavitveZaslon extends StatelessWidget {
             const Divider(),
             const ListTile(
               title: Text('Vrstica pod orodno vrstico pri pesmi'),
-              subtitle: Text('Trije deli; prazni se umaknejo, ostali si razdelijo širino. Vse »Nič« skrije vrstico.'),
+              subtitle: Text(
+                'Trije deli; prazni se umaknejo, kratki (npr. tonaliteta) vzamejo le svojo širino, '
+                'daljši (npr. naslov) preostanek. Vse »Nič« skrije vrstico.',
+              ),
             ),
             for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
               ListTile(
@@ -105,6 +108,12 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
+            SwitchListTile(
+              title: const Text('Tonaliteta v oblačku'),
+              subtitle: const Text('Vedno vidna v zgornjem desnem kotu pesmi, pod zgornjo vrstico'),
+              value: n.oblacekTonalitete,
+              onChanged: n.nastaviOblacekTonalitete,
+            ),
             const Divider(),
             const ListTile(
               title: Text('Spodnja vrstica pri pesmi'),

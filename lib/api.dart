@@ -38,8 +38,8 @@ class Api {
     return base64Decode(odg['base64'] as String);
   }
 
-  /// Zadnja različica Android aplikacije: {verzija, url}.
-  Future<Map<String, dynamic>> verzija() => _get({'akcija': 'verzija'});
+  /// Zadnja različica aplikacije za Android ali [platforma] 'windows': {verzija, url, platforma}.
+  Future<Map<String, dynamic>> verzija({String? platforma}) => _get({'akcija': 'verzija', 'platforma': ?platforma});
 
   /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.
   Future<Map<String, dynamic>> risbe() => _get({'akcija': 'risbe'});

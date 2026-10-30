@@ -49,6 +49,12 @@ enum InfoVrstice {
 
   const InfoVrstice(this.ime);
   final String ime;
+
+  /// Daljši podatek, ki v vrstici dobi preostalo širino; kratki (npr. tonaliteta) vzamejo le svojo.
+  bool get dolg => switch (this) {
+    naslov || izvajalec || avtorji || opombe || naslednja => true,
+    _ => false,
+  };
 }
 
 /// Gumb v oknu runde: pavza ali igranje, z napisom, barvo in MIDI ukazom ob kliku.
@@ -84,6 +90,7 @@ class Nastavitve extends ChangeNotifier {
   static const _poljaVrste = 'polja_cakalne_vrste';
   static const _zgoraj = 'zgornja_vrstica';
   static const _prelom = 'prelom_vrstic';
+  static const _oblacek = 'oblacek_tonalitete';
   static const _poljaIskalnika = 'polja_iskalnika';
   static const _razvrstiIskalnik = 'razvrsti_iskalnik';
   static const _pisavaPesmi = 'pisava_pesmi_';
@@ -101,6 +108,9 @@ class Nastavitve extends ChangeNotifier {
 
   /// Besedilo se ob večji pisavi prelomi v novo vrstico (sicer je stran širša od zaslona).
   bool prelom = true;
+
+  /// Tonaliteta v oblačku v zgornjem desnem kotu pesmi (pod zgornjo vrstico).
+  bool oblacekTonalitete = false;
 
   /// Pri pesmi z besedilom in PDF-jem najprej pokaži PDF.
   bool pdfNajprej = false;
@@ -196,6 +206,7 @@ class Nastavitve extends ChangeNotifier {
       }
     }
     prelom = p.getBool(_prelom) ?? prelom;
+    oblacekTonalitete = p.getBool(_oblacek) ?? oblacekTonalitete;
     poljaIskalnika = seznam(_poljaIskalnika, PoljePesmi.values) ?? poljaIskalnika;
     razvrstiIskalnik = PoljePesmi.values.asNameMap()[p.getString(_razvrstiIskalnik)];
     final zg = seznam(_zgoraj, InfoVrstice.values);
@@ -248,6 +259,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviPrelom(bool v) {
     prelom = v;
     return _shrani((p) => p.setBool(_prelom, v));
+  }
+
+  Future<void> nastaviOblacekTonalitete(bool v) {
+    oblacekTonalitete = v;
+    return _shrani((p) => p.setBool(_oblacek, v));
   }
 
   Future<void> nastaviZgoraj(int del, InfoVrstice v) {

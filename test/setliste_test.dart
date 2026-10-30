@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:idb_shim/idb_client_memory.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
+import 'package:spadni_besedila/midi/midi.dart';
+import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/prijava.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
@@ -141,25 +143,18 @@ void main() {
     spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
     spil.dodajNaslednjo(const Naslednja(pesem: 'c', naKonec: true));
     await tester.pumpAndSettle();
-    expect(find.text('Izbrana: BOG TE ŽIVI'), findsOneWidget);
     expect(find.text('Naslednja: BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
 
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
+    await _naprej(tester);
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
-    expect(find.text('Izven setliste (za 1 / 3)'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), ['c']); // odprta gre s seznamčka
 
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
-    expect(find.text('2 / 3'), findsOneWidget);
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
-    expect(find.text('3 / 3'), findsOneWidget);
-    expect(find.text('Izbrana: ČEŠNJE'), findsOneWidget);
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
-    expect(find.text('Izven setliste (za 3 / 3)'), findsOneWidget);
+    await _naprej(tester);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget); // spet po setlisti
+    await _naprej(tester);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
+    await _naprej(tester); // »na konec« pride po zadnji pesmi setliste
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
     expect(spil.naslednje, isEmpty);
   });
 
@@ -174,18 +169,25 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(vNaslovu('ČEŠNJE'), findsOneWidget);
-    expect(find.text('1 / 3 · brez uvoda'), findsOneWidget);
-    expect(find.text('Naslednja: BELO OBLEKO'), findsOneWidget);
+    expect(find.byTooltip('Naslednja pesem'), findsNothing); // brez spodnje vrstice playliste
 
-    await tester.tap(find.byTooltip('Naslednja pesem'));
+    // Pesmi playliste so v iskalniku na vrhu, z ikono, številko in opombo.
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('v-playlisti')), findsNWidgets(3));
+    expect(find.textContaining('brez uvoda'), findsOneWidget);
+    await tester.tap(find.byTooltip('Zapri'));
+    await tester.pumpAndSettle();
+
+    await _naprej(tester);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
+    await _naprej(tester);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
+    await _naprej(tester); // konec playliste: ostane zadnja
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
+    Midi.aplikacija.sprozi(DejanjeMidi.prejsnja);
     await tester.pumpAndSettle();
     expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
-    expect(find.text('Konec setliste'), findsOneWidget);
-    await tester.tap(find.byTooltip('Prejšnja pesem'));
-    await tester.pumpAndSettle();
-    expect(find.text('2 / 3'), findsOneWidget);
   });
 
   testWidgets('urejanje setliste: dodaj s kodo in seznam setlist', (tester) async {
@@ -229,8 +231,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Vodim, sledi 0'), findsOneWidget);
     expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'c', 'setlista': 'x', 'indeks': 0});
-    await tester.tap(find.byTooltip('Naslednja pesem'));
-    await tester.pumpAndSettle();
+    await _naprej(tester);
     expect(streznik.poslano.last, {'vrsta': 'stanje', 'pesem': 'a', 'setlista': 'x', 'indeks': 1});
 
     await tester.pumpWidget(
@@ -278,4 +279,9 @@ void main() {
 }
 
 /// Naslov pesmi v vrstici na vrhu zaslona.
+Future<void> _naprej(WidgetTester tester) async {
+  Midi.aplikacija.sprozi(DejanjeMidi.naslednja);
+  await tester.pumpAndSettle();
+}
+
 Finder vNaslovu(String t) => find.descendant(of: find.byType(AppBar), matching: find.text(t));

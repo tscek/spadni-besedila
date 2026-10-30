@@ -38,6 +38,8 @@ class PesemZaslon extends StatefulWidget {
     this.odpri,
     this.mapa,
     this.prednostne,
+    this.playlista,
+    this.naslednja,
     this.izIskalnika,
   });
 
@@ -68,6 +70,12 @@ class PesemZaslon extends StatefulWidget {
 
   /// Pesmi, ki so v iskalniku na vrhu (npr. pesmi playliste).
   final List<Pesem>? prednostne;
+
+  /// Pesmi playliste: v iskalniku označene z ikono, zaporedno številko in opombo.
+  final Map<String, MestoVPlaylisti>? playlista;
+
+  /// Naslednja pesem (npr. v playlisti) za prikaz v vrstici; privzeto s čakalne vrste ali s seznama.
+  final Pesem? naslednja;
 
   /// Kaj naredi dotik pesmi v iskalniku (npr. v playlisti); privzeto gre pesem v čakalno vrsto.
   final void Function(Pesem)? izIskalnika;
@@ -318,6 +326,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Naslednja pesem za prikaz spodaj: s čakalne vrste ali s seznama.
   Pesem? get _naslednja {
+    if (widget.naslednja case final n?) return n;
     if (widget.spil?.prvaNaslednja() case final n?) return widget.baza.pesem(n.pesem);
     final seznam = widget.seznam;
     if (seznam == null) return null;
@@ -513,11 +522,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
   }
 
   Widget _telo(BuildContext context) {
-    if (!_iskalnik) return _vsebinaZGestami(context);
+    final oblacek = _oblacekTonalitete(context);
+    if (!_iskalnik) {
+      return oblacek == null ? _vsebinaZGestami(context) : Stack(children: [_vsebinaZGestami(context), oblacek]);
+    }
     return LayoutBuilder(
       builder: (context, meje) => Stack(
         children: [
           _vsebinaZGestami(context),
+          ?oblacek,
           // Dotik mimo iskalnika ga zapre.
           Positioned.fill(
             child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => setState(() => _iskalnik = false)),
@@ -531,6 +544,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
               key: _iskalnikKljuc,
               baza: widget.baza,
               pesmi: _pesmiIskalnika,
+              playlista: widget.playlista,
               pavza: _pavza,
               trenutna: widget.pesem,
               odpri: _izIskalnika,
@@ -593,8 +607,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
   }
 
   /// Podatek v enem od treh delov vrstice nad ali pod pesmijo; null, če ga ni (prazen del).
-  Widget? _info(BuildContext context, InfoVrstice v, TextAlign poravnava, {TextStyle? slog}) {
+  Widget? _info(
+    BuildContext context,
+    InfoVrstice v,
+    TextAlign poravnava, {
+    TextStyle? slog,
+    TextStyle? slogTonalitete,
+  }) {
     final p = _pesem;
+    final tonaliteta = slogTonalitete ?? slog;
     Widget? napis(String s, {Color? barva}) => s.isEmpty
         ? null
         : Text(
@@ -613,13 +634,14 @@ class _PesemZaslonState extends State<PesemZaslon> {
       InfoVrstice.naslov => napis(p.naslov),
       InfoVrstice.izvajalec => napis(p.izvajalec),
       InfoVrstice.avtorji => napis({p.avtorGlasbe, p.avtorBesedila}.where((x) => x.isNotEmpty).join(' / ')),
-      InfoVrstice.tonaliteta => napis(p.tonaliteta),
+      InfoVrstice.tonaliteta when p.tonaliteta.isEmpty => null,
+      InfoVrstice.tonaliteta => Text(p.tonaliteta, textAlign: poravnava, maxLines: 1, style: tonaliteta),
       InfoVrstice.harmonika => napis(p.harmonika, barva: harmonika),
       InfoVrstice.tonalitetaHarmonika when p.tonaliteta.isEmpty && p.harmonika.isEmpty => null,
       InfoVrstice.tonalitetaHarmonika => Text.rich(
         TextSpan(
           children: [
-            TextSpan(text: p.tonaliteta),
+            TextSpan(text: p.tonaliteta, style: tonaliteta),
             if (p.tonaliteta.isNotEmpty && p.harmonika.isNotEmpty) const TextSpan(text: ' · '),
             TextSpan(
               text: p.harmonika,
@@ -662,14 +684,21 @@ class _PesemZaslonState extends State<PesemZaslon> {
     );
   }
 
-  /// Trije deli s podatki; prazni deli se umaknejo, ostali si razdelijo celo širino.
-  List<Widget> _deliVrstice(BuildContext context, List<InfoVrstice> deli, {TextStyle? slog}) {
+  /// Trije deli s podatki; prazni deli se umaknejo, kratki vzamejo svojo širino, dolgi (naslov …) preostanek.
+  List<Widget> _deliVrstice(
+    BuildContext context,
+    List<InfoVrstice> deli, {
+    TextStyle? slog,
+    TextStyle? slogTonalitete,
+  }) {
     final polni = [
       for (final (i, poravnava) in [(0, TextAlign.left), (1, TextAlign.center), (2, TextAlign.right)])
-        ?_info(context, deli[i], poravnava, slog: slog),
+        if (_info(context, deli[i], poravnava, slog: slog, slogTonalitete: slogTonalitete) case final w?) (deli[i], w),
     ];
+    // Brez dolgega dela si kratki razdelijo širino enakomerno (levo, sredina, desno).
+    final imaDolg = polni.any((d) => d.$1.dolg);
     return [
-      for (final w in polni) ...[Expanded(child: w), const SizedBox(width: 8)],
+      for (final (v, w) in polni) ...[if (!imaDolg || v.dolg) Expanded(child: w) else w, const SizedBox(width: 12)],
       if (polni.isEmpty) const Spacer(),
     ];
   }
@@ -678,16 +707,53 @@ class _PesemZaslonState extends State<PesemZaslon> {
   PreferredSizeWidget? _zgornjaVrstica(BuildContext context) {
     final deli = Nastavitve.aplikacija.zgoraj;
     if (deli.every((d) => d == InfoVrstice.nic)) return null;
+    final tema = Theme.of(context);
     return PreferredSize(
-      preferredSize: const Size.fromHeight(32),
+      preferredSize: const Size.fromHeight(44),
       child: SizedBox(
-        height: 32,
+        height: 44,
         child: Row(
           children: [
             const SizedBox(width: 16),
-            ..._deliVrstice(context, deli, slog: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(width: 8),
+            ..._deliVrstice(
+              context,
+              deli,
+              slog: tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              slogTonalitete: tema.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: tema.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 4),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Tonaliteta v oblačku v zgornjem desnem kotu pesmi (če je vklopljena v nastavitvah).
+  Widget? _oblacekTonalitete(BuildContext context) {
+    final p = _pesem;
+    if (!Nastavitve.aplikacija.oblacekTonalitete || p.tonaliteta.isEmpty || _risem) return null;
+    final tema = Theme.of(context);
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: IgnorePointer(
+        child: Material(
+          color: tema.colorScheme.primaryContainer.withValues(alpha: 0.92),
+          elevation: 3,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text(
+              p.tonaliteta,
+              style: tema.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: tema.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
         ),
       ),
     );

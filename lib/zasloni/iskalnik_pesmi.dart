@@ -217,6 +217,9 @@ class HitriFiltri extends StatelessWidget {
 /// Plavajoče okno z iskalnikom pesmi (spodaj desno na zaslonu pesmi). Nad seznamom je gumb za pavzo
 /// (pesem za pavzo v mapi: dotik v čakalno vrsto, pridržanje kot naslednja), hitra filtra po vrsti
 /// in harmoniki (ob zaprtju se ponastavita) in razvrščanje. Že odigrane pesmi imajo samo naslov v nižji vrstici.
+/// Mesto pesmi v playlisti: zaporedna številka (od 1) in opomba v playlisti.
+typedef MestoVPlaylisti = ({int st, String opomba});
+
 class IskalnikPesmi extends StatefulWidget {
   const IskalnikPesmi({
     super.key,
@@ -227,6 +230,7 @@ class IskalnikPesmi extends StatefulWidget {
     this.pridrzi,
     this.trenutna,
     this.pavza,
+    this.playlista,
   });
 
   final Baza baza;
@@ -236,6 +240,9 @@ class IskalnikPesmi extends StatefulWidget {
   final VoidCallback zapri;
   final Pesem? trenutna;
   final Pesem? pavza;
+
+  /// Pesmi playliste (po ID): označene z ikono in številko spredaj.
+  final Map<String, MestoVPlaylisti>? playlista;
 
   static const visinaVrstice = 60.0;
   static const visinaOdigrane = 40.0;
@@ -282,10 +289,38 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
     final tema = Theme.of(context);
     final odigrana = _odigrana(p);
     final deli = poljaVPodnaslovu(context, widget.baza, p, Nastavitve.aplikacija.poljaIskalnika);
+    final mesto = widget.playlista?[p.id];
+    if (mesto != null && mesto.opomba.isNotEmpty) {
+      deli.insert(
+        0,
+        TextSpan(
+          text: deli.isEmpty ? mesto.opomba : '${mesto.opomba} · ',
+          style: const TextStyle(fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+    final barva = odigrana ? tema.disabledColor : tema.colorScheme.primary;
     return ListTile(
       dense: odigrana,
       visualDensity: odigrana ? VisualDensity.compact : null,
       selected: izbrana,
+      minLeadingWidth: 0,
+      horizontalTitleGap: 8,
+      leading: widget.playlista == null
+          ? null
+          : SizedBox(
+              width: 44,
+              child: mesto == null
+                  ? null
+                  : Row(
+                      key: const ValueKey('v-playlisti'),
+                      children: [
+                        Icon(Icons.queue_music, size: 18, color: barva),
+                        const SizedBox(width: 2),
+                        Text('${mesto.st}', style: tema.textTheme.labelMedium?.copyWith(color: barva)),
+                      ],
+                    ),
+            ),
       selectedTileColor: tema.colorScheme.secondaryContainer,
       title: NaslovZOznakami(
         pesem: p,

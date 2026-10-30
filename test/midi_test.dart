@@ -357,7 +357,6 @@ void main() {
     midi.prejeto([0xB0, 64, 127]);
     await tester.pumpAndSettle();
     expect(vNaslovu('PRVA'), findsOneWidget);
-    expect(find.text('2 / 2'), findsOneWidget);
   });
 }
 
