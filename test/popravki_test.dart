@@ -235,6 +235,25 @@ void main() {
     await tester.tap(find.text('Dodaj v čakalno vrsto'));
     await tester.pumpAndSettle();
 
+    // Hitri filter po harmoniki.
+    await tester.tap(find.widgetWithText(FilterChip, 'B-Es-As'));
+    await tester.pumpAndSettle();
+    expect(find.text('BELO OBLEKO'), findsNothing);
+    expect(find.text('AVSENIK'), findsWidgets);
+    await tester.tap(find.widgetWithText(FilterChip, 'Vse'));
+    await tester.pumpAndSettle();
+    expect(find.text('BELO OBLEKO'), findsOneWidget);
+
+    // Gumb +: nova čakalna vrsta jo izprazni.
+    await tester.tap(find.byTooltip('Novo'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nova pesem'), findsOneWidget);
+    expect(find.text('Nova playlista'), findsOneWidget);
+    await tester.tap(find.text('Nova čakalna vrsta'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Izprazni'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.byTooltip('Mape'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Vse'));
@@ -284,6 +303,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Končano'), findsOneWidget);
     expect(find.byTooltip('Označi besedilo'), findsOneWidget);
+    // Markiranje čez dve vrstici naredi oznako v vsaki vrstici.
+    await tester.tap(find.byTooltip('Označi besedilo'));
+    await tester.pump();
+    final od = tester.getCenter(find.text('Belo obleko '));
+    final doo = tester.getCenter(besedilo);
+    final g = await tester.startGesture(od);
+    for (var i = 1; i <= 5; i++) {
+      await g.moveTo(Offset.lerp(od, doo, i / 5)!);
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await g.up();
+    await tester.pump();
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    Risba? risba;
+    baza.risbe.nalozi('a').then((r) => risba = r);
+    await tester.pump();
+    expect(risba!.oznake[0], hasLength(2));
     await tester.tap(find.text('Končano'));
     await tester.pumpAndSettle();
     expect(find.text('Končano'), findsNothing);
@@ -304,7 +342,7 @@ void main() {
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
     final iskalnik = find.byType(IskalnikPesmi);
-    expect(find.descendant(of: iskalnik, matching: find.text('Pavza')), findsOneWidget);
+    expect(find.descendant(of: iskalnik, matching: find.byIcon(Icons.pause)), findsOneWidget);
     expect(find.descendant(of: iskalnik, matching: find.text('0 PAVZA')), findsNothing);
     // Odigrana pesem ima samo naslov (brez podatkov pod njim).
     expect(find.descendant(of: iskalnik, matching: find.text('B')), findsNothing);

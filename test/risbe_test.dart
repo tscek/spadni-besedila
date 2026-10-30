@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba_datoteke.dart';
@@ -20,6 +21,29 @@ Risba _primer() => Risba()
   ..opombeStrani(2).add(Opomba(polozaj: const Offset(0.3, 0.4), besedilo: 'Refren 2x', barva: 0xFFD32F2F));
 
 void main() {
+  test('shranjen gumb velja povsod: sprememba shranjenega spremeni postavljene, velikost ostane', () async {
+    SharedPreferences.setMockInitialValues({});
+    Predloge.aplikacija = Predloge();
+    final p = Predloge.aplikacija;
+    final id = await p.shraniGumb(GumbNaStrani(napis: 'Solo', midi: 'PC 1 5', barva: 0xFF1976D2));
+    final postavljen = GumbNaStrani(napis: 'Solo', midi: 'PC 1 5', barva: 0xFF1976D2, predloga: id, velikost: 1.5);
+    final risba = Risba()..gumbiStrani(0).add(postavljen);
+    final iz = Risba.izBesedila(risba.vBesedilo()).gumbiStrani(0).single;
+    expect(iz.predloga, id);
+    expect(iz.velikost, 1.5);
+
+    await p.shraniGumb(GumbNaStrani(napis: 'Konec', midi: 'PC 1 9', barva: 0xFFD32F2F, predloga: id));
+    expect(iz.prikaz.napis, 'Konec');
+    expect(iz.prikaz.velikost, 1.5);
+
+    // Po ponovnem zagonu so shranjeni gumbi in opombe še tu.
+    final idOpombe = await p.shraniOpombo(Opomba(polozaj: Offset.zero, besedilo: 'Refren 2x', barva: 0xFF000000));
+    final ponovno = Predloge();
+    await ponovno.nalozi();
+    expect(ponovno.gumb(id)?.napis, 'Konec');
+    expect(ponovno.opomba(idOpombe)?.besedilo, 'Refren 2x');
+  });
+
   test('risba se ohrani skozi JSON', () {
     final r = Risba.izBesedila(_primer().vBesedilo());
     expect(r.poteze[1]!.single.orodje, Orodje.marker);

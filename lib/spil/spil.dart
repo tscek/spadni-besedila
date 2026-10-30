@@ -155,6 +155,9 @@ class Spil extends ChangeNotifier {
   /// Odstrani [i]-to pesem s seznamčka.
   void odstraniNaslednjo(int i) => _spremeni({'ukaz': 'odstrani', 'i': i, 'pesem': naslednje[i].pesem});
 
+  /// Izprazni čakalno vrsto (nova čakalna vrsta).
+  void pocistiNaslednje() => _spremeni({'ukaz': 'pocisti'});
+
   /// Sledilec s pravico: vsem (tudi vodji) pokaže to pesem.
   void zamenjajVsem(StanjeSpila s) {
     if (vloga == VlogaSpila.sledilec) {
@@ -209,6 +212,8 @@ class Spil extends ChangeNotifier {
       case 'odstrani':
         final i = indeks();
         if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));
+      case 'pocisti':
+        _nastaviNaslednje([]);
     }
   }
 

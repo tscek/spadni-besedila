@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../midi/midi.dart';
@@ -158,8 +159,24 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   /// Temno ozadje (besedilo): svetle barve pisala in marker brez množenja barv.
   bool get temnoOzadje => false;
 
-  /// Vrstica besedila pod točko (relativno), za markiranje besedila; null, če markiranja ni.
-  Rect? vrsticaPod(int stran, Offset tocka) => null;
+  /// Vrstice besedila na strani (relativno, od zgoraj navzdol), za markiranje besedila; prazno, če ga ni.
+  List<Rect> vrsticeStrani(int stran) => const [];
+
+  /// Indeks vrstice pri višini [y]; z [natancno] samo, če je [y] v vrstici, sicer najbližja.
+  static int? _indeksVrstice(List<Rect> vrstice, double y, {bool natancno = false}) {
+    int? najblizja;
+    var razdalja = double.infinity;
+    for (var i = 0; i < vrstice.length; i++) {
+      final v = vrstice[i];
+      if (y >= v.top && y <= v.bottom) return i;
+      final d = math.min((y - v.top).abs(), (y - v.bottom).abs());
+      if (d < razdalja) {
+        razdalja = d;
+        najblizja = i;
+      }
+    }
+    return natancno ? null : najblizja;
+  }
 
   bool get lahkoOznacuje => false;
 
@@ -172,9 +189,18 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   // Trenutna poteza (stran in točke), dokler prst ne gre z zaslona.
   int? _stranPoteze;
   Poteza? _poteza;
-  Oznaka? _oznaka;
-  Rect? _vrsticaOznake;
+  // Markiranje besedila: vrstice strani, začetna vrstica in točka ter oznake, ki jih vlečenje riše.
+  List<Rect> _vrsticeOznake = const [];
+  int _zacetnaVrstica = 0;
   double _zacetekOznake = 0;
+  List<Oznaka> _oznakeVlecenja = [];
+
+  // Pridržanje na gumbu ali opombi: po kratkem času ga premikaš.
+  Timer? _casPremika;
+  Object? _kandidat;
+  Offset _zacetekKandidata = Offset.zero;
+  Object? _premikam;
+  Offset _odmikPremika = Offset.zero;
   bool _zaceto = false;
   final _zgodovina = <String>[];
 
@@ -249,11 +275,38 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     }
     if (_vecPrstov) return;
     _prviPrst = e.pointer;
+    // Na gumbu ali opombi: pridržanje ga premakne, premik prsta pred tem je navadna poteza.
+    final predmet = _predmetPri(stran, p);
+    if (predmet != null && _nacin != _Nacin.radirka) {
+      _kandidat = predmet;
+      _zacetekKandidata = p;
+      _casPremika = Timer(const Duration(milliseconds: 450), () {
+        if (_kandidat == null) return;
+        _zapomniZaRazveljavi();
+        HapticFeedback.mediumImpact();
+        setState(() {
+          _premikam = _kandidat;
+          _odmikPremika = _zacetekKandidata - _polozaj(_kandidat!);
+          _kandidat = null;
+        });
+      });
+      return;
+    }
     _zacetek(stran, p);
   }
 
   void _premikPrsta(int stran, PointerMoveEvent e, Offset p) {
     if (_vecPrstov || e.pointer != _prviPrst) return;
+    if (_premikam case final x?) {
+      setState(() => _nastaviPolozaj(x, p - _odmikPremika));
+      return;
+    }
+    if (_kandidat != null) {
+      if ((p - _zacetekKandidata).distance < 0.015) return;
+      _casPremika?.cancel();
+      _kandidat = null;
+      _zacetek(stran, _zacetekKandidata);
+    }
     _premik(stran, p);
   }
 
@@ -265,7 +318,64 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     }
     if (e.pointer != _prviPrst) return;
     _prviPrst = null;
+    _casPremika?.cancel();
+    if (_premikam != null) {
+      _premikam = null;
+      setState(() {});
+      _shrani();
+      return;
+    }
+    if (_kandidat != null) {
+      // Kratek dotik na gumbu ali opombi: kot dotik na tem mestu (npr. urejanje v načinu Gumb ali Opomba).
+      _kandidat = null;
+      if (preklicano) return;
+      _zacetek(stran, _zacetekKandidata);
+      _konec(stran, _zacetekKandidata);
+      return;
+    }
     preklicano ? _prekliciPotezo() : _konec(stran, p);
+  }
+
+  Offset _polozaj(Object x) => switch (x) {
+    final Opomba o => o.polozaj,
+    final GumbNaStrani g => g.polozaj,
+    _ => Offset.zero,
+  };
+
+  void _nastaviPolozaj(Object x, Offset p) {
+    final q = Offset(p.dx.clamp(0, 0.98), math.max(p.dy, 0));
+    switch (x) {
+      case final Opomba o:
+        o.polozaj = q;
+      case final GumbNaStrani g:
+        g.polozaj = q;
+    }
+  }
+
+  /// Gumb ali opomba pod točko (približno, po velikosti pisave).
+  Object? _predmetPri(int stran, Offset p) {
+    final enota = _enoteStrani[stran];
+    if (enota == null) return null;
+    // Delež višine, ki ustreza enoti širine (pri besedilu 1, pri PDF-ju razmerje strani).
+    final r = enota.width / enota.height;
+    for (final g in (_risba.gumbi[stran] ?? const <GumbNaStrani>[]).reversed) {
+      final x = g.prikaz;
+      final pisava = 0.03 * g.velikost;
+      final (s, v) = x.oblika == OblikaGumba.krog
+          ? (pisava * 3.2, pisava * 3.2)
+          : ((x.napis.length * 0.62 + 1.6) * pisava, 2.4 * pisava);
+      if (Rect.fromLTWH(g.polozaj.dx, g.polozaj.dy, s, v * r).inflate(0.01).contains(p)) return g;
+    }
+    for (final o in (_risba.opombe[stran] ?? const <Opomba>[]).reversed) {
+      final x = o.prikaz;
+      final pisava = 0.028 * o.velikost;
+      final sirina = math.min(x.besedilo.length * 0.55 * pisava, 0.5 * o.velikost);
+      final vrstic = math.max(1, (x.besedilo.length * 0.55 * pisava / (0.5 * o.velikost)).ceil());
+      if (Rect.fromLTWH(o.polozaj.dx, o.polozaj.dy, sirina, vrstic * 1.3 * pisava * r).inflate(0.01).contains(p)) {
+        return o;
+      }
+    }
+    return null;
   }
 
   /// Drugi prst: kar je prvi začel risati, se razveljavi.
@@ -275,9 +385,12 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     }
     _zaceto = false;
     _poteza = null;
-    _oznaka = null;
+    _oznakeVlecenja = [];
     _stranPoteze = null;
     _prviPrst = null;
+    _casPremika?.cancel();
+    _kandidat = null;
+    _premikam = null;
   }
 
   void _zacetek(int stran, Offset p) {
@@ -298,20 +411,17 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
           _risba.potezeStrani(stran).add(_poteza!);
         });
       case _Nacin.oznacevalec:
-        final vrstica = vrsticaPod(stran, p);
-        if (vrstica == null) return;
+        final vrstice = vrsticeStrani(stran);
+        final i = _indeksVrstice(vrstice, p.dy, natancno: true);
+        if (i == null) return;
         _zapomniZaRazveljavi();
         _zaceto = true;
-        _vrsticaOznake = vrstica;
-        _zacetekOznake = p.dx.clamp(vrstica.left, vrstica.right);
-        setState(() {
-          _stranPoteze = stran;
-          _oznaka = Oznaka(
-            obmocje: Rect.fromLTRB(_zacetekOznake, vrstica.top, _zacetekOznake, vrstica.bottom),
-            barva: _barvaMarkerja.toARGB32(),
-          );
-          _risba.oznakeStrani(stran).add(_oznaka!);
-        });
+        _vrsticeOznake = vrstice;
+        _zacetnaVrstica = i;
+        _zacetekOznake = p.dx.clamp(vrstice[i].left, vrstice[i].right);
+        _oznakeVlecenja = [];
+        _stranPoteze = stran;
+        _oznaci(stran, p);
       case _Nacin.radirka:
         _zapomniZaRazveljavi();
         _zaceto = true;
@@ -327,19 +437,39 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       _radiraj(stran, p);
     } else if (_poteza != null && _stranPoteze == stran) {
       setState(() => _poteza!.tocke.add(p));
-    } else if (_oznaka != null && _stranPoteze == stran) {
-      final v = _vrsticaOznake!;
-      final x = p.dx.clamp(v.left, v.right);
-      final oznake = _risba.oznakeStrani(stran);
-      final nova = Oznaka(
-        obmocje: Rect.fromLTRB(math.min(_zacetekOznake, x), v.top, math.max(_zacetekOznake, x), v.bottom),
-        barva: _oznaka!.barva,
-      );
-      setState(() {
-        oznake[oznake.indexOf(_oznaka!)] = nova;
-        _oznaka = nova;
-      });
+    } else if (_vrsticeOznake.isNotEmpty && _stranPoteze == stran && _nacin == _Nacin.oznacevalec) {
+      _oznaci(stran, p);
     }
+  }
+
+  /// Oznake od začetka vlečenja do [p], čez več vrstic kot pri izbiranju besedila.
+  void _oznaci(int stran, Offset p) {
+    final vrstice = _vrsticeOznake;
+    final j = _indeksVrstice(vrstice, p.dy) ?? _zacetnaVrstica;
+    final i = _zacetnaVrstica;
+    final x = p.dx.clamp(vrstice[j].left, vrstice[j].right);
+    final barva = _barvaMarkerja.toARGB32();
+    final (od, odX, doo, doX) = j > i || (j == i && x >= _zacetekOznake)
+        ? (i, _zacetekOznake, j, x)
+        : (j, x, i, _zacetekOznake);
+    final nove = [
+      for (var k = od; k <= doo; k++)
+        Oznaka(
+          obmocje: Rect.fromLTRB(
+            k == od ? odX : vrstice[k].left,
+            vrstice[k].top,
+            k == doo ? doX : vrstice[k].right,
+            vrstice[k].bottom,
+          ),
+          barva: barva,
+        ),
+    ];
+    final oznake = _risba.oznakeStrani(stran);
+    setState(() {
+      oznake.removeWhere(_oznakeVlecenja.contains);
+      oznake.addAll(nove);
+      _oznakeVlecenja = nove;
+    });
   }
 
   void _konec(int stran, Offset p) {
@@ -352,14 +482,15 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       return;
     }
     // Dotik brez vlečenja označi celo vrstico.
-    if (_oznaka case final o? when o.obmocje.width < 0.01) {
+    if (_oznakeVlecenja case [final o] when o.obmocje.width < 0.01) {
       final oznake = _risba.oznakeStrani(stran);
-      oznake[oznake.indexOf(o)] = Oznaka(obmocje: _vrsticaOznake!, barva: o.barva);
+      oznake[oznake.indexOf(o)] = Oznaka(obmocje: _vrsticeOznake[_zacetnaVrstica], barva: o.barva);
     }
     final spremenjeno = _zaceto;
     _zaceto = false;
     _poteza = null;
-    _oznaka = null;
+    _oznakeVlecenja = [];
+    _vrsticeOznake = const [];
     _stranPoteze = null;
     if (spremenjeno) {
       setState(() {});
@@ -374,43 +505,31 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     final gumbi = _risba.gumbiStrani(stran);
     final pred = poteze.length + opombe.length + oznake.length + gumbi.length;
     poteze.removeWhere((x) => x.blizu(p, _polmerRadirke));
-    opombe.removeWhere((o) => (o.polozaj - p).distance < _polmerRadirke * 2);
+    final predmet = _predmetPri(stran, p);
+    opombe.removeWhere((o) => o == predmet || (o.polozaj - p).distance < _polmerRadirke * 2);
     oznake.removeWhere((o) => o.obmocje.inflate(_polmerRadirke / 2).contains(p));
-    gumbi.removeWhere((g) => (g.polozaj - p).distance < _polmerRadirke * 2);
+    gumbi.removeWhere((g) => g == predmet || (g.polozaj - p).distance < _polmerRadirke * 2);
     if (poteze.length + opombe.length + oznake.length + gumbi.length != pred) setState(() {});
   }
 
+  /// Tap v načinu Opomba: nova opomba ali urejanje tiste pod prstom.
   Future<void> _urediOpombo(int stran, Offset p) async {
     final opombe = _risba.opombeStrani(stran);
-    // Tap blizu obstoječe opombe jo uredi, drugače doda novo.
-    Opomba? obstojeca;
-    for (final o in opombe) {
-      if ((o.polozaj - p).distance < 0.04) obstojeca = o;
-    }
-    final kontroler = TextEditingController(text: obstojeca?.besedilo ?? '');
-    final besedilo = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(obstojeca == null ? 'Nova opomba' : 'Uredi opombo'),
-        content: TextField(controller: kontroler, autofocus: true, maxLines: 3, minLines: 1),
-        actions: [
-          if (obstojeca != null) TextButton(onPressed: () => Navigator.pop(c, ''), child: const Text('Izbriši')),
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Prekliči')),
-          FilledButton(onPressed: () => Navigator.pop(c, kontroler.text.trim()), child: const Text('Shrani')),
-        ],
-      ),
-    );
-    if (besedilo == null) return;
+    final obstojeca = switch (_predmetPri(stran, p)) {
+      final Opomba o => o,
+      _ => null,
+    };
+    final rezultat = await urediOpombo(context, obstojeca, _barvaPisala.toARGB32());
+    if (rezultat == null) return;
     _zapomniZaRazveljavi();
     setState(() {
-      if (obstojeca != null) {
-        if (besedilo.isEmpty) {
-          opombe.remove(obstojeca);
-        } else {
-          obstojeca.besedilo = besedilo;
-        }
-      } else if (besedilo.isNotEmpty) {
-        opombe.add(Opomba(polozaj: p, besedilo: besedilo, barva: _barvaPisala.toARGB32()));
+      final i = obstojeca == null ? -1 : opombe.indexOf(obstojeca);
+      final nova = rezultat.opomba;
+      if (nova == null) {
+        if (i >= 0) opombe.removeAt(i);
+      } else {
+        nova.polozaj = obstojeca?.polozaj ?? p;
+        i >= 0 ? opombe[i] = nova : opombe.add(nova);
       }
     });
     _shrani();
@@ -419,10 +538,10 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   /// Tap v načinu Gumb: nov gumb ali urejanje bližnjega.
   Future<void> _urediGumb(int stran, Offset p) async {
     final gumbi = _risba.gumbiStrani(stran);
-    GumbNaStrani? obstojeci;
-    for (final g in gumbi) {
-      if ((g.polozaj - p).distance < 0.05) obstojeci = g;
-    }
+    final obstojeci = switch (_predmetPri(stran, p)) {
+      final GumbNaStrani g => g,
+      _ => null,
+    };
     final rezultat = await urediGumb(context, obstojeci, knjiznica);
     if (rezultat == null) return;
     _zapomniZaRazveljavi();
@@ -512,7 +631,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
           top: g.polozaj.dy * enota.height,
           child: IgnorePointer(
             ignoring: risem,
-            child: GumbVOpombah(gumb: g, velikost: enota.width * 0.03, knjiznica: knjiznica),
+            child: GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
           ),
         ),
       // Klicaj: točka je pod klicajem, klicaj stoji nad njo.
@@ -583,7 +702,12 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
               gumb(_Nacin.pisalo, Icons.edit, 'Pisalo'),
               gumb(_Nacin.marker, Icons.brush, 'Marker (prostoročno)'),
               if (lahkoOznacuje) gumb(_Nacin.oznacevalec, Icons.format_color_fill, 'Označi besedilo'),
-              gumb(_Nacin.radirka, Icons.auto_fix_normal, 'Radirka'),
+              IconButton(
+                tooltip: 'Radirka',
+                isSelected: _nacin == _Nacin.radirka,
+                icon: const IkonaRadirke(),
+                onPressed: () => setState(() => _nacin = _Nacin.radirka),
+              ),
               gumb(_Nacin.opomba, Icons.sticky_note_2_outlined, 'Opomba'),
               gumb(_Nacin.gumb, Icons.smart_button, 'Gumb z MIDI ukazom'),
               const SizedBox(width: 12),
@@ -613,7 +737,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
                   ),
               const SizedBox(width: 12),
               IconButton(tooltip: 'Razveljavi', icon: const Icon(Icons.undo), onPressed: _razveljavi),
-              IconButton(tooltip: 'Izbriši vse', icon: const Icon(Icons.delete_outline), onPressed: _izbrisiVse),
+              IconButton(tooltip: 'Izbriši vse', icon: const Icon(Icons.delete_sweep_outlined), onPressed: _izbrisiVse),
             ],
           ),
         ),
@@ -686,58 +810,161 @@ class GumbVOpombah extends StatelessWidget {
   }
 }
 
+/// Ikona radirke (dvobarvna radirka postrani), ker je med ikonami Material ni.
+class IkonaRadirke extends StatelessWidget {
+  const IkonaRadirke({super.key, this.velikost = 24});
+
+  final double velikost;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size.square(velikost), painter: _RadirkaSlikar(IconTheme.of(context).color ?? Colors.black));
+}
+
+class _RadirkaSlikar extends CustomPainter {
+  _RadirkaSlikar(this.barva);
+
+  final Color barva;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final e = size.width / 24;
+    canvas.save();
+    canvas.translate(12 * e, 11 * e);
+    canvas.rotate(-math.pi / 4);
+    final telo = Rect.fromCenter(center: Offset.zero, width: 18 * e, height: 9 * e);
+    final konica = Rect.fromLTRB(telo.left, telo.top, telo.left + 7 * e, telo.bottom);
+    final obroba = Paint()
+      ..color = barva
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8 * e;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(konica, Radius.circular(1.5 * e)),
+      Paint()..color = const Color(0xFFF48FB1),
+    );
+    canvas.drawRRect(RRect.fromRectAndRadius(telo, Radius.circular(1.5 * e)), obroba);
+    canvas.drawLine(Offset(konica.right, telo.top), Offset(konica.right, telo.bottom), obroba);
+    canvas.restore();
+    canvas.drawLine(Offset(3 * e, 21.5 * e), Offset(21 * e, 21.5 * e), obroba);
+  }
+
+  @override
+  bool shouldRepaint(_RadirkaSlikar old) => old.barva != barva;
+}
+
+/// Seznam shranjenih gumbov ali opomb (z brisanjem); vrne izbrano ID ali null.
+Future<String?> _izberiShranjeno(BuildContext context, {required bool gumbi}) => showDialog<String>(
+  context: context,
+  builder: (context) => ListenableBuilder(
+    listenable: Predloge.aplikacija,
+    builder: (context, _) {
+      final p = Predloge.aplikacija;
+      final vrstice = gumbi
+          ? [for (final g in p.gumbi) (id: g.predloga, napis: g.napis, opis: g.midi, barva: Color(g.barva))]
+          : [for (final o in p.opombe) (id: o.predloga, napis: o.besedilo, opis: '', barva: Color(o.barva))];
+      return AlertDialog(
+        title: Text(gumbi ? 'Shranjeni gumbi' : 'Shranjene opombe'),
+        content: SizedBox(
+          width: 360,
+          child: vrstice.isEmpty
+              ? Text(
+                  gumbi
+                      ? 'Ni še shranjenih gumbov. Pri gumbu obkljukaj »Shrani za ponovno uporabo«.'
+                      : 'Ni še shranjenih opomb. Pri opombi obkljukaj »Shrani za ponovno uporabo«.',
+                )
+              : ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final v in vrstice)
+                      ListTile(
+                        leading: CircleAvatar(radius: 10, backgroundColor: v.barva),
+                        title: Text(v.napis, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: v.opis.isEmpty ? null : Text(v.opis, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: IconButton(
+                          tooltip: 'Odstrani s seznama',
+                          icon: const Icon(Icons.close),
+                          onPressed: () => gumbi ? p.izbrisiGumb(v.id) : p.izbrisiOpombo(v.id),
+                        ),
+                        onTap: () => Navigator.pop(context, v.id),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Zapri'))],
+      );
+    },
+  ),
+);
+
+/// Velikost gumba ali opombe (drsnik).
+Widget _drsnikVelikosti(double v, ValueChanged<double> spremeni) => Row(
+  children: [
+    const Text('Velikost'),
+    Expanded(
+      child: Slider(value: v, min: 0.5, max: 3, divisions: 25, label: '${(v * 100).round()} %', onChanged: spremeni),
+    ),
+  ],
+);
+
+/// Kaj narediti z gumbom ali opombo ob zaprtju okna: [tu] shrani (samo to mesto ali novo shranjeno),
+/// [povsod] spremeni shranjenega, [nov] naredi nov gumb samo tu, [shranjen] postavi izbranega s seznama.
+enum _Shranjevanje { tu, povsod, nov, shranjen, izbrisi }
+
 /// Okno za nov ali obstoječ gumb v opombah. Vrne null ob preklicu, (gumb: null) ob brisanju.
+/// Gumb, postavljen iz shranjenega, je pri vseh besedilih enak: sprememba ga spremeni povsod
+/// ali pa nastane nov gumb samo na tem mestu.
 Future<({GumbNaStrani? gumb})?> urediGumb(
   BuildContext context,
   GumbNaStrani? obstojeci,
   KnjiznicaMidi knjiznica,
 ) async {
-  final predloge = await GumbNaStrani.predloge();
-  if (!context.mounted) return null;
-  final napis = TextEditingController(text: obstojeci?.napis ?? '');
-  final midi = TextEditingController(text: obstojeci?.midi ?? '');
-  var barva = obstojeci?.barva ?? barveGumbov[4].toARGB32();
-  var oblika = obstojeci?.oblika ?? OblikaGumba.zaobljen;
+  final predloge = Predloge.aplikacija;
+  final shranjen = predloge.gumb(obstojeci?.predloga ?? '') != null;
+  final zacetni = obstojeci?.prikaz;
+  final napis = TextEditingController(text: zacetni?.napis ?? '');
+  final midi = TextEditingController(text: zacetni?.midi ?? '');
+  var barva = zacetni?.barva ?? barveGumbov[4].toARGB32();
+  var oblika = zacetni?.oblika ?? OblikaGumba.zaobljen;
+  var velikost = obstojeci?.velikost ?? 1.0;
   var shrani = false;
-  final rezultat = await showDialog<({GumbNaStrani? gumb})>(
+  String? izShranjenih;
+  final nacin = await showDialog<_Shranjevanje?>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, nastavi) => AlertDialog(
-        title: Text(obstojeci == null ? 'Nov gumb' : 'Uredi gumb'),
+        title: Row(
+          children: [
+            Expanded(child: Text(obstojeci == null ? 'Nov gumb' : 'Uredi gumb')),
+            IconButton(
+              tooltip: 'Shranjeni gumbi',
+              icon: const Icon(Icons.bookmarks_outlined),
+              onPressed: () async {
+                final id = await _izberiShranjeno(context, gumbi: true);
+                if (id != null && context.mounted) {
+                  izShranjenih = id;
+                  Navigator.pop(context, _Shranjevanje.shranjen);
+                }
+              },
+            ),
+          ],
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (predloge.isNotEmpty) ...[
-                const Text('Shranjeni gumbi'),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final g in predloge)
-                      InputChip(
-                        avatar: CircleAvatar(backgroundColor: Color(g.barva)),
-                        label: Text(g.napis),
-                        onPressed: () => nastavi(() {
-                          napis.text = g.napis;
-                          midi.text = g.midi;
-                          barva = g.barva;
-                          oblika = g.oblika;
-                        }),
-                        onDeleted: () async {
-                          predloge.remove(g);
-                          await GumbNaStrani.shraniPredloge(predloge);
-                          nastavi(() {});
-                        },
-                      ),
-                  ],
+              if (shranjen)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'To je shranjen gumb: sprememba velja pri vseh besedilih, kjer je. '
+                    'Lahko pa narediš nov gumb samo na tem mestu.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
                 ),
-                const SizedBox(height: 16),
-              ],
               TextField(
                 controller: napis,
-                autofocus: obstojeci == null && predloge.isEmpty,
+                autofocus: obstojeci == null,
                 decoration: const InputDecoration(labelText: 'Napis (npr. Solo, Konec)'),
               ),
               const SizedBox(height: 12),
@@ -774,42 +1001,172 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
                 selected: {oblika},
                 onSelectionChanged: (o) => nastavi(() => oblika = o.first),
               ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Shrani za ponovno uporabo'),
-                value: shrani,
-                onChanged: (v) => nastavi(() => shrani = v ?? false),
-              ),
+              _drsnikVelikosti(velikost, (v) => nastavi(() => velikost = v)),
+              if (!shranjen)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Shrani za ponovno uporabo'),
+                  value: shrani,
+                  onChanged: (v) => nastavi(() => shrani = v ?? false),
+                ),
             ],
           ),
         ),
         actions: [
           if (obstojeci != null)
-            TextButton(onPressed: () => Navigator.pop(context, (gumb: null)), child: const Text('Izbriši')),
+            TextButton(onPressed: () => Navigator.pop(context, _Shranjevanje.izbrisi), child: const Text('Izbriši')),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          if (shranjen)
+            TextButton(
+              onPressed: () => napis.text.trim().isEmpty ? null : Navigator.pop(context, _Shranjevanje.nov),
+              child: const Text('Shrani kot nov'),
+            ),
           FilledButton(
-            onPressed: () {
-              if (napis.text.trim().isEmpty) return;
-              Navigator.pop(context, (
-                gumb: GumbNaStrani(napis: napis.text.trim(), midi: midi.text.trim(), barva: barva, oblika: oblika),
-              ));
-            },
-            child: const Text('Shrani'),
+            onPressed: () => napis.text.trim().isEmpty
+                ? null
+                : Navigator.pop(context, shranjen ? _Shranjevanje.povsod : _Shranjevanje.tu),
+            child: Text(shranjen ? 'Spremeni povsod' : 'Shrani'),
           ),
         ],
       ),
     ),
   );
-  final g = rezultat?.gumb;
-  if (shrani && g != null) {
-    predloge
-      ..removeWhere((x) => x.napis == g.napis)
-      ..add(g);
-    await GumbNaStrani.shraniPredloge(predloge);
-  }
+  final g = GumbNaStrani(
+    napis: napis.text.trim(),
+    midi: midi.text.trim(),
+    barva: barva,
+    oblika: oblika,
+    velikost: velikost,
+    predloga: nacin == _Shranjevanje.povsod ? obstojeci!.predloga : '',
+  );
   napis.dispose();
   midi.dispose();
-  return rezultat;
+  switch (nacin) {
+    case null:
+      return null;
+    case _Shranjevanje.izbrisi:
+      return (gumb: null);
+    case _Shranjevanje.shranjen:
+      // Napis in ukazi pridejo iz shranjenega (GumbNaStrani.prikaz).
+      final s = predloge.gumb(izShranjenih!)!;
+      return (gumb: s.kopija(predloga: izShranjenih, velikost: velikost));
+    case _Shranjevanje.povsod:
+      await predloge.shraniGumb(g);
+    case _Shranjevanje.tu when shrani:
+      g.predloga = await predloge.shraniGumb(g);
+    case _Shranjevanje.tu || _Shranjevanje.nov:
+      break;
+  }
+  return (gumb: g);
+}
+
+/// Okno za novo ali obstoječo opombo; enako kot pri gumbu (shranjene opombe, velikost).
+/// Vrne null ob preklicu, (opomba: null) ob brisanju.
+Future<({Opomba? opomba})?> urediOpombo(BuildContext context, Opomba? obstojeca, int barva) async {
+  final predloge = Predloge.aplikacija;
+  final shranjena = predloge.opomba(obstojeca?.predloga ?? '') != null;
+  final besedilo = TextEditingController(text: obstojeca?.prikaz.besedilo ?? '');
+  var velikost = obstojeca?.velikost ?? 1.0;
+  var shrani = false;
+  String? izShranjenih;
+  final nacin = await showDialog<_Shranjevanje>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, nastavi) => AlertDialog(
+        title: Row(
+          children: [
+            Expanded(child: Text(obstojeca == null ? 'Nova opomba' : 'Uredi opombo')),
+            IconButton(
+              tooltip: 'Shranjene opombe',
+              icon: const Icon(Icons.bookmarks_outlined),
+              onPressed: () async {
+                final id = await _izberiShranjeno(context, gumbi: false);
+                if (id != null && context.mounted) {
+                  izShranjenih = id;
+                  Navigator.pop(context, _Shranjevanje.shranjen);
+                }
+              },
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (shranjena)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'To je shranjena opomba: sprememba velja pri vseh besedilih, kjer je. '
+                    'Lahko pa narediš novo opombo samo na tem mestu.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              TextField(controller: besedilo, autofocus: true, maxLines: 3, minLines: 1),
+              _drsnikVelikosti(velikost, (v) => nastavi(() => velikost = v)),
+              if (!shranjena)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Shrani za ponovno uporabo'),
+                  value: shrani,
+                  onChanged: (v) => nastavi(() => shrani = v ?? false),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          if (obstojeca != null)
+            TextButton(onPressed: () => Navigator.pop(context, _Shranjevanje.izbrisi), child: const Text('Izbriši')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          if (shranjena)
+            TextButton(
+              onPressed: () => Navigator.pop(context, _Shranjevanje.nov),
+              child: const Text('Shrani kot novo'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, shranjena ? _Shranjevanje.povsod : _Shranjevanje.tu),
+            child: Text(shranjena ? 'Spremeni povsod' : 'Shrani'),
+          ),
+        ],
+      ),
+    ),
+  );
+  final tekst = besedilo.text.trim();
+  besedilo.dispose();
+  final o = Opomba(
+    polozaj: Offset.zero,
+    besedilo: tekst,
+    barva: obstojeca?.prikaz.barva ?? barva,
+    velikost: velikost,
+    predloga: nacin == _Shranjevanje.povsod ? obstojeca!.predloga : '',
+  );
+  switch (nacin) {
+    case null:
+      return null;
+    case _Shranjevanje.izbrisi:
+      return (opomba: null);
+    case _Shranjevanje.shranjen:
+      // Besedilo pride iz shranjene (Opomba.prikaz); kopija ostane, če shranjeno kdaj odstraniš.
+      final s = predloge.opomba(izShranjenih!)!;
+      return (
+        opomba: Opomba(
+          polozaj: Offset.zero,
+          besedilo: s.besedilo,
+          barva: s.barva,
+          predloga: izShranjenih!,
+          velikost: velikost,
+        ),
+      );
+    case _ when tekst.isEmpty:
+      return obstojeca == null ? null : (opomba: null);
+    case _Shranjevanje.povsod:
+      await predloge.shraniOpombo(o);
+    case _Shranjevanje.tu when shrani:
+      o.predloga = await predloge.shraniOpombo(o);
+    case _Shranjevanje.tu || _Shranjevanje.nov:
+      break;
+  }
+  return (opomba: o);
 }
 
 class _OznakeSlikar extends CustomPainter {
@@ -882,19 +1239,20 @@ class _RisbaSlikar extends CustomPainter {
       canvas.drawPath(pot, copic);
     }
 
-    for (final o in opombe) {
+    for (final shranjena in opombe) {
+      final o = shranjena.prikaz;
       final tp = TextPainter(
         text: TextSpan(
           text: o.besedilo,
           style: TextStyle(
             // Belo pisalo (besedilo na temnem ozadju) bi se na rumenem listku ne videlo.
             color: Color(o.barva).computeLuminance() > 0.8 ? Colors.black : Color(o.barva),
-            fontSize: size.width * 0.028,
+            fontSize: size.width * 0.028 * o.velikost,
             fontWeight: FontWeight.w600,
           ),
         ),
         textDirection: TextDirection.ltr,
-      )..layout(maxWidth: size.width * 0.5);
+      )..layout(maxWidth: size.width * 0.5 * o.velikost);
       final mesto = Offset(o.polozaj.dx * size.width, o.polozaj.dy * size.height);
       final ozadje = (mesto & tp.size).inflate(size.width * 0.006);
       canvas.drawRRect(

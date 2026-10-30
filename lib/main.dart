@@ -13,6 +13,7 @@ import 'zasloni/prijava_zaslon.dart';
 import 'midi/midi.dart';
 import 'nastavitve.dart';
 import 'odigrane.dart';
+import 'risbe.dart';
 import 'runda.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
@@ -26,6 +27,7 @@ Future<void> main() async {
   await baza.nalozi();
   await Nastavitve.aplikacija.nalozi();
   await Odigrane.aplikacija.nalozi();
+  await Predloge.aplikacija.nalozi();
   await Runda.aplikacija.nalozi();
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   if (Config.prekoVodje) {

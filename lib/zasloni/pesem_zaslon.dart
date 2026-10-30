@@ -155,10 +155,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
     super.dispose();
   }
 
-  /// Dnevnik: vsaka pesem, odprta vsaj 10 s (iPad prek vodje ne beleži, ker beleži vodja).
+  /// Dnevnik: pesem, odprta toliko časa kot za oznako odigrane (Nastavitve, privzeto 2 min);
+  /// iPad prek vodje ne beleži, ker beleži vodja.
   void _zabelezi() {
     final trajanje = DateTime.now().difference(_odprto).inSeconds;
-    if (trajanje < 10 || Config.prekoVodje) return;
+    final minute = Nastavitve.aplikacija.minuteOdigrane;
+    if (minute == 0 || trajanje < minute * 60 || Config.prekoVodje) return;
     final p = _pesem;
     widget.baza.zabelezi(apiZaKlicaje(widget.baza, widget.prijava), {
       'cas': _odprto.toUtc().toIso8601String(),
@@ -224,8 +226,6 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Iskalnik: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto); brez špila se odpre.
   void _izIskalnika(Pesem p, {bool naPrvo = false}) {
-    // Pavza se odpre takoj (ne gre v čakalno vrsto).
-    if (p.id == _pavza?.id) return _odpri(p);
     if (widget.izIskalnika case final f? when !naPrvo) {
       setState(() => _iskalnik = false);
       return f(p);

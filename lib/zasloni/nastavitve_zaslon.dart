@@ -188,7 +188,9 @@ class NastavitveZaslon extends StatelessWidget {
             ),
             ListTile(
               title: const Text('Pesem je odigrana, ko je odprta'),
-              subtitle: const Text('Siva ikona predvajanja na vseh seznamih (velja 12 ur)'),
+              subtitle: const Text(
+                'Siva ikona predvajanja na vseh seznamih (velja 12 ur); takrat gre pesem tudi v dnevnik igranja',
+              ),
               trailing: DropdownButton<int>(
                 value: n.minuteOdigrane,
                 onChanged: (v) => v == null ? null : n.nastaviMinuteOdigrane(v),

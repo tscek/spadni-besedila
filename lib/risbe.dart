@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
@@ -52,19 +53,40 @@ class Poteza {
 }
 
 class Opomba {
-  Opomba({required this.polozaj, required this.besedilo, required this.barva});
+  Opomba({required this.polozaj, required this.besedilo, required this.barva, this.predloga = '', this.velikost = 1});
 
   factory Opomba.izJson(Map<String, dynamic> j) => Opomba(
     polozaj: Offset((j['x'] as num).toDouble(), (j['y'] as num).toDouble()),
-    besedilo: j['s'] as String,
-    barva: j['b'] as int,
+    besedilo: j['s'] as String? ?? '',
+    barva: j['b'] as int? ?? 0xFF000000,
+    predloga: j['p'] as String? ?? '',
+    velikost: (j['v'] as num?)?.toDouble() ?? 1,
   );
 
   Offset polozaj;
   String besedilo;
   int barva;
 
-  Map<String, dynamic> vJson() => {'x': _zaokrozi(polozaj.dx), 'y': _zaokrozi(polozaj.dy), 's': besedilo, 'b': barva};
+  /// ID shranjene opombe ([Predloge]); taka opomba je pri vseh besedilih enaka.
+  String predloga;
+
+  /// Povečava (1 = običajna velikost).
+  double velikost;
+
+  /// Kar se nariše: pri shranjeni opombi besedilo in barva iz shranjene.
+  Opomba get prikaz => switch (Predloge.aplikacija.opomba(predloga)) {
+    final p? => Opomba(polozaj: polozaj, besedilo: p.besedilo, barva: p.barva, predloga: predloga, velikost: velikost),
+    null => this,
+  };
+
+  Map<String, dynamic> vJson() => {
+    'x': _zaokrozi(polozaj.dx),
+    'y': _zaokrozi(polozaj.dy),
+    's': besedilo,
+    'b': barva,
+    if (predloga.isNotEmpty) 'p': predloga,
+    if (velikost != 1) 'v': _zaokrozi(velikost),
+  };
 }
 
 /// Označen del besedila (pravokotnik čez vrstico, kot z markerjem), v relativnih koordinatah.
@@ -110,6 +132,8 @@ class GumbNaStrani {
     required this.midi,
     required this.barva,
     this.oblika = OblikaGumba.zaobljen,
+    this.predloga = '',
+    this.velikost = 1,
   });
 
   factory GumbNaStrani.izJson(Map<String, dynamic> j) => GumbNaStrani(
@@ -118,6 +142,8 @@ class GumbNaStrani {
     midi: j['m'] as String? ?? '',
     barva: j['b'] as int? ?? 0xFF1565C0,
     oblika: OblikaGumba.values.asNameMap()[j['o']] ?? OblikaGumba.zaobljen,
+    predloga: j['p'] as String? ?? '',
+    velikost: (j['v'] as num?)?.toDouble() ?? 1,
   );
 
   Offset polozaj;
@@ -126,8 +152,35 @@ class GumbNaStrani {
   int barva;
   OblikaGumba oblika;
 
-  GumbNaStrani kopija({Offset? polozaj}) =>
-      GumbNaStrani(polozaj: polozaj ?? this.polozaj, napis: napis, midi: midi, barva: barva, oblika: oblika);
+  /// ID shranjenega gumba ([Predloge]); tak gumb je pri vseh besedilih enak.
+  String predloga;
+
+  /// Povečava (1 = običajna velikost).
+  double velikost;
+
+  GumbNaStrani kopija({Offset? polozaj, String? predloga, double? velikost}) => GumbNaStrani(
+    polozaj: polozaj ?? this.polozaj,
+    napis: napis,
+    midi: midi,
+    barva: barva,
+    oblika: oblika,
+    predloga: predloga ?? this.predloga,
+    velikost: velikost ?? this.velikost,
+  );
+
+  /// Kar se nariše in pošlje: pri shranjenem gumbu napis, ukazi, barva in oblika iz shranjenega.
+  GumbNaStrani get prikaz => switch (Predloge.aplikacija.gumb(predloga)) {
+    final p? => GumbNaStrani(
+      polozaj: polozaj,
+      napis: p.napis,
+      midi: p.midi,
+      barva: p.barva,
+      oblika: p.oblika,
+      predloga: predloga,
+      velikost: velikost,
+    ),
+    null => this,
+  };
 
   Map<String, dynamic> vJson() => {
     'x': _zaokrozi(polozaj.dx),
@@ -136,29 +189,88 @@ class GumbNaStrani {
     'm': midi,
     'b': barva,
     'o': oblika.name,
+    if (predloga.isNotEmpty) 'p': predloga,
+    if (velikost != 1) 'v': _zaokrozi(velikost),
   };
+}
 
-  /// Shranjeni gumbi za ponovno uporabo (na tej napravi).
-  static const _kljucPredlog = 'gumbi_predloge';
+/// Shranjeni gumbi in opombe člana (na tej napravi). Gumb ali opomba, postavljena iz shranjene,
+/// kaže nanjo z [GumbNaStrani.predloga], zato sprememba shranjene velja pri vseh besedilih.
+class Predloge extends ChangeNotifier {
+  static Predloge aplikacija = Predloge();
 
-  static Future<List<GumbNaStrani>> predloge() async {
+  static const _kljucGumbov = 'gumbi_predloge';
+  static const _kljucOpomb = 'opombe_predloge';
+
+  /// Shranjeni gumbi; ID je v [GumbNaStrani.predloga].
+  List<GumbNaStrani> gumbi = [];
+  List<Opomba> opombe = [];
+
+  GumbNaStrani? gumb(String id) => id.isEmpty ? null : gumbi.where((g) => g.predloga == id).firstOrNull;
+  Opomba? opomba(String id) => id.isEmpty ? null : opombe.where((o) => o.predloga == id).firstOrNull;
+
+  static int _stevec = 0;
+  static String novId() => '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}${_stevec++}';
+
+  Future<void> nalozi() async {
     try {
-      final s = (await SharedPreferences.getInstance()).getString(_kljucPredlog) ?? '[]';
-      return [for (final j in jsonDecode(s) as List) GumbNaStrani.izJson((j as Map).cast<String, dynamic>())];
+      final p = await SharedPreferences.getInstance();
+      List<Map<String, dynamic>> beri(String k) => [
+        for (final j in jsonDecode(p.getString(k) ?? '[]') as List) (j as Map).cast<String, dynamic>(),
+      ];
+      // Starejši shranjeni gumbi še nimajo ID-ja.
+      gumbi = [for (final j in beri(_kljucGumbov)) GumbNaStrani.izJson(j)..predloga = (j['p'] as String?) ?? novId()];
+      opombe = [
+        for (final j in beri(_kljucOpomb))
+          Opomba.izJson({'x': 0, 'y': 0, ...j})..predloga = (j['p'] as String?) ?? novId(),
+      ];
     } catch (_) {
-      return [];
+      gumbi = [];
+      opombe = [];
     }
+    notifyListeners();
   }
 
-  static Future<void> shraniPredloge(List<GumbNaStrani> g) async => (await SharedPreferences.getInstance()).setString(
-    _kljucPredlog,
-    jsonEncode([
-      for (final x in g)
-        x.vJson()
-          ..remove('x')
-          ..remove('y'),
-    ]),
-  );
+  Future<void> _shrani() async {
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    Map<String, dynamic> brezMesta(Map<String, dynamic> j) => j
+      ..remove('x')
+      ..remove('y')
+      ..remove('v');
+    await p.setString(_kljucGumbov, jsonEncode([for (final g in gumbi) brezMesta(g.vJson())]));
+    await p.setString(_kljucOpomb, jsonEncode([for (final o in opombe) brezMesta(o.vJson())]));
+  }
+
+  /// Shrani gumb (nov dobi ID); vrne ID.
+  Future<String> shraniGumb(GumbNaStrani g) async {
+    final id = g.predloga.isEmpty ? novId() : g.predloga;
+    final nov = g.kopija(polozaj: Offset.zero, predloga: id, velikost: 1);
+    final i = gumbi.indexWhere((x) => x.predloga == id);
+    i >= 0 ? gumbi[i] = nov : gumbi.add(nov);
+    await _shrani();
+    return id;
+  }
+
+  Future<String> shraniOpombo(Opomba o) async {
+    final id = o.predloga.isEmpty ? novId() : o.predloga;
+    final nova = Opomba(polozaj: Offset.zero, besedilo: o.besedilo, barva: o.barva, predloga: id);
+    final i = opombe.indexWhere((x) => x.predloga == id);
+    i >= 0 ? opombe[i] = nova : opombe.add(nova);
+    await _shrani();
+    return id;
+  }
+
+  /// Odstrani shranjeno; že postavljeni ostanejo z zadnjim napisom (vsak zase).
+  Future<void> izbrisiGumb(String id) async {
+    gumbi.removeWhere((g) => g.predloga == id);
+    await _shrani();
+  }
+
+  Future<void> izbrisiOpombo(String id) async {
+    opombe.removeWhere((o) => o.predloga == id);
+    await _shrani();
+  }
 }
 
 /// Vse risbe enega člana na eni pesmi, po straneh (od 1 naprej).

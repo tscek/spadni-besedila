@@ -105,29 +105,27 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     super.dispose();
   }
 
-  /// Vrstica besedila pod točko: pri vrstici z akordi samo besedilo (brez akordov), relativno na širino strani.
+  /// Vrstice besedila (pri vrstici z akordi samo besedilo, brez akordov), relativno na širino strani.
   @override
-  Rect? vrsticaPod(int stran, Offset tocka) {
+  List<Rect> vrsticeStrani(int stran) {
     final strTelo = _stranKljuc.currentContext?.findRenderObject() as RenderBox?;
-    if (strTelo == null) return null;
+    if (strTelo == null) return const [];
     const sirina = BesediloZRisanjem.sirinaStrani;
-    final y = tocka.dy * sirina;
-    for (var i = 0; i < _kljuci.length && i < _vrstice.length; i++) {
-      final v = _vrstice[i];
-      if (v.vrsta == cp.VrstaVrstice.prazna) continue;
-      final telo = _kljuci[i].currentContext?.findRenderObject() as RenderBox?;
-      if (telo == null || !telo.hasSize) continue;
-      final zgoraj = strTelo.globalToLocal(telo.localToGlobal(Offset.zero));
-      var r = zgoraj & telo.size;
-      if (v.vrsta == cp.VrstaVrstice.besedilo && v.imaAkorde && Nastavitve.aplikacija.akordi) {
-        r = Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom);
-      }
-      r = r.inflate(2);
-      if (y >= r.top && y <= r.bottom) {
-        return Rect.fromLTRB(r.left / sirina, r.top / sirina, r.right / sirina, r.bottom / sirina);
-      }
-    }
-    return null;
+    return [
+      for (var i = 0; i < _kljuci.length && i < _vrstice.length; i++)
+        if (_vrstice[i].vrsta != cp.VrstaVrstice.prazna)
+          if (_kljuci[i].currentContext?.findRenderObject() case final RenderBox telo when telo.hasSize)
+            () {
+              final v = _vrstice[i];
+              final zgoraj = strTelo.globalToLocal(telo.localToGlobal(Offset.zero));
+              var r = zgoraj & telo.size;
+              if (v.vrsta == cp.VrstaVrstice.besedilo && v.imaAkorde && Nastavitve.aplikacija.akordi) {
+                r = Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom);
+              }
+              r = r.inflate(2);
+              return Rect.fromLTRB(r.left / sirina, r.top / sirina, r.right / sirina, r.bottom / sirina);
+            }(),
+    ];
   }
 
   void _dol(PointerDownEvent e) {

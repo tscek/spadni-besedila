@@ -143,9 +143,80 @@ class IzbiraPesmiState extends State<IzbiraPesmi> {
   }
 }
 
-/// Plavajoče okno z iskalnikom pesmi (spodaj desno na zaslonu pesmi). Na vrhu je vedno »Pavza«
-/// (pesem za pavzo v mapi), nad seznamom hitra filtra po vrsti in harmoniki (ob zaprtju se ponastavita)
-/// in razvrščanje. Že odigrane pesmi imajo samo naslov v nižji vrstici.
+/// Hitri filtri po vrsti in harmoniki (izbran filter ponoven dotik izklopi); [spredaj] so gumbi pred njimi.
+class HitriFiltri extends StatelessWidget {
+  const HitriFiltri({
+    super.key,
+    required this.baza,
+    required this.pesmi,
+    required this.vrsta,
+    required this.harmonika,
+    required this.spremeni,
+    this.spredaj = const [],
+    this.vse = false,
+  });
+
+  final Baza baza;
+
+  /// Pesmi, iz katerih se naberejo vrste in harmonike.
+  final List<Pesem> pesmi;
+  final String vrsta;
+  final String harmonika;
+  final void Function(String vrsta, String harmonika) spremeni;
+  final List<Widget> spredaj;
+
+  /// Čip »Vse« na začetku (izklopi oba filtra).
+  final bool vse;
+
+  @override
+  Widget build(BuildContext context) {
+    final vrste = pesmi.map((p) => p.vrsta).where((v) => v.isNotEmpty).toSet().toList()..sort();
+    final imena = pesmi.map((p) => p.harmonika).where((v) => v.isNotEmpty).toSet();
+    // Harmonike v vrstnem redu s seznama harmonik, neznane na koncu.
+    final harmonike = [
+      for (final h in baza.harmonike)
+        if (imena.contains(h.ime)) h.ime,
+      ...imena.where((i) => baza.harmonika(i) == null),
+    ];
+    final poVrsti = vrste.length > 1;
+    final poHarmoniki = harmonike.length > 1;
+    if (!poVrsti && !poHarmoniki && spredaj.isEmpty) return const SizedBox.shrink();
+    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob) => Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        visualDensity: VisualDensity.compact,
+        avatar: barva == null ? null : CircleAvatar(backgroundColor: barva, radius: 6),
+        label: Text(ime),
+        selected: izbran,
+        showCheckmark: false,
+        onSelected: (_) => ob(),
+      ),
+    );
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        children: [
+          ...spredaj,
+          if (vse && (poVrsti || poHarmoniki))
+            cip('Vse', null, vrsta.isEmpty && harmonika.isEmpty, () => spremeni('', '')),
+          if (poVrsti)
+            for (final v in vrste)
+              cip(v, barvaVrste(baza, v), vrsta == v, () => spremeni(vrsta == v ? '' : v, harmonika)),
+          if (poVrsti && poHarmoniki) const VerticalDivider(width: 12),
+          if (poHarmoniki)
+            for (final h in harmonike)
+              cip(h, barvaHarmonike(baza, h), harmonika == h, () => spremeni(vrsta, harmonika == h ? '' : h)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Plavajoče okno z iskalnikom pesmi (spodaj desno na zaslonu pesmi). Nad seznamom je gumb za pavzo
+/// (pesem za pavzo v mapi: dotik v čakalno vrsto, pridržanje kot naslednja), hitra filtra po vrsti
+/// in harmoniki (ob zaprtju se ponastavita) in razvrščanje. Že odigrane pesmi imajo samo naslov v nižji vrstici.
 class IskalnikPesmi extends StatefulWidget {
   const IskalnikPesmi({
     super.key,
@@ -204,20 +275,11 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
         .toList();
     // Razvrščanje je stabilno, zato pesmi playliste z enako vrednostjo ostanejo na vrhu.
     if (n.razvrstiIskalnik case final polje?) mergeSort(pesmi, compare: polje.primerjaj);
-    return [?pavza, ...pesmi];
+    return pesmi;
   }
 
   Widget _vrstica(BuildContext context, Pesem p, bool izbrana) {
     final tema = Theme.of(context);
-    if (p.id == widget.pavza?.id) {
-      return ListTile(
-        selected: izbrana,
-        selectedTileColor: tema.colorScheme.secondaryContainer,
-        leading: const Icon(Icons.pause_circle_outline),
-        title: const Text('Pavza', style: TextStyle(fontWeight: FontWeight.bold)),
-        onTap: () => widget.odpri(p),
-      );
-    }
     final odigrana = _odigrana(p);
     final deli = poljaVPodnaslovu(context, widget.baza, p, Nastavitve.aplikacija.poljaIskalnika);
     return ListTile(
@@ -241,40 +303,31 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
   }
 
   Widget _filtri(BuildContext context) {
-    final vrste = widget.pesmi.map((p) => p.vrsta).where((v) => v.isNotEmpty).toSet().toList()..sort();
-    final imena = widget.pesmi.map((p) => p.harmonika).where((v) => v.isNotEmpty).toSet();
-    // Harmonike v vrstnem redu s seznama harmonik, neznane na koncu.
-    final harmonike = [
-      for (final h in widget.baza.harmonike)
-        if (imena.contains(h.ime)) h.ime,
-      ...imena.where((i) => widget.baza.harmonika(i) == null),
-    ];
-    if (vrste.length < 2 && harmonike.length < 2) return const SizedBox.shrink();
-    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob) => Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: FilterChip(
-        visualDensity: VisualDensity.compact,
-        avatar: barva == null ? null : CircleAvatar(backgroundColor: barva, radius: 6),
-        label: Text(ime),
-        selected: izbran,
-        showCheckmark: false,
-        onSelected: (_) => setState(ob),
-      ),
-    );
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        children: [
-          if (vrste.length > 1)
-            for (final v in vrste) cip(v, barvaVrste(widget.baza, v), _vrsta == v, () => _vrsta = _vrsta == v ? '' : v),
-          if (vrste.length > 1 && harmonike.length > 1) const VerticalDivider(width: 12),
-          if (harmonike.length > 1)
-            for (final h in harmonike)
-              cip(h, barvaHarmonike(widget.baza, h), _harmonika == h, () => _harmonika = _harmonika == h ? '' : h),
-        ],
-      ),
+    final pavza = widget.pavza;
+    return HitriFiltri(
+      baza: widget.baza,
+      pesmi: widget.pesmi,
+      vrsta: _vrsta,
+      harmonika: _harmonika,
+      spremeni: (v, h) => setState(() {
+        _vrsta = v;
+        _harmonika = h;
+      }),
+      spredaj: [
+        if (pavza != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
+              onLongPress: widget.pridrzi == null ? null : () => widget.pridrzi!(pavza),
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Pavza: dotik na konec čakalne vrste, pridržanje kot naslednja',
+                label: const Icon(Icons.pause, size: 18),
+                onPressed: () => widget.odpri(pavza),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

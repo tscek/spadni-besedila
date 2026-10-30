@@ -19,6 +19,7 @@ import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
+import 'urejanje_setliste.dart';
 
 class SeznamZaslon extends StatefulWidget {
   const SeznamZaslon({
@@ -43,6 +44,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   final _iskanjeFokus = FocusNode();
   final _izbira = GlobalKey<IzbiraPesmiState>();
   String _vrsta = '';
+  String _harmonika = '';
 
   /// Ali je odprta mapa (sicer je na zaslonu izbira mape).
   bool _vMapi = false;
@@ -60,6 +62,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     _arhiv = arhiv;
     _klicaji = klicaji;
     _vrsta = '';
+    _harmonika = '';
     _iskanje.clear();
   });
 
@@ -156,11 +159,18 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         : _klicaji
         ? baza.pesmiSKlicaji
         : baza.pesmiMape(_mapa);
-    final vrste = vMapi.map((p) => p.vrsta).where((z) => z.isNotEmpty).toSet().toList()..sort();
     final n = Nastavitve.aplikacija;
     final (polje, padajoce) = n.razvrscanjeMape(_kljucMape);
-    final pesmi = vMapi.where((p) => (_vrsta.isEmpty || p.vrsta == _vrsta) && p.ustreza(_iskanje.text)).toList()
-      ..sort((a, b) => padajoce ? polje.primerjaj(b, a) : polje.primerjaj(a, b));
+    final pesmi =
+        vMapi
+            .where(
+              (p) =>
+                  (_vrsta.isEmpty || p.vrsta == _vrsta) &&
+                  (_harmonika.isEmpty || p.harmonika == _harmonika) &&
+                  p.ustreza(_iskanje.text),
+            )
+            .toList()
+          ..sort((a, b) => padajoce ? polje.primerjaj(b, a) : polje.primerjaj(a, b));
 
     return PopScope(
       canPop: !_vMapi,
@@ -171,7 +181,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         dejanje: _dejanje,
         child: ListenableBuilder(
           listenable: Listenable.merge([n, Odigrane.aplikacija, baza]),
-          builder: (context, _) => _zaslon(context, baza, vrste, pesmi),
+          builder: (context, _) => _zaslon(context, baza, vMapi, pesmi),
         ),
       ),
     );
@@ -231,7 +241,21 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     );
   }
 
-  Widget _zaslon(BuildContext context, Baza baza, List<String> vrste, List<Pesem> pesmi) {
+  Widget _zaslon(BuildContext context, Baza baza, List<Pesem> vMapi, List<Pesem> pesmi) {
+    final filtri = HitriFiltri(
+      baza: baza,
+      pesmi: vMapi,
+      vrsta: _vrsta,
+      harmonika: _harmonika,
+      vse: true,
+      spremeni: (v, h) => setState(() {
+        _vrsta = v;
+        _harmonika = h;
+      }),
+    );
+    final imaFiltre =
+        vMapi.map((p) => p.vrsta).where((v) => v.isNotEmpty).toSet().length > 1 ||
+        vMapi.map((p) => p.harmonika).where((v) => v.isNotEmpty).toSet().length > 1;
     return Scaffold(
       bottomNavigationBar: ListenableBuilder(
         listenable: widget.spil,
@@ -239,12 +263,8 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             vrsticaNaslednjih(context, widget.spil, baza, (p) => _odpri(p, pesmi, izMape: false)) ??
             const SizedBox.shrink(),
       ),
-      floatingActionButton: baza.smeUrejati && _pravaMapa
-          ? FloatingActionButton.extended(
-              onPressed: _novaPesem,
-              icon: const Icon(Icons.add),
-              label: const Text('Nova pesem'),
-            )
+      floatingActionButton: _vMapi
+          ? FloatingActionButton(tooltip: 'Novo', onPressed: _novo, child: const Icon(Icons.add))
           : null,
       appBar: AppBar(
         leading: _vMapi
@@ -321,7 +341,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         bottom: !_vMapi
             ? null
             : PreferredSize(
-                preferredSize: Size.fromHeight(vrste.isEmpty ? 64 : 112),
+                preferredSize: Size.fromHeight(imaFiltre ? 108 : 64),
                 child: Column(
                   children: [
                     Padding(
@@ -342,29 +362,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                         ),
                       ),
                     ),
-                    if (vrste.isNotEmpty)
-                      SizedBox(
-                        height: 48,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          children: [
-                            for (final z in ['', ...vrste])
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  avatar: switch (barvaVrste(baza, z)) {
-                                    final b? => CircleAvatar(backgroundColor: b, radius: 6),
-                                    null => null,
-                                  },
-                                  label: Text(z.isEmpty ? 'Vse' : z),
-                                  selected: _vrsta == z,
-                                  onSelected: (_) => setState(() => _vrsta = z),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+                    if (imaFiltre) filtri,
                   ],
                 ),
               ),
@@ -399,6 +397,76 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         ],
       ),
     );
+  }
+
+  /// Gumb +: nova pesem, nova playlista ali nova (prazna) čakalna vrsta.
+  Future<void> _novo() async {
+    final baza = widget.baza;
+    final izbira = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              enabled: baza.smeUrejati && _pravaMapa,
+              leading: const Icon(Icons.music_note),
+              title: const Text('Nova pesem'),
+              subtitle: Text(_pravaMapa ? 'V mapo $_imeMape' : 'Najprej odpri mapo'),
+              onTap: () => Navigator.pop(context, 'pesem'),
+            ),
+            ListTile(
+              enabled: baza.smeUrejati,
+              leading: const Icon(Icons.queue_music),
+              title: const Text('Nova playlista'),
+              subtitle: Text(_pravaMapa && _mapa != null ? 'V mapo $_imeMape' : 'Brez mape'),
+              onTap: () => Navigator.pop(context, 'playlista'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_remove),
+              title: const Text('Nova čakalna vrsta'),
+              subtitle: Text('Izprazni čakalno vrsto (zdaj ${widget.spil.naslednje.length} pesmi)'),
+              onTap: () => Navigator.pop(context, 'vrsta'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (izbira) {
+      case 'pesem':
+        await _novaPesem();
+      case 'playlista':
+        final api = apiZaUrejanje(context, widget.prijava);
+        if (api == null) return;
+        final navigator = Navigator.of(context);
+        final nova = await navigator.push(
+          MaterialPageRoute<Setlista>(
+            builder: (_) => UrejanjeSetlisteZaslon(baza: baza, api: api, mapa: _pravaMapa ? _mapa : null),
+          ),
+        );
+        if (nova != null) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => SetlistaZaslon(setlista: nova, baza: baza, prijava: widget.prijava, spil: widget.spil),
+            ),
+          );
+        }
+      case 'vrsta':
+        if (widget.spil.naslednje.isEmpty) return;
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: const Text('Nova čakalna vrsta?'),
+            content: Text('Iz čakalne vrste gre ${widget.spil.naslednje.length} pesmi (pri vseh na špilu).'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Prekliči')),
+              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Izprazni')),
+            ],
+          ),
+        );
+        if (ok == true) widget.spil.pocistiNaslednje();
+    }
   }
 
   Future<void> _novaPesem() async {
