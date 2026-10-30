@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../models.dart';
+import 'oznake.dart';
 import 'urejanje_pesmi.dart';
 
 /// Nova setlista ali urejanje obstoječe. Ob shranjevanju vrne [Setlista], ob brisanju null.
 class UrejanjeSetlisteZaslon extends StatefulWidget {
-  const UrejanjeSetlisteZaslon({super.key, required this.baza, required this.api, this.setlista});
+  const UrejanjeSetlisteZaslon({super.key, required this.baza, required this.api, this.setlista, this.mapa});
 
   final Baza baza;
   final Api api;
   final Setlista? setlista;
+
+  /// Mapa nove playliste (obstoječa ostane v svoji).
+  final String? mapa;
 
   @override
   State<UrejanjeSetlisteZaslon> createState() => _UrejanjeSetlisteZaslonState();
@@ -36,6 +40,11 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
   ];
   bool _spremembe = false;
   bool _shranjujem = false;
+
+  /// Mapa playliste; pri izbiri pesmi so najprej pesmi iz nje.
+  late String? _mapa = widget.setlista != null
+      ? (widget.setlista!.mapa.isEmpty ? null : widget.setlista!.mapa)
+      : widget.mapa;
 
   void _spremenjeno() {
     if (!_spremembe) setState(() => _spremembe = true);
@@ -73,7 +82,12 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
       isScrollControlled: true,
       builder: (_) => FractionallySizedBox(
         heightFactor: 0.85,
-        child: _IzbiraPesmi(baza: widget.baza, izbrane: {for (final v in _pesmi) v.pesem.id}, onIzbrana: _dodaj),
+        child: _IzbiraPesmi(
+          baza: widget.baza,
+          mapa: _mapa,
+          izbrane: {for (final v in _pesmi) v.pesem.id},
+          onIzbrana: _dodaj,
+        ),
       ),
     );
   }
@@ -136,6 +150,7 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
           'Datum': _datum == null ? '' : datumIso(_datum!),
           'Opombe': _opombe.text.trim(),
           'Skupina': _skupina,
+          'Mapa': _mapa ?? '',
         },
         [for (final v in _pesmi) (pesem: v.pesem.id, opomba: v.opomba)],
       );
@@ -182,10 +197,10 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.setlista == null ? 'Nova setlista' : 'Uredi setlisto'),
+          title: Text(widget.setlista == null ? 'Nova playlista' : 'Uredi playlisto'),
           actions: [
             if (widget.setlista != null && !_shranjujem)
-              IconButton(tooltip: 'Izbriši setlisto', icon: const Icon(Icons.delete_outline), onPressed: _izbrisi),
+              IconButton(tooltip: 'Izbriši playlisto', icon: const Icon(Icons.delete_outline), onPressed: _izbrisi),
             _shranjujem
                 ? const Padding(
                     padding: EdgeInsets.all(16),
@@ -228,6 +243,21 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
                     ],
                   ],
                 ),
+                if (widget.baza.mape.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: _mapa,
+                    decoration: const InputDecoration(labelText: 'Mapa', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Brez mape (samo pod Vse)')),
+                      for (final m in widget.baza.mape) DropdownMenuItem(value: m.id, child: Text(m.ime)),
+                    ],
+                    onChanged: (v) => setState(() {
+                      _mapa = v;
+                      _spremembe = true;
+                    }),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: _opombe,
@@ -278,7 +308,7 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
             return ListTile(
               key: ObjectKey(v),
               leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
-              title: Text('${v.pesem.koda}  ${v.pesem.naslov}'),
+              title: NaslovZOznakami(pesem: v.pesem),
               subtitle: v.opomba.isEmpty ? null : Text(v.opomba),
               onTap: () => _opomba(v),
               trailing: Row(
@@ -306,9 +336,12 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
 
 /// Iskanje in dodajanje pesmi v setlisto; ostane odprto za več pesmi.
 class _IzbiraPesmi extends StatefulWidget {
-  const _IzbiraPesmi({required this.baza, required this.izbrane, required this.onIzbrana});
+  const _IzbiraPesmi({required this.baza, required this.izbrane, required this.onIzbrana, this.mapa});
 
   final Baza baza;
+
+  /// Prikazane so pesmi iz te mape (null: vse).
+  final String? mapa;
   final Set<String> izbrane;
   final void Function(Pesem) onIzbrana;
 
@@ -327,7 +360,7 @@ class _IzbiraPesmiState extends State<_IzbiraPesmi> {
 
   @override
   Widget build(BuildContext context) {
-    final zadetki = widget.baza.pesmi.where((p) => p.ustreza(_iskanje.text)).toList();
+    final zadetki = widget.baza.pesmiMape(widget.mapa).where((p) => p.ustreza(_iskanje.text)).toList();
     return Column(
       children: [
         Padding(
@@ -356,11 +389,7 @@ class _IzbiraPesmiState extends State<_IzbiraPesmi> {
               final p = zadetki[i];
               final dodana = widget.izbrane.contains(p.id);
               return ListTile(
-                leading: SizedBox(
-                  width: 52,
-                  child: Text(p.koda, style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                title: Text(p.naslov),
+                title: NaslovZOznakami(pesem: p),
                 subtitle: p.izvajalec.isEmpty ? null : Text(p.izvajalec),
                 trailing: Icon(dodana ? Icons.check_circle : Icons.add_circle_outline),
                 onTap: () {

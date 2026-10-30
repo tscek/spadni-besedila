@@ -359,6 +359,7 @@ enum DejanjeMidi {
   potrdi('Izberi / potrdi'),
   iskalnik('Odpri iskalnik'),
   izbrana('Na izbrano pesem (seznamček)'),
+  uvod('MIDI za uvod pesmi'),
   gumb1('Gumb 1 na pesmi', 1),
   gumb2('Gumb 2 na pesmi', 2),
   gumb3('Gumb 3 na pesmi', 3),

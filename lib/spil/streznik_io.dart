@@ -189,7 +189,7 @@ class StreznikIo implements StreznikVodje {
   }
 
   /// iPad pošlje risbo, ki jo je član naredil na špilu; vodja jo shrani in kasneje pošlje na Drive.
-  /// Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
+  /// Klicaj »za vajo« vodja shrani zase in ga pošlje naprej. Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
   Future<String> _apiPost(String telo, Baza baza) async {
     final Object? j;
     try {
@@ -202,6 +202,14 @@ class StreznikIo implements StreznikVodje {
       if (!midi.vklopljen) return jsonEncode({'vklopljen': false});
       final brez = await midi.izIpada((j['ukazi'] as List?) ?? const [], baza.midi);
       return jsonEncode({'vklopljen': true, 'brezNaprave': brez});
+    }
+    if (j is Map && j['akcija'] == 'zaVajo') {
+      // Klicaj s špila: vodja ga shrani in pošlje na strežnik, ko ima internet.
+      final pesem = j['pesem']?.toString() ?? '';
+      await baza.nastaviZaVajo(baza.risbeClanov.api, pesem, j['vrednost'] == true);
+      return jsonEncode({
+        'vrstica': baza.vrsticaPesmi(pesem) ?? {'ID': pesem},
+      });
     }
     if (j is Map && j['akcija'] == 'risba') {
       final clan = j['clan']?.toString() ?? '';

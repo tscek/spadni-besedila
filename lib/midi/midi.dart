@@ -25,6 +25,15 @@ class Poslano {
   final List<String> naprave;
 }
 
+/// Vnos v MIDI monitorju: prejet (IN) ali poslan (OUT) ukaz.
+class ZapisMonitorja {
+  ZapisMonitorja(this.cas, this.vhod, this.opis, [this.naprave = const []]);
+  final DateTime cas;
+  final bool vhod;
+  final String opis;
+  final List<String> naprave;
+}
+
 /// MIDI na tej napravi: povezane naprave, preslikava izhodov na naprave in pošiljanje.
 /// Nastavitve so na vsaki napravi svoje (shared_preferences).
 class Midi extends ChangeNotifier {
@@ -65,6 +74,20 @@ class Midi extends ChangeNotifier {
   bool iscem = false;
   String? napaka;
   final List<Poslano> dnevnik = [];
+
+  /// Zgodovina prejetih in poslanih ukazov za MIDI monitor (najnovejši prvi).
+  final List<ZapisMonitorja> monitor = [];
+  static const dolzinaMonitorja = 300;
+
+  void _vMonitor(ZapisMonitorja z) {
+    monitor.insert(0, z);
+    if (monitor.length > dolzinaMonitorja) monitor.removeRange(dolzinaMonitorja, monitor.length);
+  }
+
+  void pocistiMonitor() {
+    monitor.clear();
+    notifyListeners();
+  }
 
   /// Dejanje → sprožilec (npr. "CC 1 64"), na vsaki napravi svoje.
   Map<DejanjeMidi, String> vhod = {};
@@ -214,7 +237,17 @@ class Midi extends ChangeNotifier {
     if (!vklopljen) return;
     aktivnostVhoda.value++;
     final s = sprozilecIz(bajti);
-    if (s == null) return;
+    _vMonitor(
+      ZapisMonitorja(
+        DateTime.now(),
+        true,
+        s ?? bajti.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' '),
+      ),
+    );
+    if (s == null) {
+      notifyListeners();
+      return;
+    }
     zadnjePrejeto = s;
     final u = ucim;
     if (u != null) {
@@ -299,6 +332,7 @@ class Midi extends ChangeNotifier {
       Poslano(DateTime.now(), '$ime${u.ukaz.opis(knjiznica?.imeKanala(u.ukaz.kanal) ?? '')}', u.izhod, naprave),
     );
     if (dnevnik.length > 50) dnevnik.removeRange(50, dnevnik.length);
+    _vMonitor(ZapisMonitorja(DateTime.now(), false, dnevnik.first.opis, naprave));
   }
 
   /// Ukazi z iPada (prek vodje), ki jih vodja pošlje na svoje naprave. Vrne število ukazov brez naprave.

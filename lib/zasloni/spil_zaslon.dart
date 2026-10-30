@@ -10,6 +10,7 @@ import '../config.dart';
 import '../nastavitve.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'naslednje.dart';
 import 'pesem_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
@@ -636,7 +637,7 @@ class SledilecZaslon extends StatelessWidget {
                     ),
                     if (naslednja != null)
                       Text(
-                        'Naslednja: ${naslednja.koda} ${naslednja.naslov}',
+                        'Naslednja: ${napisVrste(naslednja)}',
                         style: tema.textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),

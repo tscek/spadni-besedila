@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../baza.dart';
 import '../midi/midi.dart';
@@ -6,19 +10,24 @@ import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'naslednje.dart';
+import 'oznake.dart';
 import 'pesem_zaslon.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
 
-/// Seznam setlist, najnovejše najprej.
+/// Seznam playlist (setlist) v mapi, najnovejše najprej.
 class SetlisteZaslon extends StatelessWidget {
-  const SetlisteZaslon({super.key, required this.baza, required this.prijava, this.spil});
+  const SetlisteZaslon({super.key, required this.baza, required this.prijava, this.spil, this.mapa});
 
   final Baza baza;
   final Prijava prijava;
   final Spil? spil;
+
+  /// Mapa, katere playliste so na seznamu; null so vse.
+  final String? mapa;
 
   Future<void> _nova(BuildContext context) async {
     final api = apiZaUrejanje(context, prijava);
@@ -26,7 +35,7 @@ class SetlisteZaslon extends StatelessWidget {
     final navigator = Navigator.of(context);
     final nova = await navigator.push(
       MaterialPageRoute<Setlista>(
-        builder: (_) => UrejanjeSetlisteZaslon(baza: baza, api: api),
+        builder: (_) => UrejanjeSetlisteZaslon(baza: baza, api: api, mapa: mapa),
       ),
     );
     if (nova != null) {
@@ -42,43 +51,50 @@ class SetlisteZaslon extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: baza,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Setliste'),
-          actions: [if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava)],
-        ),
-        floatingActionButton: baza.smeUrejati
-            ? FloatingActionButton.extended(
-                onPressed: () => _nova(context),
-                icon: const Icon(Icons.add),
-                label: const Text('Nova setlista'),
-              )
-            : null,
-        body: baza.setliste.isEmpty
-            ? const Center(child: Text('Ni še nobene setliste.'))
-            : ListView(
-                children: [
-                  for (final s in baza.setliste)
-                    ListTile(
-                      leading: const Icon(Icons.queue_music),
-                      title: Text(s.ime),
-                      subtitle: Text(
-                        [
-                          if (s.datum != null) datumBesedilo(s.datum!),
-                          '${baza.pesmiSetlist[s.id]?.length ?? 0} pesmi',
-                          if (baza.skupine.length > 1)
-                            ...baza.skupine.where((k) => k.id == s.skupina).map((k) => k.ime),
-                        ].join(' · '),
-                      ),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
+      builder: (context, _) {
+        final playliste = [
+          for (final s in baza.setliste)
+            if (mapa == null || s.mapa == mapa) s,
+        ];
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(mapa == null ? 'Playliste' : 'Playliste: ${baza.mapa(mapa!)?.ime ?? mapa}'),
+            actions: [if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava)],
+          ),
+          floatingActionButton: baza.smeUrejati
+              ? FloatingActionButton.extended(
+                  onPressed: () => _nova(context),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Nova playlista'),
+                )
+              : null,
+          body: playliste.isEmpty
+              ? const Center(child: Text('Ni še nobene playliste.'))
+              : ListView(
+                  children: [
+                    for (final s in playliste)
+                      ListTile(
+                        leading: const Icon(Icons.queue_music),
+                        title: Text(s.ime),
+                        subtitle: Text(
+                          [
+                            if (s.datum != null) datumBesedilo(s.datum!),
+                            '${baza.pesmiSetlist[s.id]?.length ?? 0} pesmi',
+                            if (mapa == null && s.mapa.isNotEmpty) baza.mapa(s.mapa)?.ime ?? '',
+                            if (baza.skupine.length > 1)
+                              ...baza.skupine.where((k) => k.id == s.skupina).map((k) => k.ime),
+                          ].join(' · '),
+                        ),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-      ),
+                  ],
+                ),
+        );
+      },
     );
   }
 }
@@ -119,10 +135,15 @@ class SetlistaZaslon extends StatelessWidget {
               if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava),
               if (baza.smeUrejatiSetlisto(s))
                 IconButton(
-                  tooltip: 'Uredi setlisto',
+                  tooltip: 'Uredi playlisto',
                   icon: const Icon(Icons.edit),
                   onPressed: () => _uredi(context, s),
                 ),
+              IconButton(
+                tooltip: 'Izvoz za SAZAS',
+                icon: const Icon(Icons.ios_share),
+                onPressed: () => izvozSazas(context, baza, s),
+              ),
             ],
           ),
           floatingActionButton: vrsta.isEmpty
@@ -145,7 +166,10 @@ class SetlistaZaslon extends StatelessWidget {
               for (final (i, v) in vrsta.indexed)
                 ListTile(
                   leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
-                  title: Text(_naslov(v)),
+                  title: switch (baza.pesem(v.pesem)) {
+                    final p? => NaslovZOznakami(pesem: p),
+                    null => const Text('(pesmi ni več v repertoarju)'),
+                  },
                   subtitle: v.opomba.isEmpty ? null : Text(v.opomba),
                   onTap: () => _igraj(context, s, i),
                 ),
@@ -154,11 +178,6 @@ class SetlistaZaslon extends StatelessWidget {
         );
       },
     );
-  }
-
-  String _naslov(SetlistaPesem v) {
-    final p = baza.pesem(v.pesem);
-    return p == null ? '(pesmi ni več v repertoarju)' : '${p.koda}  ${p.naslov}';
   }
 
   void _igraj(BuildContext context, Setlista s, int zacetek) {
@@ -287,10 +306,20 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
     final naslednja = izbrana ?? (i + 1 < vrsta.length ? vrsta[i + 1].$2 : null);
     return PesemZaslon(
       key: ValueKey('${p.id}-$i-${vmes != null}'),
-      // Pesem iz iskalnika ali seznamčka: če je v setlisti, skoči nanjo, sicer se vrine za trenutno.
+      // Pesem s seznamčka: če je v setlisti, skoči nanjo, sicer se vrine za trenutno.
       odpri: (izbrana) {
         final j = vrsta.indexWhere((e) => e.$2.id == izbrana.id);
         j >= 0 ? _pojdi(j) : _vrini(izbrana);
+      },
+      // Iskalnik: pesmi playliste na vrhu; pesem playliste se odpre, druga postane naslednja (playlista ostane ista).
+      prednostne: [for (final e in vrsta) e.$2],
+      mapa: widget.setlista.mapa.isEmpty ? PesemZaslon.vse : widget.setlista.mapa,
+      izIskalnika: (izbrana) {
+        final j = vrsta.indexWhere((e) => e.$2.id == izbrana.id);
+        if (j >= 0) return _pojdi(j);
+        final spil = widget.spil;
+        if (spil == null) return _vrini(izbrana);
+        vCakalnoVrsto(context, spil, widget.baza, izbrana, naPrvo: true);
       },
       pesem: p,
       baza: widget.baza,
@@ -332,7 +361,7 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
                       Text(
                         naslednja == null
                             ? 'Konec setliste'
-                            : '${izbrana != null ? 'Izbrana' : 'Naslednja'}: ${naslednja.koda} ${naslednja.naslov}',
+                            : '${izbrana != null ? 'Izbrana' : 'Naslednja'}: ${napisVrste(naslednja)}',
                         style: tema.textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -352,4 +381,99 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
       ),
     );
   }
+}
+
+/// Seznam pesmi playliste z avtorji in trajanjem (za SAZAS); kopira se kot tabela (prilepi v Excel ali e-pošto).
+Future<void> izvozSazas(BuildContext context, Baza baza, Setlista s) async {
+  final pesmi = [for (final v in baza.pesmiSetlist[s.id] ?? const <SetlistaPesem>[]) ?baza.pesem(v.pesem)];
+  final glava = ['Zap. št.', 'Naslov', 'Izvajalec', 'Avtor glasbe', 'Avtor besedila', 'Trajanje'];
+  final vrstice = [
+    for (final (i, p) in pesmi.indexed)
+      ['${i + 1}', p.naslov, p.izvajalec, p.avtorGlasbe, p.avtorBesedila, PoljePesmi.trajanje.vrednost(p)],
+  ];
+  final tabela = [glava, ...vrstice].map((r) => r.join('\t')).join('\n');
+  final manjka = pesmi.where((p) => p.avtorGlasbe.isEmpty || PoljePesmi.trajanje.vrednost(p).isEmpty).length;
+  await showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('SAZAS: ${s.ime}'),
+      content: SizedBox(
+        width: 560,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              [
+                if (s.datum != null) datumBesedilo(s.datum!),
+                if (s.nastop.isNotEmpty) s.nastop,
+                '${pesmi.length} pesmi',
+              ].join(' · '),
+            ),
+            if (manjka > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Pri $manjka pesmih manjka avtor glasbe ali trajanje (dopolniš ju v podatkih pesmi).',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SingleChildScrollView(
+                  child: DataTable(
+                    columnSpacing: 16,
+                    headingRowHeight: 36,
+                    dataRowMinHeight: 28,
+                    dataRowMaxHeight: 40,
+                    columns: [for (final g in glava) DataColumn(label: Text(g))],
+                    rows: [
+                      for (final r in vrstice) DataRow(cells: [for (final c in r) DataCell(Text(c))]),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Zapri')),
+        TextButton.icon(
+          icon: const Icon(Icons.download),
+          label: const Text('Shrani CSV'),
+          onPressed: () async {
+            // Podpičje in BOM, da Excel s slovenskimi nastavitvami pravilno razdeli stolpce in šumnike.
+            String celica(String c) => c.contains(RegExp('[;"\n]')) ? '"${c.replaceAll('"', '""')}"' : c;
+            final csv = '\uFEFF${[glava, ...vrstice].map((r) => r.map(celica).join(';')).join('\r\n')}';
+            try {
+              await FilePicker.saveFile(
+                fileName: 'SAZAS ${s.ime}.csv',
+                bytes: Uint8List.fromList(utf8.encode(csv)),
+                mimeType: 'text/csv',
+              );
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+              }
+            }
+          },
+        ),
+        FilledButton.icon(
+          icon: const Icon(Icons.copy),
+          label: const Text('Kopiraj tabelo'),
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: tabela));
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Tabela je kopirana. Prilepi jo v Excel ali e-pošto za SAZAS.')),
+              );
+            }
+          },
+        ),
+      ],
+    ),
+  );
 }

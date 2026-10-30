@@ -136,17 +136,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
 
     spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
     spil.dodajNaslednjo(const Naslednja(pesem: 'c', naKonec: true));
     await tester.pumpAndSettle();
-    expect(find.text('Izbrana: 1003 BOG TE ŽIVI'), findsOneWidget);
-    expect(find.text('Naslednja: 1003 BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
+    expect(find.text('Izbrana: BOG TE ŽIVI'), findsOneWidget);
+    expect(find.text('Naslednja: BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
 
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
-    expect(find.text('1003  BOG TE ŽIVI'), findsOneWidget);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
     expect(find.text('Izven setliste (za 1 / 3)'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), ['c']); // odprta gre s seznamčka
 
@@ -156,7 +156,7 @@ void main() {
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
     expect(find.text('3 / 3'), findsOneWidget);
-    expect(find.text('Izbrana: 1004 ČEŠNJE'), findsOneWidget);
+    expect(find.text('Izbrana: ČEŠNJE'), findsOneWidget);
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
     expect(find.text('Izven setliste (za 3 / 3)'), findsOneWidget);
@@ -173,13 +173,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
     expect(find.text('1 / 3 · brez uvoda'), findsOneWidget);
-    expect(find.text('Naslednja: 1002 BELO OBLEKO'), findsOneWidget);
+    expect(find.text('Naslednja: BELO OBLEKO'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
-    expect(find.text('1002  BELO OBLEKO'), findsOneWidget);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
     await tester.tap(find.byTooltip('Naslednja pesem'));
     await tester.pumpAndSettle();
     expect(find.text('Konec setliste'), findsOneWidget);
@@ -259,20 +259,23 @@ void main() {
 
     spil.dobi(const StanjeSpila(pesem: 'b'));
     await tester.pumpAndSettle();
-    expect(find.text('1003  BOG TE ŽIVI'), findsOneWidget);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
     expect(find.byTooltip('Povezan z vodjo'), findsOneWidget);
 
     spil.dobi(const StanjeSpila(pesem: 'a', setlista: 'x', indeks: 1));
     await tester.pumpAndSettle();
-    expect(find.text('1002  BELO OBLEKO'), findsOneWidget);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
     expect(find.text('Sledim vodji · 2 / 3'), findsOneWidget);
 
     // Nazaj na seznam: sledenje ostane, naslednja pesem vodje se spet odpre.
     await tester.tap(find.text('Seznam'));
     await tester.pumpAndSettle();
-    expect(find.text('Setliste'), findsOneWidget);
+    expect(find.text('Playliste'), findsOneWidget);
     spil.dobi(const StanjeSpila(pesem: 'c'));
     await tester.pumpAndSettle();
-    expect(find.text('1004  ČEŠNJE'), findsOneWidget);
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
   });
 }
+
+/// Naslov pesmi v vrstici na vrhu zaslona.
+Finder vNaslovu(String t) => find.descendant(of: find.byType(AppBar), matching: find.text(t));

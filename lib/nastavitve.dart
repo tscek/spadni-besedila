@@ -1,13 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'models.dart';
+
 /// Gumbi in prikazi v orodnih vrsticah pri pesmi.
 enum Orodje {
   spil('Špil (vloga in povezava)', Mesto.zgoraj),
   bluetooth('Bluetooth (modra, ko je naprava povezana)', Mesto.zgoraj),
-  midi('MIDI IN / OUT (zasveti ob ukazu)', Mesto.zgoraj),
-  iskanje('Iskanje pesmi', Mesto.spodaj),
-  pisava('Manjša in večja pisava', Mesto.zgoraj),
+  midi('MIDI IN / OUT (pikici zasvetita ob ukazu)', Mesto.zgoraj),
+  runda('Runda in pavza (čas)', Mesto.zgoraj),
+  pisava('Gumba za manjšo in večjo pisavo (sicer s ščipom)', Mesto.skrito),
   pdf('Besedilo / PDF', Mesto.zgoraj),
   uredi('Uredi pesem', Mesto.zgoraj),
   ura('Ura', Mesto.skrito);
@@ -26,6 +28,43 @@ enum Mesto {
   final String ime;
 }
 
+/// Kaj je v posameznem delu spodnje vrstice pri pesmi.
+enum InfoVrstice {
+  nic('Nič'),
+  naslov('Naslov'),
+  izvajalec('Izvajalec'),
+  avtorji('Avtorja glasbe in besedila'),
+  tonaliteta('Tonaliteta'),
+  harmonika('Harmonika'),
+  tonalitetaHarmonika('Tonaliteta in harmonika'),
+  vrsta('Vrsta'),
+  tempo('Tempo (BPM)'),
+  trajanje('Trajanje'),
+  ocena('Ocena'),
+  status('Status'),
+  opombe('Opombe pesmi'),
+  naslednja('Naslednja pesem'),
+  ura('Ura'),
+  runda('Čas runde ali pavze');
+
+  const InfoVrstice(this.ime);
+  final String ime;
+}
+
+/// Gumb v oknu runde: pavza ali igranje, z napisom, barvo in MIDI ukazom ob kliku.
+class GumbRunde {
+  const GumbRunde({required this.napis, required this.barva, this.midi = ''});
+
+  final String napis;
+  final int barva;
+
+  /// Ukazi ali makri kot pri pesmi (npr. »PC 1 5« ali ime makra), ločeni s ;.
+  final String midi;
+
+  GumbRunde kopija({String? napis, int? barva, String? midi}) =>
+      GumbRunde(napis: napis ?? this.napis, barva: barva ?? this.barva, midi: midi ?? this.midi);
+}
+
 /// Osebne nastavitve na tej napravi (vsak član ima svojo tablico oziroma iPad).
 class Nastavitve extends ChangeNotifier {
   static Nastavitve aplikacija = Nastavitve();
@@ -36,6 +75,14 @@ class Nastavitve extends ChangeNotifier {
   static const _svetla = 'svetla_tema';
   static const _sledenje = 'samodejno_sledenje';
   static const _zaslon = 'zaslon_prizgan';
+  static const _poljaSeznama = 'polja_seznama';
+  static const _ikoneSeznama = 'ikone_seznama';
+  static const _razvrsti = 'razvrsti';
+  static const _padajoce = 'razvrsti_padajoce';
+  static const _minuteOdigrane = 'minute_odigrane';
+  static const _spodaj = 'spodnja_vrstica';
+  static const _poljaVrste = 'polja_cakalne_vrste';
+  static const _runda = 'runda_';
 
   /// Velikost pisave besedila.
   double pisava = 22;
@@ -52,6 +99,27 @@ class Nastavitve extends ChangeNotifier {
 
   /// Zaslon se med uporabo aplikacije ne ugasne.
   bool zaslonPrizgan = true;
+
+  /// Podatki v vrstici seznama pesmi (naslov je vedno).
+  List<PoljePesmi> poljaSeznama = const [PoljePesmi.izvajalec, PoljePesmi.tonaliteta];
+
+  /// Ikoni besedila in PDF-ja v vrstici seznama.
+  bool ikoneSeznama = true;
+
+  PoljePesmi razvrsti = PoljePesmi.koda;
+  bool padajoce = false;
+
+  /// Po koliko minutah odprte pesmi se ta označi kot odigrana (0 = nikoli).
+  int minuteOdigrane = 2;
+
+  /// Levi, srednji in desni del spodnje vrstice pri pesmi.
+  List<InfoVrstice> spodaj = const [InfoVrstice.tonalitetaHarmonika, InfoVrstice.naslednja, InfoVrstice.ura];
+
+  /// Podatki pesmi v napisu čakalne vrste.
+  List<PoljePesmi> poljaVrste = const [PoljePesmi.naslov, PoljePesmi.tonaliteta, PoljePesmi.harmonika];
+
+  GumbRunde pavza = const GumbRunde(napis: 'PAVZA', barva: 0xFFD32F2F);
+  GumbRunde igranje = const GumbRunde(napis: 'ŠPILEJ!!', barva: 0xFF2E7D32);
 
   /// Kje je posamezno orodje pri pesmi.
   final Map<Orodje, Mesto> orodja = {for (final o in Orodje.values) o: o.privzeto};
@@ -75,6 +143,28 @@ class Nastavitve extends ChangeNotifier {
     svetlaTema = p.getBool(_svetla) ?? svetlaTema;
     samodejnoSledenje = p.getBool(_sledenje) ?? samodejnoSledenje;
     zaslonPrizgan = p.getBool(_zaslon) ?? zaslonPrizgan;
+    List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
+      final s = p.getStringList(kljuc);
+      if (s == null) return null;
+      final imena = vrednosti.asNameMap();
+      return [for (final x in s) ?imena[x]];
+    }
+
+    poljaSeznama = seznam(_poljaSeznama, PoljePesmi.values) ?? poljaSeznama;
+    ikoneSeznama = p.getBool(_ikoneSeznama) ?? ikoneSeznama;
+    razvrsti = PoljePesmi.values.asNameMap()[p.getString(_razvrsti)] ?? razvrsti;
+    padajoce = p.getBool(_padajoce) ?? padajoce;
+    minuteOdigrane = p.getInt(_minuteOdigrane) ?? minuteOdigrane;
+    final sp = seznam(_spodaj, InfoVrstice.values);
+    if (sp != null && sp.length == 3) spodaj = sp;
+    poljaVrste = seznam(_poljaVrste, PoljePesmi.values) ?? poljaVrste;
+    GumbRunde gumb(String k, GumbRunde g) => GumbRunde(
+      napis: p.getString('$_runda${k}_napis') ?? g.napis,
+      barva: p.getInt('$_runda${k}_barva') ?? g.barva,
+      midi: p.getString('$_runda${k}_midi') ?? g.midi,
+    );
+    pavza = gumb('pavza', pavza);
+    igranje = gumb('igranje', igranje);
     notifyListeners();
   }
 
@@ -111,6 +201,64 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviOrodje(Orodje o, Mesto m) {
     orodja[o] = m;
     return _shrani((p) => p.setString('orodje_${o.name}', m.name));
+  }
+
+  Future<void> nastaviPoljaSeznama(List<PoljePesmi> v) {
+    poljaSeznama = List.unmodifiable(v);
+    return _shrani((p) => p.setStringList(_poljaSeznama, [for (final x in v) x.name]));
+  }
+
+  Future<void> nastaviIkoneSeznama(bool v) {
+    ikoneSeznama = v;
+    return _shrani((p) => p.setBool(_ikoneSeznama, v));
+  }
+
+  Future<void> nastaviRazvrscanje(PoljePesmi polje, bool padajoce) {
+    razvrsti = polje;
+    this.padajoce = padajoce;
+    return _shrani((p) {
+      p.setString(_razvrsti, polje.name);
+      p.setBool(_padajoce, padajoce);
+    });
+  }
+
+  Future<void> nastaviMinuteOdigrane(int v) {
+    minuteOdigrane = v.clamp(0, 30);
+    return _shrani((p) => p.setInt(_minuteOdigrane, minuteOdigrane));
+  }
+
+  Future<void> nastaviSpodaj(int del, InfoVrstice v) {
+    spodaj = [...spodaj]..[del] = v;
+    return _shrani((p) => p.setStringList(_spodaj, [for (final x in spodaj) x.name]));
+  }
+
+  Future<void> nastaviPoljaVrste(List<PoljePesmi> v) {
+    poljaVrste = List.unmodifiable(v);
+    return _shrani((p) => p.setStringList(_poljaVrste, [for (final x in v) x.name]));
+  }
+
+  /// [pavzo] true nastavi gumb za pavzo, sicer gumb za igranje.
+  Future<void> nastaviGumbRunde(bool pavzo, GumbRunde g) {
+    final k = pavzo ? 'pavza' : 'igranje';
+    if (pavzo) {
+      pavza = g;
+    } else {
+      igranje = g;
+    }
+    return _shrani((p) {
+      p.setString('$_runda${k}_napis', g.napis);
+      p.setInt('$_runda${k}_barva', g.barva);
+      p.setString('$_runda${k}_midi', g.midi);
+    });
+  }
+
+  /// Povečava PDF-ja pesmi, ki jo je član nastavil (null: cela stran na zaslonu).
+  Future<double?> povecavaPdf(String pesem) async =>
+      (await SharedPreferences.getInstance()).getDouble('pdf_zoom_$pesem');
+
+  Future<void> nastaviPovecavoPdf(String pesem, double? v) async {
+    final p = await SharedPreferences.getInstance();
+    v == null ? await p.remove('pdf_zoom_$pesem') : await p.setDouble('pdf_zoom_$pesem', v);
   }
 
   Future<void> nastaviZaslonPrizgan(bool v) {

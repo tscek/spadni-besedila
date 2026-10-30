@@ -26,5 +26,17 @@ class Config {
   /// Takrat podatke daje vodja, Google prijava pa ni potrebna.
   static bool get prekoVodje => kIsWeb && Uri.base.port == vrataVodje;
 
+  /// Spletna različica; s `?pesem=ID` se odpre neposredno pesem.
+  static const spletniNaslov = 'https://spadni-besedila.web.app/';
+
+  static String povezavaDoPesmi(String id) => '$spletniNaslov?pesem=$id';
+
+  /// ID pesmi iz povezave, s katero je bila odprta spletna različica (null, če ga ni).
+  static String? get pesemIzPovezave {
+    if (!kIsWeb) return null;
+    final id = Uri.base.queryParameters['pesem'];
+    return id == null || id.isEmpty ? null : id;
+  }
+
   static String get apiUrl => prekoVodje ? '${Uri.base.origin}/api' : _skripta;
 }

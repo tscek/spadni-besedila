@@ -12,6 +12,8 @@ import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
 import 'midi/midi.dart';
 import 'nastavitve.dart';
+import 'odigrane.dart';
+import 'runda.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
@@ -23,6 +25,8 @@ Future<void> main() async {
   final spil = Spil();
   await baza.nalozi();
   await Nastavitve.aplikacija.nalozi();
+  await Odigrane.aplikacija.nalozi();
+  await Runda.aplikacija.nalozi();
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   if (Config.prekoVodje) {
     // iPad na špilu nima MIDI: gumbi in preizkusi gredo vodji, ki jih pošlje na svoje naprave.
@@ -79,6 +83,23 @@ Future<void> main() async {
       ),
     );
   });
+  // Povezava s ?pesem=<ID> (spletna različica): ko je pesem v lokalni kopiji, se odpre.
+  if (Config.pesemIzPovezave case final id? when !Config.prekoVodje) {
+    void odpriIzPovezave() {
+      final p = baza.pesem(id);
+      final nav = navigator.currentState;
+      if (p == null || nav == null) return;
+      baza.removeListener(odpriIzPovezave);
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil),
+        ),
+      );
+    }
+
+    baza.addListener(odpriIzPovezave);
+    WidgetsBinding.instance.addPostFrameCallback((_) => odpriIzPovezave());
+  }
   // Med igranjem se zaslon ne sme ugasniti: ob zagonu in ob vsaki vrnitvi v aplikacijo.
   _zaslonPrizgan();
   AppLifecycleListener(onResume: _zaslonPrizgan);

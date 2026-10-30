@@ -25,6 +25,8 @@ class Baza extends ChangeNotifier {
   Map<String, List<SetlistaPesem>> pesmiSetlist = {};
   List<Skupina> skupine = [];
   List<Vloga> vloge = [];
+  List<Mapa> mape = [];
+  List<Harmonika> harmonike = [];
   KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};
@@ -104,6 +106,9 @@ class Baza extends ChangeNotifier {
         if (n['akcija'] == 'pesem') {
           final odg = await api.shraniPesem(podatki);
           await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
+        } else if (n['akcija'] == 'zaVajo') {
+          final odg = await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
+          await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
         } else {
           final odg = await api.shraniBesedilo(podatki);
           if (n['zacasniId'] case final String z) await _zamenjajVrstico('Besedila', null, izbrisi: z);
@@ -115,7 +120,7 @@ class Baza extends ChangeNotifier {
         }
       } on ApiNapaka catch (e) {
         if (e is NiPovezave) break;
-        zavrnjene.add('${n['akcija'] == 'pesem' ? 'Pesem' : 'Besedilo'}: $e');
+        zavrnjene.add('${n['akcija'] == 'besedilo' ? 'Besedilo' : 'Pesem'}: $e');
       } catch (_) {
         break; // še vedno brez povezave
       }
@@ -161,6 +166,10 @@ class Baza extends ChangeNotifier {
     }
 
     skupine = t('Skupine').map(Skupina.izVrstice).toList();
+    mape = t('Mape').map(Mapa.izVrstice).where((m) => m.id.isNotEmpty).toList()
+      ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
+    harmonike = t('Harmonike').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
+      ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     midi = KnjiznicaMidi.izTabel(tabele);
     vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     zadnjaOsvezitev = DateTime.tryParse(podatki['cas']?.toString() ?? '');
@@ -298,6 +307,53 @@ class Baza extends ChangeNotifier {
 
   Pesem? pesem(String id) => _poId[id];
 
+  /// Pesmi v mapi brez arhiviranih; [mapa] null pomeni vse mape.
+  List<Pesem> pesmiMape(String? mapa) => [
+    for (final p in pesmi)
+      if (!p.vArhivu && (mapa == null || p.mapa == mapa)) p,
+  ];
+
+  List<Pesem> get arhiv => [
+    for (final p in pesmi)
+      if (p.vArhivu) p,
+  ];
+
+  Mapa? mapa(String id) => mape.where((m) => m.id == id).firstOrNull;
+
+  /// Harmonika po imenu (stolpec Harmonika pri pesmi).
+  Harmonika? harmonika(String ime) => harmonike.where((h) => h.ime == ime).firstOrNull;
+
+  /// Klicaj »za vajo«: takoj na napravi, na strežnik takoj ali, brez interneta, pozneje.
+  /// Brez [api] (npr. vodja brez prijave) počaka med neposlanimi.
+  Future<void> nastaviZaVajo(Api? api, String pesem, bool vrednost) async {
+    final stara = _vrstica('Pesmi', pesem);
+    if (stara == null) return;
+    final podatki = {'ID': pesem, 'Za vajo': vrednost};
+    neposlano.removeWhere((n) => n['akcija'] == 'zaVajo' && besedilo((n['podatki'] as Map)['ID']) == pesem);
+    neposlano.add({'akcija': 'zaVajo', 'podatki': podatki});
+    await _shraniNeposlano();
+    await _zamenjajVrstico('Pesmi', {...stara, 'Za vajo': vrednost});
+    if (api != null) await posljiNeposlano(api);
+    notifyListeners();
+  }
+
+  /// Vrstica lista Pesmi, kot je v lokalni kopiji.
+  Zapis? vrsticaPesmi(String id) => _vrstica('Pesmi', id);
+
+  /// Doda PDF pesmi; shrani ga tudi na napravo, da ga ni treba prenašati.
+  Future<void> dodajPdf(Api api, String pesem, String ime, String vrsta, Uint8List bajti) async {
+    final odg = await api.dodajPdf(pesem, ime, vrsta, bajti);
+    final vrstica = (odg['vrstica'] as Map).cast<String, dynamic>();
+    await shramba.pisiBajte(_kljucPdf(besedilo(vrstica['Drive ID'])), bajti);
+    await _zamenjajVrstico('PDF', vrstica);
+  }
+
+  Future<void> izbrisiPdf(Api api, PdfDatoteka pdf) async {
+    await api.izbrisiPdf(pdf.id);
+    await _zamenjajVrstico('PDF', null, izbrisi: pdf.id);
+    await shramba.izbrisi(_kljucPdf(pdf.driveId));
+  }
+
   /// Ime prijavljenega člana (npr. za oglašanje vodje na omrežju).
   String get imeClana => ((_podatki['clan'] as Map?)?['Ime'] ?? '').toString();
 
@@ -386,7 +442,7 @@ class Baza extends ChangeNotifier {
     }
   }
 
-  /// Shrani (ali izbriše) ukaz, makro, gumb ali ime kanala. Kanali imajo za ID številko kanala.
+  /// Shrani (ali izbriše) ukaz, makro, gumb, ime kanala ali harmoniko. Kanali imajo za ID številko kanala.
   Future<void> shraniMidi(Api api, String tabela, Zapis vrstica, {bool izbrisi = false}) async {
     final odg = await api.shraniMidi(tabela, vrstica, izbrisi: izbrisi);
     final kljuc = tabela == 'MIDI kanali' ? 'Kanal' : 'ID';

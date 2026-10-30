@@ -99,6 +99,9 @@ class Spil extends ChangeNotifier {
   /// Kar ta naprava trenutno kaže; ko začne voditi, to takoj pošlje sledilcem.
   StanjeSpila? _prikazano;
 
+  /// Pesem, ki jo ta naprava trenutno kaže (ali jo je nazadnje).
+  StanjeSpila? get prikazano => _prikazano;
+
   /// Sledilec: naslov WebSocket vodje, ki mu sledi.
   Uri? get vodja => _naslovVodje;
 

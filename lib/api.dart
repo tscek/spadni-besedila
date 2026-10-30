@@ -76,6 +76,17 @@ class Api {
   Future<Map<String, dynamic>> shraniMidi(String tabela, Map<String, dynamic> vrstica, {bool izbrisi = false}) =>
       _post({'akcija': 'midi', 'tabela': tabela, 'vrstica': vrstica, 'izbrisi': izbrisi});
 
+  /// Klicaj »za vajo« na pesmi (sme vsak član). Vrne {vrstica}.
+  Future<Map<String, dynamic>> zaVajo(String pesem, bool vrednost) =>
+      _post({'akcija': 'zaVajo', 'pesem': pesem, 'vrednost': vrednost});
+
+  /// Doda PDF pesmi (na Drive v mapo PDF). Vrne {vrstica} lista PDF.
+  Future<Map<String, dynamic>> dodajPdf(String pesem, String ime, String vrsta, Uint8List bajti) =>
+      _post({'akcija': 'pdfDodaj', 'pesem': pesem, 'ime': ime, 'vrsta': vrsta, 'base64': base64Encode(bajti)});
+
+  /// Odstrani PDF pesmi (datoteka gre v koš na Drivu).
+  Future<Map<String, dynamic>> izbrisiPdf(String id) => _post({'akcija': 'pdfIzbrisi', 'id': id});
+
   /// iPad na špilu: vodja pošlje ukaze na svoje MIDI naprave. Vrne število ukazov, ki niso imeli naprave.
   Future<int> posljiMidi(List<Map<String, dynamic>> ukazi) async {
     final odg = await _post({'akcija': 'posljiMidi', 'ukazi': ukazi});

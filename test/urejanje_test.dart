@@ -206,8 +206,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Belo obleko '), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Riši in piši opombe'));
+    // Pridržanje na besedilu vklopi risanje.
+    await tester.longPress(find.text('Belo obleko '));
     await tester.pumpAndSettle();
+    expect(find.text('Končano'), findsOneWidget);
     await tester.dragFrom(const Offset(100, 200), const Offset(200, 50));
     await tester.pumpAndSettle();
     // Shranjevanje teče v lažnem času testa: počakamo, da se konča, nato preberemo shranjeno.

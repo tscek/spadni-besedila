@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import 'oznake.dart';
 
 /// Seznam pesmi z izbrano vrstico, po katerem se premikaš tudi z nožnim stikalom (gor, dol, potrdi).
 class IzbiraPesmi extends StatefulWidget {
@@ -15,7 +16,7 @@ class IzbiraPesmi extends StatefulWidget {
   /// Pesem, ki je na začetku izbrana.
   final Pesem? zacetna;
 
-  /// Prikaz vrstice; privzeto koda in naslov.
+  /// Prikaz vrstice; privzeto naslov z oznakami, izvajalec in tonaliteta.
   final Widget Function(BuildContext context, Pesem p, bool izbrana)? vrstica;
 
   @override
@@ -91,7 +92,10 @@ class IzbiraPesmiState extends State<IzbiraPesmi> {
   Widget _privzetaVrstica(BuildContext context, Pesem p, bool izbrana) => ListTile(
     selected: izbrana,
     selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-    title: Text('${p.koda}  ${p.naslov}', overflow: TextOverflow.ellipsis),
+    title: NaslovZOznakami(pesem: p),
+    subtitle: p.izvajalec.isEmpty && p.tonaliteta.isEmpty
+        ? const Text(' ')
+        : Text([p.izvajalec, p.tonaliteta].where((x) => x.isNotEmpty).join(' · '), maxLines: 1),
     onTap: () => widget.odpri(p),
     onLongPress: widget.pridrzi == null ? null : () => widget.pridrzi!(p),
   );

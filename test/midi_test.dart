@@ -289,12 +289,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('1  PRVA'), findsOneWidget);
+    expect(vNaslovu('PRVA'), findsOneWidget);
     expect(find.text('1  Pavza'), findsOneWidget); // splošni gumb
 
     midi.prejeto([0xB0, 64, 127]); // naslednja
     await tester.pumpAndSettle();
-    expect(find.text('2  DRUGA'), findsOneWidget);
+    expect(vNaslovu('DRUGA'), findsOneWidget);
     expect(find.text('2  Solo'), findsOneWidget); // gumb te pesmi je drugi
 
     prenos.poslano.clear();
@@ -312,7 +312,7 @@ void main() {
     await tester.pump();
     midi.prejeto([0xB0, 65, 127]);
     await tester.pumpAndSettle();
-    expect(find.text('3  TRETJA'), findsOneWidget);
+    expect(vNaslovu('TRETJA'), findsOneWidget);
     expect(find.byType(IskalnikPesmi), findsNothing);
 
     // Na špilu iskalnik pesem doda v čakalno vrsto (dotik na konec, pridržanje na prvo mesto),
@@ -328,18 +328,21 @@ void main() {
     Finder vIskalniku(String t) => find.descendant(of: find.byType(IskalnikPesmi), matching: find.text(t));
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
-    await tester.tap(vIskalniku('2  DRUGA'));
+    await tester.tap(vIskalniku('DRUGA'));
     await tester.pumpAndSettle();
     expect(find.byType(IskalnikPesmi), findsNothing);
-    expect(find.text('1  PRVA'), findsOneWidget); // pesem ostane odprta
+    expect(vNaslovu('PRVA'), findsOneWidget); // pesem ostane odprta
+    // Obvestilo o dodani pesmi gre spodaj čez iskalnik; počakamo, da izgine.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
-    await tester.longPress(vIskalniku('3  TRETJA'));
+    await tester.longPress(vIskalniku('TRETJA'));
     await tester.pumpAndSettle();
     expect(spil.naslednje.map((n) => n.pesem), [pesmi[2].id, pesmi[1].id]);
     await tester.flingFrom(const Offset(600, 300), const Offset(-400, 0), 1500);
     await tester.pumpAndSettle();
-    expect(find.text('3  TRETJA'), findsOneWidget);
+    expect(vNaslovu('TRETJA'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), [pesmi[1].id]);
 
     // Setlista: naslednja gre po setlisti, ne po seznamu.
@@ -350,10 +353,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('3  TRETJA'), findsOneWidget);
+    expect(vNaslovu('TRETJA'), findsOneWidget);
     midi.prejeto([0xB0, 64, 127]);
     await tester.pumpAndSettle();
-    expect(find.text('1  PRVA'), findsOneWidget);
+    expect(vNaslovu('PRVA'), findsOneWidget);
     expect(find.text('2 / 2'), findsOneWidget);
   });
 }
@@ -395,3 +398,6 @@ class _Pomnilnik implements Shramba {
   @override
   Future<Set<String>> kljuci(String predpona) async => {..._podatki.keys.where((k) => k.startsWith(predpona))};
 }
+
+/// Naslov pesmi v vrstici na vrhu zaslona.
+Finder vNaslovu(String t) => find.descendant(of: find.byType(AppBar), matching: find.text(t));

@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -8,6 +9,7 @@ import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
 import 'midi_zaslon.dart';
+import 'oznake.dart';
 import 'pesem_zaslon.dart';
 import 'prijava_zaslon.dart';
 
@@ -68,11 +70,21 @@ mixin OdprtoUrejanje<T extends StatefulWidget> on State<T> {
 /// Vse o pesmi na enem zaslonu: podatki, besedilo s predogledom, PDF-ji in MIDI.
 /// En gumb Shrani shrani vse spremenjeno. Ob uspehu vrne shranjeno [Pesem].
 class UrejanjePesmiZaslon extends StatefulWidget {
-  const UrejanjePesmiZaslon({super.key, required this.baza, required this.api, this.pesem, this.zavihek = 0});
+  const UrejanjePesmiZaslon({
+    super.key,
+    required this.baza,
+    required this.api,
+    this.pesem,
+    this.zavihek = 0,
+    this.mapa,
+  });
 
   final Baza baza;
   final Api api;
   final Pesem? pesem;
+
+  /// Mapa nove pesmi.
+  final String? mapa;
 
   /// Zavihek, ki je odprt ob začetku (0 podatki, 1 besedilo, ...).
   final int zavihek;
@@ -83,31 +95,53 @@ class UrejanjePesmiZaslon extends StatefulWidget {
   State<UrejanjePesmiZaslon> createState() => _UrejanjePesmiZaslonState();
 }
 
+enum _Vnos { besedilo, stevilo, predlogi, tonaliteta, harmonika, status, mapa, ocena, trajanje }
+
 class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUrejanje {
-  // Stolpec v listu Pesmi, številska tipkovnica, predlogi iz obstoječih pesmi.
+  // Stolpec v listu Pesmi in način vnosa. Koda se novi pesmi dodeli sama.
   static const _polja = [
-    ('Koda', true, false),
-    ('Naslov', false, false),
-    ('Izvajalec', false, true),
-    ('Avtor glasbe', false, true),
-    ('Avtor besedila', false, true),
-    ('Zvrst', false, true),
-    ('Vrsta', false, true),
-    ('Tonaliteta', false, false),
-    ('Harmonika', false, false),
-    ('Tempo (BPM)', true, false),
-    ('Opombe', false, false),
+    ('Naslov', _Vnos.besedilo),
+    ('Mapa', _Vnos.mapa),
+    ('Status', _Vnos.status),
+    ('Ocena', _Vnos.ocena),
+    ('Izvajalec', _Vnos.predlogi),
+    ('Avtor glasbe', _Vnos.predlogi),
+    ('Avtor besedila', _Vnos.predlogi),
+    ('Vrsta', _Vnos.predlogi),
+    ('Zvrst', _Vnos.predlogi),
+    ('Tonaliteta', _Vnos.tonaliteta),
+    ('Harmonika', _Vnos.harmonika),
+    ('Tempo (BPM)', _Vnos.stevilo),
+    ('Trajanje', _Vnos.trajanje),
+    ('Oznaka', _Vnos.predlogi),
+    ('Opombe', _Vnos.besedilo),
   ];
   static const _poljaMidi = [
     ('MIDI ob odprtju', 'Ukazi pesmi ob odprtju (npr. cue na Multiplayu).'),
+    ('MIDI za uvod', 'Ukaz za uvod (npr. PC 1 23); pošlje ga gumb Uvod na pesmi ali nožno stikalo.'),
     ('Makro ob odprtju', 'Pošlje se za ukazi pesmi.'),
     ('Makro ob zaprtju', 'Pošlje se, ko pesem zapreš ali odpreš naslednjo.'),
   ];
 
   late final Map<String, TextEditingController> _vnosi = {
     for (final stolpec in [..._polja.map((p) => p.$1), ..._poljaMidi.map((p) => p.$1)])
-      stolpec: TextEditingController(text: besedilo(widget.pesem?.vrstica[stolpec]))..addListener(_spremenjenaPesem),
+      stolpec: TextEditingController(text: _zacetna(stolpec))..addListener(_spremenjenaPesem),
   };
+
+  String _zacetna(String stolpec) {
+    final p = widget.pesem;
+    if (p == null) {
+      return switch (stolpec) {
+        'Mapa' => widget.mapa ?? '',
+        'Status' => StatusPesmi.vDelu.ime,
+        _ => '',
+      };
+    }
+    if (stolpec == 'Status') return p.status.ime;
+    if (stolpec == 'Ocena') return p.ocena == 0 ? '' : '${p.ocena}';
+    return besedilo(p.vrstica[stolpec]);
+  }
+
   late bool _aktivna = widget.pesem?.aktivna ?? true;
   late final Set<String> _skupine = {
     ...?widget.pesem?.skupine,
@@ -151,21 +185,36 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     if (!_spremembeBesedila) setState(() => _spremembeBesedila = true);
   }
 
+  final Map<String, FocusNode> _fokusi = {};
+
   @override
   void dispose() {
     for (final c in _vnosi.values) {
       c.dispose();
+    }
+    for (final f in _fokusi.values) {
+      f.dispose();
     }
     _vsebina.dispose();
     _opombeBesedila.dispose();
     super.dispose();
   }
 
-  String? _opozoriloKode() {
-    final koda = _vnosi['Koda']!.text.trim();
-    if (koda.isEmpty) return null;
-    final ista = widget.baza.pesmi.where((p) => p.koda == koda && p.id != widget.pesem?.id);
-    return ista.isEmpty ? null : 'Koda je že zasedena: ${ista.first.naslov}';
+  /// Opozorilo, če ima isti MIDI za uvod že druga pesem (dovoljeno je).
+  String? _opozoriloUvoda() {
+    final uvod = _vnosi['MIDI za uvod']!.text.trim().toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (uvod.isEmpty) return null;
+    final iste = widget.baza.pesmi.where(
+      (p) => p.id != widget.pesem?.id && p.midiZaUvod.toUpperCase().replaceAll(RegExp(r'\s+'), ' ') == uvod,
+    );
+    return iste.isEmpty ? null : 'Isti uvod ima že: ${iste.map((p) => p.naslov).join(', ')}';
+  }
+
+  /// Trajanje v obliki m:ss.
+  String? _napakaTrajanja() {
+    final t = _vnosi['Trajanje']!.text.trim();
+    if (t.isEmpty || RegExp(r'^\d{1,2}:[0-5]\d$').hasMatch(t)) return null;
+    return 'Vpiši minute in sekunde, npr. 3:45';
   }
 
   /// [zavihki] je kontekst pod DefaultTabController, da ob napaki pokaže zavihek s podatki.
@@ -175,6 +224,11 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     if (_vnosi['Naslov']!.text.trim().isEmpty) {
       tabs.animateTo(0);
       messenger.showSnackBar(const SnackBar(content: Text('Pesem mora imeti naslov.')));
+      return;
+    }
+    if (_napakaTrajanja() != null) {
+      tabs.animateTo(0);
+      messenger.showSnackBar(const SnackBar(content: Text('Trajanje vpiši kot minute:sekunde, npr. 3:45.')));
       return;
     }
     if (_skupine.isEmpty) {
@@ -315,29 +369,165 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     );
   }
 
-  Widget _polje(String stolpec, bool stevilo, bool predlogi) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: TextField(
-      controller: _vnosi[stolpec],
-      keyboardType: stevilo ? TextInputType.number : TextInputType.text,
-      textCapitalization: stolpec == 'Naslov' ? TextCapitalization.characters : TextCapitalization.sentences,
-      maxLines: stolpec == 'Opombe' ? null : 1,
-      onChanged: stolpec == 'Koda' ? (_) => setState(() {}) : null,
-      decoration: InputDecoration(
-        labelText: stolpec,
-        border: const OutlineInputBorder(),
-        errorText: stolpec == 'Koda' ? _opozoriloKode() : null,
-        suffixIcon: predlogi ? _predlogi(stolpec) : null,
+  Widget _polje(BuildContext context, String stolpec, _Vnos vnos) {
+    final c = _vnosi[stolpec]!;
+    void nastavi(String v) => setState(() => c.text = v);
+    final okvir = InputDecoration(labelText: stolpec, border: const OutlineInputBorder());
+    final Widget polje = switch (vnos) {
+      _Vnos.predlogi => _ssPredlogi(stolpec),
+      _Vnos.tonaliteta => DropdownButtonFormField<String>(
+        initialValue: c.text.isEmpty ? null : c.text,
+        decoration: okvir,
+        isExpanded: true,
+        items: [
+          // Stara vrednost, ki je ni na seznamu, ostane izbrana, dokler je ne zamenjaš.
+          if (c.text.isNotEmpty && !tonalitete.contains(c.text))
+            DropdownMenuItem(value: c.text, child: Text('${c.text} (ni na seznamu)')),
+          for (final t in tonalitete)
+            DropdownMenuItem(value: t, child: Text(t == t.toLowerCase() ? '$t (mol)' : '$t (dur)')),
+        ],
+        onChanged: (v) => nastavi(v ?? ''),
       ),
-    ),
-  );
+      _Vnos.harmonika => Row(
+        children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              initialValue: c.text,
+              decoration: okvir,
+              isExpanded: true,
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Brez')),
+                if (c.text.isNotEmpty && widget.baza.harmonika(c.text) == null)
+                  DropdownMenuItem(value: c.text, child: Text(c.text)),
+                for (final h in widget.baza.harmonike)
+                  DropdownMenuItem(
+                    value: h.ime,
+                    child: Row(
+                      children: [
+                        CircleAvatar(radius: 8, backgroundColor: h.argb == null ? Colors.grey : Color(h.argb!)),
+                        const SizedBox(width: 8),
+                        Text(h.ime),
+                      ],
+                    ),
+                  ),
+              ],
+              onChanged: (v) => nastavi(v ?? ''),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Uredi seznam harmonik',
+            icon: const Icon(Icons.palette_outlined),
+            onPressed: _urediHarmonike,
+          ),
+        ],
+      ),
+      _Vnos.status => DropdownButtonFormField<String>(
+        initialValue: StatusPesmi.iz(c.text).ime,
+        decoration: okvir,
+        items: [
+          for (final st in StatusPesmi.values)
+            DropdownMenuItem(
+              value: st.ime,
+              child: Row(children: [IkonaStatusa(st), const SizedBox(width: 8), Text(st.ime)]),
+            ),
+        ],
+        onChanged: (v) => nastavi(v ?? StatusPesmi.narejen.ime),
+      ),
+      _Vnos.mapa => DropdownButtonFormField<String>(
+        initialValue: c.text,
+        decoration: okvir,
+        items: [
+          const DropdownMenuItem(value: '', child: Text('Brez mape')),
+          if (c.text.isNotEmpty && widget.baza.mapa(c.text) == null)
+            DropdownMenuItem(value: c.text, child: Text(c.text)),
+          for (final m in widget.baza.mape) DropdownMenuItem(value: m.id, child: Text(m.ime)),
+        ],
+        onChanged: (v) => nastavi(v ?? ''),
+      ),
+      _Vnos.ocena => InputDecorator(
+        decoration: okvir.copyWith(contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4)),
+        child: Zvezdice(ocena: int.tryParse(c.text) ?? 0, velikost: 28, spremeni: (v) => nastavi(v == 0 ? '' : '$v')),
+      ),
+      _Vnos.besedilo || _Vnos.stevilo || _Vnos.trajanje => TextField(
+        controller: c,
+        keyboardType: switch (vnos) {
+          _Vnos.stevilo => TextInputType.number,
+          _Vnos.trajanje => TextInputType.datetime,
+          _ => TextInputType.text,
+        },
+        textCapitalization: stolpec == 'Naslov' ? TextCapitalization.characters : TextCapitalization.sentences,
+        maxLines: stolpec == 'Opombe' ? null : 1,
+        onChanged: vnos == _Vnos.trajanje ? (_) => setState(() {}) : null,
+        decoration: okvir.copyWith(
+          hintText: vnos == _Vnos.trajanje ? 'npr. 3:45' : null,
+          errorText: vnos == _Vnos.trajanje ? _napakaTrajanja() : null,
+        ),
+      ),
+    };
+    return Padding(padding: const EdgeInsets.only(bottom: 12), child: polje);
+  }
+
+  /// Vnos s predlogi že vpisanih vrednosti, ki se pokažejo med pisanjem.
+  Widget _ssPredlogi(String stolpec) {
+    final vrednosti = widget.baza.vrednosti(stolpec);
+    return LayoutBuilder(
+      builder: (context, meje) => RawAutocomplete<String>(
+        textEditingController: _vnosi[stolpec],
+        focusNode: _fokusi.putIfAbsent(stolpec, FocusNode.new),
+        optionsBuilder: (v) {
+          final q = poenostavi(v.text);
+          if (q.isEmpty) return const Iterable<String>.empty();
+          return vrednosti.where((x) => poenostavi(x).contains(q) && x != v.text).take(8);
+        },
+        fieldViewBuilder: (context, kontroler, fokus, potrdi) => TextField(
+          controller: kontroler,
+          focusNode: fokus,
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (_) => potrdi(),
+          decoration: InputDecoration(
+            labelText: stolpec,
+            border: const OutlineInputBorder(),
+            suffixIcon: _predlogi(stolpec),
+          ),
+        ),
+        optionsViewBuilder: (context, izberi, moznosti) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            child: SizedBox(
+              width: meje.maxWidth,
+              child: ListView(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: [for (final m in moznosti) ListTile(dense: true, title: Text(m), onTap: () => izberi(m))],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Seznam harmonik z barvami (skupen vsem); harmonikaš vidi barvo v čakalni vrsti.
+  Future<void> _urediHarmonike() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _UrejanjeHarmonik(baza: widget.baza, api: widget.api),
+    );
+    if (mounted) setState(() {});
+  }
 
   Widget _podatki(BuildContext context) {
     final mojeSkupine = widget.baza.skupine.where((s) => widget.baza.urednikSkupine.contains(s.id)).toList();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final (stolpec, stevilo, predlogi) in _polja) _polje(stolpec, stevilo, predlogi),
+        for (final (stolpec, vnos) in _polja) _polje(context, stolpec, vnos),
+        if (widget.pesem != null && widget.pesem!.koda.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text('Koda: ${widget.pesem!.koda}', style: Theme.of(context).textTheme.bodySmall),
+          ),
         if (mojeSkupine.length > 1) ...[
           Text('Skupine', style: Theme.of(context).textTheme.titleSmall),
           Wrap(
@@ -359,7 +549,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Pesem je v repertoarju'),
-            subtitle: const Text('Izklopljena pesem se ne prikazuje več v seznamu.'),
+            subtitle: const Text('Izklopljena pesem se ne prikazuje več nikjer (za skrivanje raje uporabi Arhiv).'),
             value: _aktivna,
             onChanged: (v) => setState(() {
               _aktivna = v;
@@ -456,7 +646,8 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
   }
 
   Widget _pdfji(BuildContext context) {
-    final pdfji = widget.pesem == null ? const <PdfDatoteka>[] : widget.baza.pdfjiPesmi[widget.pesem!.id] ?? const [];
+    final pesem = widget.pesem;
+    final pdfji = pesem == null ? const <PdfDatoteka>[] : widget.baza.pdfjiPesmi[pesem.id] ?? const [];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -465,23 +656,110 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           ListTile(
             leading: const Icon(Icons.picture_as_pdf),
             title: Text(p.vrsta.isEmpty ? 'PDF' : p.vrsta),
-            subtitle: Text('Vrstni red ${p.vrstniRed}'),
+            subtitle: Text(
+              [p.imeDatoteke, if (pdfji.length > 1) 'vrstni red ${p.vrstniRed}'].where((x) => x.isNotEmpty).join(' · '),
+            ),
+            trailing: IconButton(
+              tooltip: 'Odstrani PDF',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _pdfDelo ? null : () => _izbrisiPdf(p),
+            ),
           ),
         const SizedBox(height: 12),
+        if (pesem == null)
+          Text('PDF dodaš, ko pesem shraniš.', style: Theme.of(context).textTheme.bodySmall)
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: _pdfDelo ? null : _dodajPdf,
+              icon: _pdfDelo
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.upload_file),
+              label: const Text('Dodaj PDF'),
+            ),
+          ),
+        const SizedBox(height: 8),
         Text(
-          'Dodajanje in menjava PDF-jev iz aplikacije pride kasneje. Do takrat jih dodaš v mapo PDF na Drivu.',
+          'PDF gre takoj na Drive (mapa PDF), drugi ga dobijo ob osvežitvi. Na pesmi se pokaže prvi PDF. '
+          'Odstranjen PDF gre v koš na Drivu.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
     );
   }
 
+  bool _pdfDelo = false;
+
+  Future<void> _dodajPdf() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final izbrane = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['pdf']);
+    if (izbrane.isEmpty || !mounted) return;
+    final vrsta = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Kaj je v PDF-ju?'),
+        children: [
+          for (final v in const ['Besedilo', 'Note', 'Akordi'])
+            SimpleDialogOption(onPressed: () => Navigator.pop(context, v), child: Text(v)),
+        ],
+      ),
+    );
+    if (vrsta == null) return;
+    setState(() => _pdfDelo = true);
+    try {
+      final f = izbrane.first;
+      await widget.baza.dodajPdf(widget.api, widget.pesem!.id, f.name, vrsta, await f.readAsBytes());
+      messenger.showSnackBar(const SnackBar(content: Text('PDF je dodan.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('PDF-ja ni bilo mogoče dodati: $e')));
+    } finally {
+      if (mounted) setState(() => _pdfDelo = false);
+    }
+  }
+
+  Future<void> _izbrisiPdf(PdfDatoteka p) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final da = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Odstrani PDF?'),
+        content: const Text('PDF bo odstranjen za vse člane (na Drivu gre v koš).'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Prekliči')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Odstrani')),
+        ],
+      ),
+    );
+    if (da != true) return;
+    setState(() => _pdfDelo = true);
+    try {
+      await widget.baza.izbrisiPdf(widget.api, p);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Odstranjevanje ni uspelo: $e')));
+    } finally {
+      if (mounted) setState(() => _pdfDelo = false);
+    }
+  }
+
   Widget _midi(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final (stolpec, pomoc) in _poljaMidi)
+        for (final (stolpec, pomoc) in _poljaMidi) ...[
           PoljeMidi(oznaka: stolpec, vnos: _vnosi[stolpec]!, knjiznica: widget.baza.midi, pomoc: pomoc),
+          if (stolpec == 'MIDI za uvod')
+            ListenableBuilder(
+              listenable: _vnosi[stolpec]!,
+              builder: (context, _) => switch (_opozoriloUvoda()) {
+                final o? => Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(o, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ),
+                null => const SizedBox.shrink(),
+              },
+            ),
+        ],
         Text(
           'Ukaze in makre izbereš z +, lahko jih je več (ločeni s ;). Pošlje jih vsaka naprava, '
           'ki ima vklopljen MIDI (Nastavitve MIDI). Za vse pesmi veljata še makra '
@@ -500,6 +778,131 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
       icon: const Icon(Icons.arrow_drop_down),
       onSelected: (v) => _vnosi[stolpec]!.text = v,
       itemBuilder: (_) => [for (final v in vrednosti) PopupMenuItem(value: v, child: Text(v))],
+    );
+  }
+}
+
+/// Seznam harmonik z barvami: dodajanje, preimenovanje, barva in brisanje.
+class _UrejanjeHarmonik extends StatefulWidget {
+  const _UrejanjeHarmonik({required this.baza, required this.api});
+
+  final Baza baza;
+  final Api api;
+
+  @override
+  State<_UrejanjeHarmonik> createState() => _UrejanjeHarmonikState();
+}
+
+class _UrejanjeHarmonikState extends State<_UrejanjeHarmonik> {
+  static const _barve = [
+    Colors.red,
+    Colors.orange,
+    Colors.amber,
+    Colors.green,
+    Colors.teal,
+    Colors.blue,
+    Colors.indigo,
+    Colors.purple,
+    Colors.pink,
+    Colors.brown,
+  ];
+  bool _shranjujem = false;
+
+  static String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+  Future<void> _uredi(Harmonika? h) async {
+    final ime = TextEditingController(text: h?.ime ?? '');
+    var barva = h?.barva ?? _hex(_barve[widget.baza.harmonike.length % _barve.length]);
+    final rezultat = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, nastavi) => AlertDialog(
+          title: Text(h == null ? 'Nova harmonika' : 'Uredi harmoniko'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ime,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Ime (npr. B-Es-As)'),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in _barve)
+                    GestureDetector(
+                      onTap: () => nastavi(() => barva = _hex(c)),
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: c,
+                        child: barva == _hex(c) ? const Icon(Icons.check, color: Colors.white, size: 18) : null,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            if (h != null) TextButton(onPressed: () => Navigator.pop(context, 'izbrisi'), child: const Text('Izbriši')),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+            FilledButton(onPressed: () => Navigator.pop(context, 'shrani'), child: const Text('Shrani')),
+          ],
+        ),
+      ),
+    );
+    final novo = ime.text.trim();
+    ime.dispose();
+    if (rezultat == null || (rezultat == 'shrani' && novo.isEmpty)) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _shranjujem = true);
+    try {
+      await widget.baza.shraniMidi(widget.api, 'Harmonike', {
+        if (h != null) 'ID': h.id,
+        'Ime': novo,
+        'Barva': barva,
+        'Vrstni red': h?.vrstniRed ?? widget.baza.harmonike.length + 1,
+      }, izbrisi: rezultat == 'izbrisi');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+    } finally {
+      if (mounted) setState(() => _shranjujem = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.baza,
+      builder: (context, _) => AlertDialog(
+        title: const Text('Harmonike'),
+        content: SizedBox(
+          width: 320,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final h in widget.baza.harmonike)
+                ListTile(
+                  leading: CircleAvatar(radius: 12, backgroundColor: h.argb == null ? Colors.grey : Color(h.argb!)),
+                  title: Text(h.ime),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: _shranjujem ? null : () => _uredi(h),
+                ),
+              if (widget.baza.harmonike.isEmpty) const ListTile(title: Text('Ni še harmonik.')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: _shranjujem ? null : () => _uredi(null),
+            icon: const Icon(Icons.add),
+            label: const Text('Dodaj'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Zapri')),
+        ],
+      ),
     );
   }
 }

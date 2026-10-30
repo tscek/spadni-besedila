@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api.dart';
 import 'shramba/shramba.dart';
 
@@ -65,12 +67,113 @@ class Opomba {
   Map<String, dynamic> vJson() => {'x': _zaokrozi(polozaj.dx), 'y': _zaokrozi(polozaj.dy), 's': besedilo, 'b': barva};
 }
 
+/// Označen del besedila (pravokotnik čez vrstico, kot z markerjem), v relativnih koordinatah.
+class Oznaka {
+  Oznaka({required this.obmocje, required this.barva});
+
+  factory Oznaka.izJson(Map<String, dynamic> j) => Oznaka(
+    obmocje: Rect.fromLTRB(
+      (j['l'] as num).toDouble(),
+      (j['t'] as num).toDouble(),
+      (j['r'] as num).toDouble(),
+      (j['b'] as num).toDouble(),
+    ),
+    barva: j['c'] as int,
+  );
+
+  final Rect obmocje;
+  final int barva;
+
+  Map<String, dynamic> vJson() => {
+    'l': _zaokrozi(obmocje.left),
+    't': _zaokrozi(obmocje.top),
+    'r': _zaokrozi(obmocje.right),
+    'b': _zaokrozi(obmocje.bottom),
+    'c': barva,
+  };
+}
+
+enum OblikaGumba {
+  zaobljen('Zaobljen'),
+  krog('Krog'),
+  kvadrat('Kvadrat');
+
+  const OblikaGumba(this.ime);
+  final String ime;
+}
+
+/// Gumb v opombah, ki ob dotiku pošlje MIDI ukaze ali makre (zapis kot pri pesmi, ločeni s ;).
+class GumbNaStrani {
+  GumbNaStrani({
+    this.polozaj = Offset.zero,
+    required this.napis,
+    required this.midi,
+    required this.barva,
+    this.oblika = OblikaGumba.zaobljen,
+  });
+
+  factory GumbNaStrani.izJson(Map<String, dynamic> j) => GumbNaStrani(
+    polozaj: Offset(((j['x'] as num?) ?? 0).toDouble(), ((j['y'] as num?) ?? 0).toDouble()),
+    napis: j['s'] as String? ?? '',
+    midi: j['m'] as String? ?? '',
+    barva: j['b'] as int? ?? 0xFF1565C0,
+    oblika: OblikaGumba.values.asNameMap()[j['o']] ?? OblikaGumba.zaobljen,
+  );
+
+  Offset polozaj;
+  String napis;
+  String midi;
+  int barva;
+  OblikaGumba oblika;
+
+  GumbNaStrani kopija({Offset? polozaj}) =>
+      GumbNaStrani(polozaj: polozaj ?? this.polozaj, napis: napis, midi: midi, barva: barva, oblika: oblika);
+
+  Map<String, dynamic> vJson() => {
+    'x': _zaokrozi(polozaj.dx),
+    'y': _zaokrozi(polozaj.dy),
+    's': napis,
+    'm': midi,
+    'b': barva,
+    'o': oblika.name,
+  };
+
+  /// Shranjeni gumbi za ponovno uporabo (na tej napravi).
+  static const _kljucPredlog = 'gumbi_predloge';
+
+  static Future<List<GumbNaStrani>> predloge() async {
+    try {
+      final s = (await SharedPreferences.getInstance()).getString(_kljucPredlog) ?? '[]';
+      return [for (final j in jsonDecode(s) as List) GumbNaStrani.izJson((j as Map).cast<String, dynamic>())];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> shraniPredloge(List<GumbNaStrani> g) async => (await SharedPreferences.getInstance()).setString(
+    _kljucPredlog,
+    jsonEncode([
+      for (final x in g)
+        x.vJson()
+          ..remove('x')
+          ..remove('y'),
+    ]),
+  );
+}
+
 /// Vse risbe enega člana na eni pesmi, po straneh (od 1 naprej).
 class Risba {
-  Risba({Map<int, List<Poteza>>? poteze, Map<int, List<Opomba>>? opombe, DateTime? spremenjeno})
-    : poteze = poteze ?? {},
-      opombe = opombe ?? {},
-      spremenjeno = spremenjeno ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  Risba({
+    Map<int, List<Poteza>>? poteze,
+    Map<int, List<Opomba>>? opombe,
+    Map<int, List<Oznaka>>? oznake,
+    Map<int, List<GumbNaStrani>>? gumbi,
+    DateTime? spremenjeno,
+  }) : poteze = poteze ?? {},
+       opombe = opombe ?? {},
+       oznake = oznake ?? {},
+       gumbi = gumbi ?? {},
+       spremenjeno = spremenjeno ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
   factory Risba.izJson(Map<String, dynamic> j) {
     Map<int, List<T>> strani<T>(Object? v, T Function(Map<String, dynamic>) f) => {
@@ -80,6 +183,8 @@ class Risba {
     return Risba(
       poteze: strani(j['poteze'], Poteza.izJson),
       opombe: strani(j['opombe'], Opomba.izJson),
+      oznake: strani(j['oznake'], Oznaka.izJson),
+      gumbi: strani(j['gumbi'], GumbNaStrani.izJson),
       spremenjeno: DateTime.tryParse(j['spremenjeno']?.toString() ?? ''),
     );
   }
@@ -88,12 +193,29 @@ class Risba {
 
   final Map<int, List<Poteza>> poteze;
   final Map<int, List<Opomba>> opombe;
+
+  /// Označeno besedilo (markiranje), zaenkrat samo na strani besedila.
+  final Map<int, List<Oznaka>> oznake;
+  final Map<int, List<GumbNaStrani>> gumbi;
   DateTime spremenjeno;
 
-  bool get prazna => poteze.values.every((l) => l.isEmpty) && opombe.values.every((l) => l.isEmpty);
+  bool get prazna =>
+      poteze.values.every((l) => l.isEmpty) &&
+      opombe.values.every((l) => l.isEmpty) &&
+      oznake.values.every((l) => l.isEmpty) &&
+      gumbi.values.every((l) => l.isEmpty);
 
   List<Poteza> potezeStrani(int stran) => poteze.putIfAbsent(stran, () => []);
   List<Opomba> opombeStrani(int stran) => opombe.putIfAbsent(stran, () => []);
+  List<Oznaka> oznakeStrani(int stran) => oznake.putIfAbsent(stran, () => []);
+  List<GumbNaStrani> gumbiStrani(int stran) => gumbi.putIfAbsent(stran, () => []);
+
+  /// Odstrani vse na straneh, za katere [pogoj] vrne true.
+  void izbrisiStrani(bool Function(int stran) pogoj) {
+    for (final m in <Map<int, List<Object>>>[poteze, opombe, oznake, gumbi]) {
+      m.removeWhere((stran, _) => pogoj(stran));
+    }
+  }
 
   Map<String, dynamic> vJson() => {
     'verzija': 1,
@@ -105,6 +227,14 @@ class Risba {
     'opombe': {
       for (final e in opombe.entries)
         if (e.value.isNotEmpty) '${e.key}': [for (final o in e.value) o.vJson()],
+    },
+    'oznake': {
+      for (final e in oznake.entries)
+        if (e.value.isNotEmpty) '${e.key}': [for (final o in e.value) o.vJson()],
+    },
+    'gumbi': {
+      for (final e in gumbi.entries)
+        if (e.value.isNotEmpty) '${e.key}': [for (final g in e.value) g.vJson()],
     },
   };
 

@@ -25,6 +25,12 @@ class Pesem {
     this.aktivna = true,
     this.skupine = const [],
     this.vrstica = const {},
+    this.mapa = '',
+    this.status = StatusPesmi.narejen,
+    this.harmonika = '',
+    this.midiZaUvod = '',
+    this.zaVajo = false,
+    this.ocena = 0,
   });
 
   factory Pesem.izVrstice(Zapis r) => Pesem(
@@ -42,6 +48,12 @@ class Pesem {
     aktivna: r['Aktivna'] == null || r['Aktivna'] == '' || daNe(r['Aktivna']),
     skupine: besedilo(r['Skupine']).split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
     vrstica: r,
+    mapa: besedilo(r['Mapa']),
+    status: StatusPesmi.iz(besedilo(r['Status'])),
+    harmonika: besedilo(r['Harmonika']),
+    midiZaUvod: besedilo(r['MIDI za uvod']),
+    zaVajo: daNe(r['Za vajo']),
+    ocena: (int.tryParse(besedilo(r['Ocena'])) ?? 0).clamp(0, 5),
   );
 
   final String id;
@@ -58,6 +70,23 @@ class Pesem {
   final bool aktivna;
   final List<String> skupine;
 
+  /// ID mape (list Mape), npr. nz za narodno-zabavne.
+  final String mapa;
+  final StatusPesmi status;
+  final String harmonika;
+
+  /// MIDI ukaz za uvod (npr. »PC 1 23«), neposredno zapisan, brez imena iz knjižnice.
+  final String midiZaUvod;
+
+  /// Rdeč klicaj: pesem je treba ponoviti na vaji.
+  final bool zaVajo;
+
+  /// Ocena 1 do 5 (0 = brez).
+  final int ocena;
+
+  /// Arhivirana pesem ni vidna v mapah in iskalnikih (samo v arhivu).
+  bool get vArhivu => status == StatusPesmi.arhiv;
+
   /// Celotna vrstica iz lista Pesmi, za urejanje stolpcev, ki jih prikaz ne potrebuje.
   final Zapis vrstica;
 
@@ -71,8 +100,134 @@ class Pesem {
   }
 }
 
+enum StatusPesmi {
+  predlog('Predlog'),
+  vDelu('V delu'),
+  narejen('Narejen'),
+  arhiv('Arhiv');
+
+  const StatusPesmi(this.ime);
+  final String ime;
+
+  /// Iz stolpca Status; prazno (starejše pesmi) pomeni narejeno.
+  static StatusPesmi iz(String s) => values.where((v) => v.ime.toLowerCase() == s.toLowerCase()).firstOrNull ?? narejen;
+}
+
+/// Tonalitete, kot jih pišemo: dur z veliko, mol z malo začetnico (As in Es, ne Ab in Eb).
+const tonalitete = [
+  'C', 'Cis', 'Des', 'D', 'Es', 'E', 'F', 'Fis', 'G', 'As', 'A', 'B', 'H', //
+  'c', 'cis', 'd', 'dis', 'es', 'e', 'f', 'fis', 'g', 'gis', 'as', 'a', 'b', 'h',
+];
+
+/// Podatek pesmi za prikaz v vrstici seznama, za razvrščanje in v čakalni vrsti.
+enum PoljePesmi {
+  koda('Koda'),
+  naslov('Naslov'),
+  izvajalec('Izvajalec'),
+  avtorGlasbe('Avtor glasbe'),
+  avtorBesedila('Avtor besedila'),
+  vrsta('Vrsta'),
+  tonaliteta('Tonaliteta'),
+  harmonika('Harmonika'),
+  tempo('Tempo (BPM)'),
+  trajanje('Trajanje'),
+  ocena('Ocena'),
+  status('Status'),
+  oznaka('Oznaka'),
+  spremenjeno('Spremenjeno');
+
+  const PoljePesmi(this.ime);
+
+  /// Ime je tudi ime stolpca na listu Pesmi.
+  final String ime;
+
+  String vrednost(Pesem p) => switch (this) {
+    koda => p.koda,
+    naslov => p.naslov,
+    izvajalec => p.izvajalec,
+    avtorGlasbe => p.avtorGlasbe,
+    avtorBesedila => p.avtorBesedila,
+    vrsta => p.vrsta,
+    tonaliteta => p.tonaliteta,
+    harmonika => p.harmonika,
+    status => p.status.ime,
+    ocena => p.ocena == 0 ? '' : '★' * p.ocena,
+    _ => besedilo(p.vrstica[ime]),
+  };
+
+  /// Primerjava za razvrščanje; prazne vrednosti so vedno na koncu.
+  int primerjaj(Pesem a, Pesem b) {
+    switch (this) {
+      case koda:
+        return a.kodaStevilka.compareTo(b.kodaStevilka);
+      case ocena:
+        return a.ocena.compareTo(b.ocena);
+      case status:
+        return a.status.index.compareTo(b.status.index);
+      case tempo:
+        return (num.tryParse(vrednost(a)) ?? 1 << 30).compareTo(num.tryParse(vrednost(b)) ?? 1 << 30);
+      case tonaliteta:
+        int i(Pesem p) => switch (tonalitete.indexOf(p.tonaliteta)) {
+          -1 => p.tonaliteta.isEmpty ? 1 << 30 : 1 << 29,
+          final x => x,
+        };
+        return i(a).compareTo(i(b));
+      default:
+        final x = poenostavi(vrednost(a));
+        final y = poenostavi(vrednost(b));
+        if (x.isEmpty != y.isEmpty) return x.isEmpty ? 1 : -1;
+        return x.compareTo(y);
+    }
+  }
+}
+
+/// Mapa pesmi (list Mape), npr. Narodno-zabavne ali Vaje zabavne.
+class Mapa {
+  Mapa({required this.id, required this.ime, this.vrstniRed = 0});
+
+  factory Mapa.izVrstice(Zapis r) =>
+      Mapa(id: besedilo(r['ID']), ime: besedilo(r['Ime']), vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 0);
+
+  final String id;
+  final String ime;
+  final int vrstniRed;
+}
+
+/// Harmonika z barvo (list Harmonike).
+class Harmonika {
+  Harmonika({required this.id, required this.ime, this.barva = '', this.vrstniRed = 0});
+
+  factory Harmonika.izVrstice(Zapis r) => Harmonika(
+    id: besedilo(r['ID']),
+    ime: besedilo(r['Ime']),
+    barva: besedilo(r['Barva']),
+    vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 0,
+  );
+
+  final String id;
+  final String ime;
+
+  /// Barva kot #RRGGBB.
+  final String barva;
+  final int vrstniRed;
+
+  /// Barva kot 0xAARRGGBB ali null, če ni nastavljena.
+  int? get argb {
+    final h = barva.replaceFirst('#', '');
+    final v = int.tryParse(h, radix: 16);
+    return v == null || h.length != 6 ? null : 0xFF000000 | v;
+  }
+}
+
 class PdfDatoteka {
-  PdfDatoteka({required this.id, required this.pesem, required this.vrsta, required this.driveId, this.vrstniRed = 1});
+  PdfDatoteka({
+    required this.id,
+    required this.pesem,
+    required this.vrsta,
+    required this.driveId,
+    this.vrstniRed = 1,
+    this.imeDatoteke = '',
+  });
 
   factory PdfDatoteka.izVrstice(Zapis r) => PdfDatoteka(
     id: besedilo(r['ID']),
@@ -80,6 +235,7 @@ class PdfDatoteka {
     vrsta: besedilo(r['Vrsta']),
     driveId: besedilo(r['Drive ID']),
     vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 1,
+    imeDatoteke: besedilo(r['Ime datoteke']),
   );
 
   final String id;
@@ -87,6 +243,7 @@ class PdfDatoteka {
   final String vrsta;
   final String driveId;
   final int vrstniRed;
+  final String imeDatoteke;
 }
 
 class BesediloPesmi {
@@ -117,6 +274,7 @@ class Setlista {
     this.datum,
     this.nastop = '',
     this.opombe = '',
+    this.mapa = '',
   });
 
   factory Setlista.izVrstice(Zapis r) => Setlista(
@@ -126,10 +284,14 @@ class Setlista {
     datum: datumIz(r['Datum']),
     nastop: besedilo(r['Nastop']),
     opombe: besedilo(r['Opombe']),
+    mapa: besedilo(r['Mapa']),
   );
 
   final String id;
   final String skupina;
+
+  /// Mapa, v kateri je playlista (prazno: vidna samo pod »Vse«).
+  final String mapa;
   final String ime;
   final DateTime? datum;
   final String nastop;
