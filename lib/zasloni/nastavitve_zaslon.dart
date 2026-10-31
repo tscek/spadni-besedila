@@ -27,13 +27,22 @@ class NastavitveZaslon extends StatelessWidget {
         listenable: n,
         builder: (context, _) => ListView(
           children: [
-            if (prijava case final prijava? when baza.vloge.any((v) => v.vloga == 'Administrator'))
+            if (prijava case final prijava? when baza.jeAdministrator) ...[
               ListTile(
                 leading: const Icon(Icons.share),
                 title: const Text('Deli aplikacijo'),
                 subtitle: const Text('Povezave za Android, Windows in splet (vidi le administrator)'),
                 onTap: () => deliAplikacijo(context, Api(prijava.zeton)),
               ),
+              ListTile(
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('Pošlji moje nastavitve pogleda vsem'),
+                subtitle: const Text(
+                  'Vrstice, barve, pisava, seznam, iskalnik, orodja. Ostali jih ob osvežitvi lahko prevzamejo.',
+                ),
+                onTap: () => _posljiPogled(context, Api(prijava.zeton)),
+              ),
+            ],
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
               title: const Text('Splošna velikost pisave besedila'),
@@ -324,6 +333,35 @@ class _GumbRundeNastavitevState extends State<_GumbRundeNastavitev> {
         ],
       ),
     );
+  }
+}
+
+/// Administrator pošlje svoje nastavitve pogleda; drugi jih ob osvežitvi lahko prevzamejo.
+Future<void> _posljiPogled(BuildContext context, Api api) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final da = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Pošlji nastavitve pogleda?'),
+      content: const Text(
+        'Vsi člani bodo ob naslednji osvežitvi vprašani, ali prevzamejo tvoje nastavitve pogleda. '
+        'Povečave posameznih pesmi, zasedba in MIDI ostanejo njihovi.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Prekliči')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Pošlji')),
+      ],
+    ),
+  );
+  if (da != true) return;
+  try {
+    final n = Nastavitve.aplikacija;
+    final vsebina = await n.izvoziPogled();
+    await api.posljiPogled(vsebina);
+    await n.oznaciPogled(vsebina);
+    messenger.showSnackBar(const SnackBar(content: Text('Nastavitve pogleda so poslane.')));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Pošiljanje ni uspelo: $e')));
   }
 }
 

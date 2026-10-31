@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -94,6 +96,7 @@ class Nastavitve extends ChangeNotifier {
   static const _zasedba = 'zasedba';
   static const _barvaZgoraj = 'barva_zgoraj';
   static const _barvaSpodaj = 'barva_spodaj';
+  static const _pogledPrevzet = 'pogled_prevzet';
   static const _poljaIskalnika = 'polja_iskalnika';
   static const _razvrstiIskalnik = 'razvrsti_iskalnik';
   static const _pisavaPesmi = 'pisava_pesmi_';
@@ -115,6 +118,14 @@ class Nastavitve extends ChangeNotifier {
   /// Barvi ozadja vrstice z naslovom zgoraj in spodnje vrstice pri pesmi (ARGB; null = barva teme).
   int? barvaZgoraj;
   int? barvaSpodaj;
+
+  /// Nastavitve pogleda administratorja, ki jih je član že prevzel ali zavrnil (da ga ne sprašuje znova).
+  String pogledPrevzet = '';
+
+  Future<void> oznaciPogled(String vsebina) {
+    pogledPrevzet = vsebina;
+    return _shrani((p) => p.setString(_pogledPrevzet, vsebina));
+  }
 
   /// Izbrana zasedba (ID), če je član v več zasedbah; prikažejo se njene pesmi in setliste.
   String zasedba = '';
@@ -182,15 +193,17 @@ class Nastavitve extends ChangeNotifier {
 
   Future<void> nalozi() async {
     final p = await SharedPreferences.getInstance();
+    // Privzete vrednosti za ključe, ki jih ni (npr. po prevzemu nastavitev administratorja).
+    final d = Nastavitve();
     for (final o in Orodje.values) {
       orodja[o] = Mesto.values.asNameMap()[p.getString('orodje_${o.name}')] ?? o.privzeto;
     }
-    pisava = p.getDouble(_pisava) ?? pisava;
-    pdfNajprej = p.getBool(_pdfNajprej) ?? pdfNajprej;
-    akordi = p.getBool(_akordi) ?? akordi;
-    svetlaTema = p.getBool(_svetla) ?? svetlaTema;
-    samodejnoSledenje = p.getBool(_sledenje) ?? samodejnoSledenje;
-    zaslonPrizgan = p.getBool(_zaslon) ?? zaslonPrizgan;
+    pisava = p.getDouble(_pisava) ?? d.pisava;
+    pdfNajprej = p.getBool(_pdfNajprej) ?? d.pdfNajprej;
+    akordi = p.getBool(_akordi) ?? d.akordi;
+    svetlaTema = p.getBool(_svetla) ?? d.svetlaTema;
+    samodejnoSledenje = p.getBool(_sledenje) ?? d.samodejnoSledenje;
+    zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);
       if (s == null) return null;
@@ -198,10 +211,10 @@ class Nastavitve extends ChangeNotifier {
       return [for (final x in s) ?imena[x]];
     }
 
-    poljaSeznama = seznam(_poljaSeznama, PoljePesmi.values) ?? poljaSeznama;
-    ikoneSeznama = p.getBool(_ikoneSeznama) ?? ikoneSeznama;
-    razvrsti = PoljePesmi.values.asNameMap()[p.getString(_razvrsti)] ?? razvrsti;
-    padajoce = p.getBool(_padajoce) ?? padajoce;
+    poljaSeznama = seznam(_poljaSeznama, PoljePesmi.values) ?? d.poljaSeznama;
+    ikoneSeznama = p.getBool(_ikoneSeznama) ?? d.ikoneSeznama;
+    razvrsti = PoljePesmi.values.asNameMap()[p.getString(_razvrsti)] ?? d.razvrsti;
+    padajoce = p.getBool(_padajoce) ?? d.padajoce;
     _razvrscanjeMap.clear();
     pisavePesmi.clear();
     for (final k in p.getKeys()) {
@@ -215,27 +228,77 @@ class Nastavitve extends ChangeNotifier {
         if (v != null) pisavePesmi[k.substring(_pisavaPesmi.length)] = v;
       }
     }
-    prelom = p.getBool(_prelom) ?? prelom;
-    oblacekTonalitete = p.getBool(_oblacek) ?? oblacekTonalitete;
-    zasedba = p.getString(_zasedba) ?? zasedba;
+    prelom = p.getBool(_prelom) ?? d.prelom;
+    oblacekTonalitete = p.getBool(_oblacek) ?? d.oblacekTonalitete;
+    zasedba = p.getString(_zasedba) ?? d.zasedba;
+    pogledPrevzet = p.getString(_pogledPrevzet) ?? '';
     barvaZgoraj = p.getInt(_barvaZgoraj);
     barvaSpodaj = p.getInt(_barvaSpodaj);
-    poljaIskalnika = seznam(_poljaIskalnika, PoljePesmi.values) ?? poljaIskalnika;
+    poljaIskalnika = seznam(_poljaIskalnika, PoljePesmi.values) ?? d.poljaIskalnika;
     razvrstiIskalnik = PoljePesmi.values.asNameMap()[p.getString(_razvrstiIskalnik)];
     final zg = seznam(_zgoraj, InfoVrstice.values);
-    if (zg != null && zg.length == 3) zgoraj = zg;
-    minuteOdigrane = p.getInt(_minuteOdigrane) ?? minuteOdigrane;
+    zgoraj = zg != null && zg.length == 3 ? zg : d.zgoraj;
+    minuteOdigrane = p.getInt(_minuteOdigrane) ?? d.minuteOdigrane;
     final sp = seznam(_spodaj, InfoVrstice.values);
-    if (sp != null && sp.length == 3) spodaj = sp;
-    poljaVrste = seznam(_poljaVrste, PoljePesmi.values) ?? poljaVrste;
+    spodaj = sp != null && sp.length == 3 ? sp : d.spodaj;
+    poljaVrste = seznam(_poljaVrste, PoljePesmi.values) ?? d.poljaVrste;
     GumbRunde gumb(String k, GumbRunde g) => GumbRunde(
       napis: p.getString('$_runda${k}_napis') ?? g.napis,
       barva: p.getInt('$_runda${k}_barva') ?? g.barva,
       midi: p.getString('$_runda${k}_midi') ?? g.midi,
     );
-    pavza = gumb('pavza', pavza);
-    igranje = gumb('igranje', igranje);
+    pavza = gumb('pavza', d.pavza);
+    igranje = gumb('igranje', d.igranje);
     notifyListeners();
+  }
+
+  /// Nastavitve pogleda, ki jih administrator lahko pošlje vsem (brez povečav pesmi, zasedbe ipd.).
+  static bool _kljucPogleda(String k) =>
+      const {
+        _pisava, _pdfNajprej, _akordi, _svetla, _poljaSeznama, _ikoneSeznama, _razvrsti, _padajoce, //
+        _minuteOdigrane, _spodaj, _poljaVrste, _zgoraj, _prelom, _oblacek, _barvaZgoraj, _barvaSpodaj,
+        _poljaIskalnika, _razvrstiIskalnik,
+      }.contains(k) ||
+      k.startsWith('orodje_') ||
+      k.startsWith(_runda) ||
+      k.startsWith(_razvrstiMape) ||
+      k.startsWith(_padajoceMape);
+
+  /// Nastavitve pogleda te naprave kot JSON (ključi, ki niso shranjeni, imajo privzeto vrednost).
+  Future<String> izvoziPogled() async {
+    final p = await SharedPreferences.getInstance();
+    return jsonEncode({
+      for (final k in p.getKeys())
+        if (_kljucPogleda(k)) k: p.get(k),
+    });
+  }
+
+  /// Prevzame nastavitve pogleda (npr. od administratorja); ostale osebne nastavitve ostanejo.
+  Future<void> uvoziPogled(String json) async {
+    final j = jsonDecode(json) as Map<String, dynamic>;
+    final p = await SharedPreferences.getInstance();
+    for (final k in p.getKeys().where(_kljucPogleda).toList()) {
+      await p.remove(k);
+    }
+    for (final MapEntry(:key, :value) in j.entries) {
+      if (!_kljucPogleda(key)) continue;
+      switch (value) {
+        // Splet v JSON-u zapiše 22.0 kot 22.
+        case final num v when key == _pisava:
+          await p.setDouble(key, v.toDouble());
+        case final bool v:
+          await p.setBool(key, v);
+        case final int v:
+          await p.setInt(key, v);
+        case final double v:
+          await p.setDouble(key, v);
+        case final String v:
+          await p.setString(key, v);
+        case final List<dynamic> v:
+          await p.setStringList(key, [for (final x in v) '$x']);
+      }
+    }
+    await nalozi();
   }
 
   Future<void> _shrani(void Function(SharedPreferences p) zapisi) async {

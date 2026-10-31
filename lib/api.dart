@@ -39,6 +39,9 @@ class Api {
   }
 
   /// Zadnja različica aplikacije za Android ali [platforma] 'windows': {verzija, url, platforma}.
+  /// Administrator pošlje svoje nastavitve pogleda vsem (JSON).
+  Future<Map<String, dynamic>> posljiPogled(String vsebina) => _post({'akcija': 'pogled', 'vsebina': vsebina});
+
   Future<Map<String, dynamic>> verzija({String? platforma}) => _get({'akcija': 'verzija', 'platforma': ?platforma});
 
   /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.

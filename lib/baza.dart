@@ -442,6 +442,14 @@ class Baza extends ChangeNotifier {
   /// Član je v več zasedbah in še ni izbral, katero gleda.
   bool get moraIzbratiZasedbo => zasedbeClana.length > 1 && !zasedbeClana.contains(Nastavitve.aplikacija.zasedba);
 
+  /// Nastavitve pogleda, ki jih je poslal administrator (JSON), ali null.
+  String? get pogled => (_podatki['pogled'] as Map?)?['vsebina']?.toString();
+
+  /// Ali naj aplikacija ponudi prevzem nastavitev pogleda administratorja.
+  bool get novPogled => pogled != null && pogled != Nastavitve.aplikacija.pogledPrevzet;
+
+  bool get jeAdministrator => vloge.any((v) => v.vloga == 'Administrator');
+
   /// Zamenja prikazano zasedbo (zapomni si jo na napravi).
   Future<void> izberiZasedbo(String id) async {
     await Nastavitve.aplikacija.nastaviZasedbo(id);

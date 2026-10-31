@@ -420,6 +420,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       body: Column(
         children: [
           ..._posodobitev(),
+          ..._pogled(),
           if (baza.neposlano.isNotEmpty && baza.stanje == null && !baza.osvezujem)
             MaterialBanner(
               leading: const Icon(Icons.cloud_upload_outlined),
@@ -535,6 +536,39 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         ),
       );
     }
+  }
+
+  /// Administrator je poslal nastavitve pogleda: prevzemi ali ne (vpraša le enkrat za vsako pošiljko).
+  List<Widget> _pogled() {
+    final baza = widget.baza;
+    final pogled = baza.pogled;
+    if (!baza.novPogled || pogled == null) return const [];
+    final n = Nastavitve.aplikacija;
+    return [
+      MaterialBanner(
+        leading: const Icon(Icons.palette_outlined),
+        content: const Text(
+          'Administrator je poslal nastavitve pogleda (vrstice, pisava, seznam …). Jih uporabiš na tej napravi?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await n.oznaciPogled(pogled);
+              if (mounted) setState(() {});
+            },
+            child: const Text('Ne'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await n.uvoziPogled(pogled);
+              await n.oznaciPogled(pogled);
+              if (mounted) setState(() {});
+            },
+            child: const Text('Uporabi'),
+          ),
+        ],
+      ),
+    ];
   }
 
   List<Widget> _posodobitev() {

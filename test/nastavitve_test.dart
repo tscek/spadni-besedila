@@ -6,6 +6,32 @@ import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 
 void main() {
+  test('nastavitve pogleda administratorja: izvoz in prevzem, osebne ostanejo', () async {
+    SharedPreferences.setMockInitialValues({});
+    final admin = Nastavitve();
+    await admin.nalozi();
+    await admin.nastaviPisavo(30);
+    await admin.nastaviBarvoVrstice(zgoraj: true, barva: 0xFF000000);
+    await admin.nastaviZgoraj(2, InfoVrstice.ura);
+    await admin.nastaviOrodje(Orodje.pisava, Mesto.zgoraj);
+    await admin.nastaviPisavoPesmi('a', 40); // osebno, ne gre zraven
+    final json = await admin.izvoziPogled();
+
+    SharedPreferences.setMockInitialValues({'prelom_vrstic': false, 'zasedba': 's2', 'akordi': false});
+    final clan = Nastavitve();
+    await clan.nalozi();
+    expect(clan.akordi, isFalse);
+    await clan.uvoziPogled(json);
+    expect(clan.pisava, 30);
+    expect(clan.barvaZgoraj, 0xFF000000);
+    expect(clan.zgoraj[2], InfoVrstice.ura);
+    expect(clan.mesto(Orodje.pisava), Mesto.zgoraj);
+    expect(clan.prelom, isTrue); // admin ima privzeto
+    expect(clan.akordi, isTrue);
+    expect(clan.zasedba, 's2'); // osebno ostane
+    expect(clan.pisavePesmi, isEmpty);
+  });
+
   testWidgets('akordi se skrijejo, nastavitve ostanejo shranjene', (tester) async {
     SharedPreferences.setMockInitialValues({'velikost_pisave': 30.0});
     final n = Nastavitve();
