@@ -213,9 +213,23 @@ void main() {
     expect(find.byType(IgranjeZaslon), findsNothing);
     expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), ['b']); // od izbrane naprej, odprta gre z vrste
+    // V iskalniku sta na vrhu le pesmi, ki sta še na vrsti (odprta in prejšnje ne).
+    await tester.tap(find.byTooltip('Išči pesem'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('v-playlisti')), findsOneWidget);
+    await tester.tap(find.byTooltip('Zapri'));
+    await tester.pumpAndSettle();
+
     await _naprej(tester);
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
     expect(spil.naslednje, isEmpty);
+    // Nazaj: prejšnja pesem, trenutna spet na začetek vrste.
+    Midi.aplikacija.sprozi(DejanjeMidi.prejsnja);
+    await tester.pumpAndSettle();
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), ['b']);
+    await _naprej(tester);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
   });
 
   testWidgets('igranje po setlisti: naslednja in prejšnja pesem', (tester) async {

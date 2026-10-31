@@ -304,6 +304,29 @@ void main() {
     expect(find.text('ZABAVNA'), findsOneWidget);
   });
 
+  testWidgets('zgornja vrstica: dolg naslov v dveh vrsticah, barva po izbiri', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    await Nastavitve.aplikacija.nastaviBarvoVrstice(zgoraj: true, barva: 0xFF000000);
+    Future<Text> naslov(double sirina) async {
+      tester.view.physicalSize = Size(sirina, 800);
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PesemZaslon(key: UniqueKey(), pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return tester.widget<Text>(find.text('BELO OBLEKO'));
+    }
+
+    addTearDown(tester.view.reset);
+    final siroko = await naslov(1000);
+    expect(siroko.maxLines, 1);
+    expect(siroko.style?.color, Colors.white); // bela na črni
+    expect((await naslov(220)).maxLines, 2);
+  });
+
   testWidgets('povečava se shrani šele z ikono za shranjevanje', (tester) async {
     late Baza baza;
     await tester.runAsync(() async => baza = (await _baza()).$1);

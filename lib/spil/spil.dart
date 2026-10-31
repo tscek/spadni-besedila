@@ -145,10 +145,25 @@ class Spil extends ChangeNotifier {
   /// Pesem, ki se odpre, gre s seznamčka naslednjih (pri vodji ali brez špila).
   void prikazujem(StanjeSpila s) {
     _prikazano = s;
+    if (_zgodovina.lastOrNull != s.pesem) {
+      _zgodovina.add(s.pesem);
+      if (_zgodovina.length > 200) _zgodovina.removeAt(0);
+    }
     if (vloga == VlogaSpila.vodja) objavi(s);
     if (vloga != VlogaSpila.sledilec && naslednje.any((n) => n.pesem == s.pesem)) {
       _nastaviNaslednje([...naslednje.where((n) => n.pesem != s.pesem)]);
     }
+  }
+
+  /// Pesmi, ki jih je ta naprava pokazala (za nazaj s podrsajem ali nožnim stikalom).
+  final List<String> _zgodovina = [];
+
+  /// Prejšnja pokazana pesem; trenutna gre nazaj na začetek čakalne vrste, da je spet naslednja.
+  String? nazaj() {
+    if (_zgodovina.length < 2) return null;
+    final zdaj = _zgodovina.removeLast();
+    dodajNaslednjo(Naslednja(pesem: zdaj), naPrvo: true);
+    return _zgodovina.last;
   }
 
   /// Doda pesem v čakalno vrsto (lahko vsak): na konec ali z [naPrvo] na prvo mesto.

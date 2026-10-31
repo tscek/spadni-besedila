@@ -214,3 +214,19 @@ class NaslovZOznakami extends StatelessWidget {
     );
   }
 }
+
+/// Bela ali črna, kar se bolje bere na [ozadje].
+Color kontrastnaBarva(Color ozadje) =>
+    ThemeData.estimateBrightnessForColor(ozadje) == Brightness.dark ? Colors.white : Colors.black;
+
+/// Širina besedila v eni vrstici.
+double sirinaBesedila(String besedilo, TextStyle? slog) {
+  final tp = TextPainter(
+    text: TextSpan(text: besedilo, style: slog),
+    maxLines: 1,
+    textDirection: TextDirection.ltr,
+  )..layout();
+  final w = tp.width;
+  tp.dispose();
+  return w;
+}

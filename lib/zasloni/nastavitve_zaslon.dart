@@ -121,6 +121,11 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
+            _IzbiraBarve(
+              naslov: 'Barva vrstice z naslovom',
+              barva: n.barvaZgoraj,
+              izberi: (b) => n.nastaviBarvoVrstice(zgoraj: true, barva: b),
+            ),
             SwitchListTile(
               title: const Text('Tonaliteta v oblačku'),
               subtitle: const Text('Vedno vidna v zgornjem desnem kotu pesmi, pod zgornjo vrstico'),
@@ -141,6 +146,11 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
+            _IzbiraBarve(
+              naslov: 'Barva spodnje vrstice',
+              barva: n.barvaSpodaj,
+              izberi: (b) => n.nastaviBarvoVrstice(zgoraj: false, barva: b),
+            ),
             ListTile(
               title: const Text('Iskalnik pesmi: podatki pod naslovom'),
               subtitle: Wrap(
@@ -312,6 +322,59 @@ class _GumbRundeNastavitevState extends State<_GumbRundeNastavitev> {
           const SizedBox(height: 8),
           PoljeMidi(oznaka: 'MIDI ob kliku (neobvezno)', vnos: _midi, knjiznica: widget.baza.midi),
         ],
+      ),
+    );
+  }
+}
+
+/// Barva ozadja vrstice: privzeta (tema) ali ena od ponujenih.
+class _IzbiraBarve extends StatelessWidget {
+  const _IzbiraBarve({required this.naslov, required this.barva, required this.izberi});
+
+  final String naslov;
+  final int? barva;
+  final void Function(int?) izberi;
+
+  static const barve = [
+    0xFF1565C0,
+    0xFF00838F,
+    0xFF2E7D32,
+    0xFF9E9D24,
+    0xFFF9A825,
+    0xFFEF6C00,
+    0xFFC62828,
+    0xFFAD1457,
+    0xFF6A1B9A,
+    0xFF37474F,
+    0xFF000000,
+    0xFFFFFFFF,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    Widget krog(int? b) => InkWell(
+      customBorder: const CircleBorder(),
+      onTap: () => izberi(b),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: b == null ? tema.colorScheme.surfaceContainer : Color(b),
+          border: Border.all(
+            color: b == barva ? tema.colorScheme.primary : tema.dividerColor,
+            width: b == barva ? 3 : 1,
+          ),
+        ),
+        child: b == null ? const Icon(Icons.format_color_reset, size: 16) : null,
+      ),
+    );
+    return ListTile(
+      title: Text(naslov),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Wrap(spacing: 8, runSpacing: 8, children: [krog(null), for (final b in barve) krog(b)]),
       ),
     );
   }

@@ -271,11 +271,19 @@ class _PesemZaslonState extends State<PesemZaslon> {
     return widget.baza.pesem(widget.baza.mapa(mapa)?.pavza ?? '');
   }
 
+  /// Pesem playliste je v iskalniku na vrhu in označena le, dokler je še v čakalni vrsti
+  /// (odigrane gredo med ostale). Pri igranju po setlisti (zaslon okoli pesmi) vse.
+  bool _seNaVrsti(String id) =>
+      widget.playlista == null || widget.odpri != null || (widget.spil?.naslednje.any((n) => n.pesem == id) ?? true);
+
   /// Pesmi v iskalniku: najprej prednostne (playlista), nato ostale iz mape.
   List<Pesem> get _pesmiIskalnika {
     final mapa = widget.mapa ?? _pesem.mapa;
     final vMapi = widget.baza.pesmiMape(mapa == PesemZaslon.vse ? null : mapa);
-    final prednostne = widget.prednostne ?? const <Pesem>[];
+    final prednostne = [
+      for (final p in widget.prednostne ?? const <Pesem>[])
+        if (_seNaVrsti(p.id)) p,
+    ];
     final ids = {for (final p in prednostne) p.id};
     return [...prednostne, ...vMapi.where((p) => !ids.contains(p.id))];
   }
@@ -334,6 +342,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
         (d == DejanjeMidi.izbrana || (d == DejanjeMidi.naslednja && widget.odpri == null)) &&
         widget.baza.pesem(izbrana.pesem) != null) {
       _odpri(widget.baza.pesem(izbrana.pesem)!, smer: 1);
+      return true;
+    }
+    // Nazaj po pokazanih pesmih (čakalna vrsta); pri seznamu brez čakalne vrste nazaj po seznamu.
+    final spil = widget.spil;
+    if (d == DejanjeMidi.prejsnja &&
+        spil != null &&
+        widget.odpri == null &&
+        (widget.seznam == null || spil.naslednje.isNotEmpty)) {
+      final p = widget.baza.pesem(spil.nazaj() ?? '');
+      if (p != null) _odpri(p, smer: -1);
       return true;
     }
     final seznam = widget.seznam;
@@ -562,7 +580,12 @@ class _PesemZaslonState extends State<PesemZaslon> {
               key: _iskalnikKljuc,
               baza: widget.baza,
               pesmi: _pesmiIskalnika,
-              playlista: widget.playlista,
+              playlista: widget.playlista == null
+                  ? null
+                  : {
+                      for (final e in widget.playlista!.entries)
+                        if (_seNaVrsti(e.key)) e.key: e.value,
+                    },
               pavza: _pavza,
               trenutna: widget.pesem,
               odpri: _izIskalnika,
@@ -631,6 +654,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     TextAlign poravnava, {
     TextStyle? slog,
     TextStyle? slogTonalitete,
+    int vrstic = 1,
   }) {
     final p = _pesem;
     final tonaliteta = slogTonalitete ?? slog;
@@ -639,7 +663,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         : Text(
             s,
             textAlign: poravnava,
-            maxLines: 1,
+            maxLines: vrstic,
             overflow: TextOverflow.ellipsis,
             style: (slog ?? const TextStyle()).copyWith(
               color: barva,
@@ -708,10 +732,20 @@ class _PesemZaslonState extends State<PesemZaslon> {
     List<InfoVrstice> deli, {
     TextStyle? slog,
     TextStyle? slogTonalitete,
+    int vrstic = 1,
   }) {
     final polni = [
       for (final (i, poravnava) in [(0, TextAlign.left), (1, TextAlign.center), (2, TextAlign.right)])
-        if (_info(context, deli[i], poravnava, slog: slog, slogTonalitete: slogTonalitete) case final w?) (deli[i], w),
+        if (_info(
+              context,
+              deli[i],
+              poravnava,
+              slog: slog,
+              slogTonalitete: slogTonalitete,
+              vrstic: deli[i].dolg ? vrstic : 1,
+            )
+            case final w?)
+          (deli[i], w),
     ];
     // Brez dolgega dela si kratki razdelijo širino enakomerno (levo, sredina, desno).
     final imaDolg = polni.any((d) => d.$1.dolg);
@@ -721,25 +755,54 @@ class _PesemZaslonState extends State<PesemZaslon> {
     ];
   }
 
+  /// Besedilo daljšega dela vrstice (za oceno, ali gre v eno vrstico).
+  String _besediloDela(InfoVrstice v) {
+    final p = _pesem;
+    return switch (v) {
+      InfoVrstice.naslov => p.naslov,
+      InfoVrstice.izvajalec => p.izvajalec,
+      InfoVrstice.avtorji => '${p.avtorGlasbe} / ${p.avtorBesedila}',
+      InfoVrstice.opombe => besedilo(p.vrstica['Opombe']),
+      InfoVrstice.naslednja => _naslednja == null ? '' : '→ ${napisVrste(_naslednja!)}',
+      _ => '',
+    };
+  }
+
   /// Vrstica pod orodno vrstico (npr. naslov in tonaliteta); null, če so vsi deli prazni.
+  /// Dolg naslov (npr. na telefonu) gre v dve vrstici. Barvo si vsak nastavi sam.
   PreferredSizeWidget? _zgornjaVrstica(BuildContext context) {
-    final deli = Nastavitve.aplikacija.zgoraj;
+    final n = Nastavitve.aplikacija;
+    final deli = n.zgoraj;
     if (deli.every((d) => d == InfoVrstice.nic)) return null;
     final tema = Theme.of(context);
+    final ozadje = n.barvaZgoraj == null ? null : Color(n.barvaZgoraj!);
+    final crke = ozadje == null ? null : kontrastnaBarva(ozadje);
+    final slog = tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: crke);
+    // Kratki deli vzamejo okoli 90 točk, ostalo si razdelijo dolgi.
+    final dolgi = [
+      for (final d in deli)
+        if (d.dolg) _besediloDela(d),
+    ].where((x) => x.isNotEmpty).toList();
+    final kratkih = deli.where((d) => d != InfoVrstice.nic && !d.dolg).length;
+    final prostor = (MediaQuery.sizeOf(context).width - 32 - kratkih * 90) / (dolgi.isEmpty ? 1 : dolgi.length);
+    final dveVrstici = dolgi.any((t) => sirinaBesedila(t, slog) > prostor);
+    final visina = dveVrstici ? 64.0 : 44.0;
     return PreferredSize(
-      preferredSize: const Size.fromHeight(44),
-      child: SizedBox(
-        height: 44,
+      preferredSize: Size.fromHeight(visina),
+      child: Container(
+        height: visina,
+        color: ozadje,
         child: Row(
           children: [
             const SizedBox(width: 16),
             ..._deliVrstice(
               context,
               deli,
-              slog: tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              slog: slog,
+              vrstic: dveVrstici ? 2 : 1,
               slogTonalitete: tema.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w900,
-                color: tema.colorScheme.primary,
+                color: ozadje == null ? tema.colorScheme.primary : crke,
               ),
             ),
             const SizedBox(width: 4),
@@ -779,27 +842,38 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Spodnja vrstica: trije deli s podatki, orodja »spodaj« in vedno iskanje v desnem vogalu.
   Widget _spodnjaVrstica(BuildContext context) {
-    final deli = Nastavitve.aplikacija.spodaj;
+    final n = Nastavitve.aplikacija;
+    final deli = n.spodaj;
+    final ozadje = n.barvaSpodaj == null ? null : Color(n.barvaSpodaj!);
+    final crke = ozadje == null ? null : kontrastnaBarva(ozadje);
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
+      color: ozadje ?? Theme.of(context).colorScheme.surfaceContainer,
+      textStyle: crke == null ? null : TextStyle(color: crke),
       child: SafeArea(
         top: false,
         bottom: widget.spodaj == null,
         child: SizedBox(
           height: 48,
-          child: Row(
-            children: [
-              const SizedBox(width: 12),
-              ..._deliVrstice(context, deli),
-              ..._orodja(context, Mesto.spodaj),
-              IconButton(
-                tooltip: 'Išči pesem',
-                isSelected: _iskalnik,
-                icon: const Icon(Icons.search),
-                onPressed: () => setState(() => _iskalnik = !_iskalnik),
-              ),
-              const SizedBox(width: 4),
-            ],
+          child: IconTheme.merge(
+            data: IconThemeData(color: crke),
+            child: Row(
+              children: [
+                const SizedBox(width: 12),
+                ..._deliVrstice(
+                  context,
+                  deli,
+                  slog: crke == null ? null : DefaultTextStyle.of(context).style.copyWith(color: crke),
+                ),
+                ..._orodja(context, Mesto.spodaj),
+                IconButton(
+                  tooltip: 'Išči pesem',
+                  isSelected: _iskalnik,
+                  icon: const Icon(Icons.search),
+                  onPressed: () => setState(() => _iskalnik = !_iskalnik),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
           ),
         ),
       ),
