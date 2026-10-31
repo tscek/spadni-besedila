@@ -27,9 +27,13 @@ class PdfZRisanjem extends StatefulWidget {
     required this.risanje,
     required this.knjiznica,
     this.klicaji = const [],
+    this.obPovecavi,
   });
 
   final Uint8List pdf;
+
+  /// Po ščipu: nova povečava (null = cela stran); shrani jo šele zaslon pesmi z ikono za shranjevanje.
+  final void Function(double? zoom)? obPovecavi;
 
   /// Ime vira za pdfrx (Drive ID), da se dokument ob ponovnem izrisu ne naloži znova.
   final String ime;
@@ -104,13 +108,13 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
     });
   }
 
-  /// Shrani povečavo po ščipu; blizu cele strani pomeni privzeto.
+  /// Povečava po ščipu; blizu cele strani pomeni privzeto.
   void _shraniPovecavo() {
     if (!_kontroler.isReady) return;
     final zoom = _kontroler.currentZoom;
     final cela = _kontroler.alternativeFitScale;
     final privzeto = cela != null && (zoom - cela).abs() < cela * 0.03;
-    Nastavitve.aplikacija.nastaviPovecavoPdf(widget.pesem, privzeto ? null : zoom);
+    widget.obPovecavi?.call(privzeto ? null : zoom);
   }
 
   @override

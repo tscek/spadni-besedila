@@ -292,16 +292,19 @@ Future<void> oknoRunde(BuildContext context, Baza baza) => showDialog<void>(
         Navigator.pop(context);
       }
 
+      // Kar že teče, je osivljeno in manjše; drugi gumb je velik.
       Widget gumb(bool pavzo) {
         final g = pavzo ? n.pavza : n.igranje;
+        final tece = r.pavza == pavzo;
         return Expanded(
+          flex: tece ? 2 : 3,
           child: SizedBox(
-            height: 72,
+            height: tece ? 52 : 72,
             child: FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: Color(g.barva),
+                backgroundColor: tece ? Colors.grey : Color(g.barva),
                 foregroundColor: Colors.white,
-                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                textStyle: TextStyle(fontSize: tece ? 15 : 20, fontWeight: FontWeight.w900),
               ),
               onPressed: () => zacni(pavzo),
               child: Text(g.napis),
@@ -322,7 +325,10 @@ Future<void> oknoRunde(BuildContext context, Baza baza) => showDialog<void>(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(children: [gumb(true), const SizedBox(width: 12), gumb(false)]),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [gumb(true), const SizedBox(width: 12), gumb(false)],
+              ),
               const SizedBox(height: 12),
               if (r.zgodovina.isEmpty)
                 const Text('Pretekle runde in pavze se pokažejo tukaj.')

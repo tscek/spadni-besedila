@@ -85,7 +85,26 @@ class PesemZaslon extends StatefulWidget {
 }
 
 class _PesemZaslonState extends State<PesemZaslon> {
-  double get _pisava => Nastavitve.aplikacija.pisavaZa(widget.pesem.id);
+  double get _pisava => _novaPisava ?? Nastavitve.aplikacija.pisavaZa(widget.pesem.id);
+
+  /// Povečava besedila ali PDF-ja, ki še ni shranjena (ikona za shranjevanje v orodni vrstici).
+  double? _novaPisava;
+  (double?,)? _novaPdf;
+
+  bool get _neshranjenZoom => _novaPisava != null || _novaPdf != null;
+
+  Future<void> _shraniZoom() async {
+    final n = Nastavitve.aplikacija;
+    if (_novaPisava case final v?) await n.nastaviPisavoPesmi(widget.pesem.id, v);
+    if (_novaPdf case (final z,)) await n.nastaviPovecavoPdf(widget.pesem.id, z);
+    if (!mounted) return;
+    setState(() {
+      _novaPisava = null;
+      _novaPdf = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Povečava je shranjena za to pesem.')));
+  }
+
   bool _prikaziBesedilo = true;
   Uint8List? _pdf;
   bool _pdfPrebran = false;
@@ -187,7 +206,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
   }
 
   /// Gumba in ščip spremenita pisavo samo te pesmi.
-  Future<void> _spremeniPisavo(double d) => Nastavitve.aplikacija.nastaviPisavoPesmi(widget.pesem.id, _pisava + d);
+  void _spremeniPisavo(double d) => setState(() => _novaPisava = (_pisava + d).clamp(12, 64).toDouble());
 
   /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
   Future<void> _uredi({int zavihek = 0}) async {
@@ -799,7 +818,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
               Flexible(child: Text(p.naslov, overflow: TextOverflow.ellipsis)),
           ],
         ),
-        actions: [..._orodja(context, Mesto.zgoraj), const SizedBox(width: 4)],
+        actions: [
+          if (_neshranjenZoom)
+            IconButton(
+              tooltip: 'Shrani povečavo za to pesem',
+              icon: const Icon(Icons.save_outlined),
+              onPressed: _shraniZoom,
+            ),
+          ..._orodja(context, Mesto.zgoraj),
+          const SizedBox(width: 4),
+        ],
         bottom: _zgornjaVrstica(context),
       ),
       body: _telo(context),
@@ -827,8 +855,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         knjiznica: widget.baza.midi,
         prelom: Nastavitve.aplikacija.prelom,
         klicaji: _klicaji,
-        obPovecavi: (v) =>
-            Nastavitve.aplikacija.nastaviPisavoPesmi(widget.pesem.id, v * BesediloZRisanjem.osnovnaPisava),
+        obPovecavi: (v) => setState(() => _novaPisava = v * BesediloZRisanjem.osnovnaPisava),
       );
     }
     if (_pdfji.isNotEmpty) {
@@ -846,6 +873,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         risanje: _risanje,
         knjiznica: widget.baza.midi,
         klicaji: _klicaji,
+        obPovecavi: (z) => setState(() => _novaPdf = (z,)),
       );
     }
     if (widget.baza.smeUrejatiPesem(_pesem)) {

@@ -110,6 +110,12 @@ void main() {
     final midi = Midi(prenos);
     await midi.nalozi();
     await midi.osveziNaprave();
+    // Privzeto naprava ukazov ob odprtju ne pošilja.
+    final c = Pesem.izVrstice({'ID': 'c', 'Koda': 3, 'Naslov': 'C', 'MIDI ob odprtju': 'CC 9 12 127'});
+    await midi.odprta(c, _knjiznica());
+    await midi.zaprta(c);
+    expect(prenos.poslano, isEmpty);
+    await midi.nastaviObOdprtju(true);
     await midi.nastaviIzhod('Luči', 'USB MIDI');
     await midi.nastaviIzhod('Miza', nePosiljaj);
     final k = _knjiznica();

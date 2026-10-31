@@ -84,6 +84,16 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   value: midi.vklopljen,
                   onChanged: midi.vklopi,
                 ),
+              if (midi.vklopljen && midi.prekoVodje == null)
+                SwitchListTile(
+                  title: const Text('Ukazi ob odprtju in zaprtju pesmi'),
+                  subtitle: const Text(
+                    'Ukazi pesmi in splošna makra ob odprtju/zaprtju. Privzeto izklopljeno; vklopi le na napravi, '
+                    'ki upravlja MIDI. Gumbi in knjižnica delujejo tudi brez tega.',
+                  ),
+                  value: midi.obOdprtju,
+                  onChanged: midi.nastaviObOdprtju,
+                ),
               if (midi.napaka case final n?)
                 ListTile(
                   leading: Icon(Icons.error_outline, color: tema.colorScheme.error),

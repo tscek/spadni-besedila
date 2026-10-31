@@ -26,6 +26,9 @@ class Runda extends ChangeNotifier {
 
   static const _kljuc = 'runda';
 
+  /// Sledilec na špilu: spremembe gredo vodji, ta pa časovnik pošlje vsem (tudi nazaj sem).
+  void Function(Map<String, dynamic> ukaz)? vodji;
+
   /// null: časovnik ne teče; true: pavza; false: igramo.
   bool? pavza;
   DateTime? zacetek;
@@ -55,6 +58,11 @@ class Runda extends ChangeNotifier {
 
   /// Začne pavzo ([pavzo] true) ali igranje; prejšnji odsek gre v zgodovino.
   Future<void> zacni(bool pavzo, {DateTime? zdaj}) async {
+    if (vodji case final f?) return f({'akcija': 'zacni', 'pavza': pavzo});
+    await _zacni(pavzo, zdaj: zdaj);
+  }
+
+  Future<void> _zacni(bool pavzo, {DateTime? zdaj}) async {
     final t = zdaj ?? DateTime.now();
     if (pavza != null && zacetek != null) {
       zgodovina.insert(0, Odsek(pavza: pavza!, zacetek: zacetek!, trajanje: t.difference(zacetek!)));
@@ -66,6 +74,11 @@ class Runda extends ChangeNotifier {
 
   /// Ustavi časovnik (zadnji odsek gre v zgodovino).
   Future<void> ustavi({DateTime? zdaj}) async {
+    if (vodji case final f?) return f({'akcija': 'ustavi'});
+    await _ustavi(zdaj: zdaj);
+  }
+
+  Future<void> _ustavi({DateTime? zdaj}) async {
     final t = zdaj ?? DateTime.now();
     if (pavza != null && zacetek != null) {
       zgodovina.insert(0, Odsek(pavza: pavza!, zacetek: zacetek!, trajanje: t.difference(zacetek!)));
@@ -76,10 +89,43 @@ class Runda extends ChangeNotifier {
   }
 
   Future<void> ponastavi() async {
+    vodji?.call({'akcija': 'ponastavi'});
+    await _ponastavi();
+  }
+
+  Future<void> _ponastavi() async {
     pavza = null;
     zacetek = null;
     zgodovina = [];
     await _shrani();
+  }
+
+  /// Vodja: ukaz sledilca (začni, ustavi, ponastavi).
+  Future<void> izvedi(Map<String, dynamic> u) => switch (u['akcija']) {
+    'zacni' => _zacni(u['pavza'] == true),
+    'ustavi' => _ustavi(),
+    'ponastavi' => _ponastavi(),
+    _ => Future.value(),
+  };
+
+  /// Stanje za sledilce: kaj teče in koliko časa že (ure naprav se lahko razlikujejo).
+  Map<String, dynamic> vJson() => {'vrsta': 'runda', 'pavza': pavza, 'tece': trenutno().inSeconds};
+
+  /// Sledilec: stanje časovnika od vodje.
+  Future<void> prevzemi(Map<String, dynamic> j) async {
+    final p = j['pavza'] as bool?;
+    if (p == null) {
+      if (pavza != null) await _ustavi();
+      return;
+    }
+    final zacetekVodje = DateTime.now().subtract(Duration(seconds: (j['tece'] as num?)?.toInt() ?? 0));
+    // Isti odsek (le ura se malo razlikuje): nič novega.
+    if (p == pavza && zacetek != null && zacetek!.difference(zacetekVodje).inSeconds.abs() < 5) return;
+    if (p == pavza && zacetek != null) {
+      zacetek = zacetekVodje;
+      return _shrani();
+    }
+    await _zacni(p, zdaj: zacetekVodje);
   }
 
   Future<void> _shrani() async {

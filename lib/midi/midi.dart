@@ -51,8 +51,13 @@ class Midi extends ChangeNotifier {
   static const _kljucIzhodov = 'midi_izhodi';
   static const _kljucNaprav = 'midi_naprave';
   static const _kljucVhoda = 'midi_vhod';
+  static const _kljucOdprtja = 'midi_ob_odprtju';
 
   bool vklopljen = false;
+
+  /// Ukazi ob odprtju in zaprtju pesmi (pesmi in splošna makra) s te naprave; privzeto izklopljeno,
+  /// da jih ne pošilja vsaka naprava, ampak le tista, ki upravlja MIDI.
+  bool obOdprtju = false;
 
   /// iPad na špilu: ukazi gredo vodji, ki jih pošlje na svoje naprave (vrne število ukazov brez naprave).
   Future<int> Function(List<PoslaniUkaz>)? prekoVodje;
@@ -115,6 +120,7 @@ class Midi extends ChangeNotifier {
     _nalozeno = true;
     final p = await SharedPreferences.getInstance();
     vklopljen = p.getBool(_kljucVklopa) ?? false;
+    obOdprtju = p.getBool(_kljucOdprtja) ?? false;
     try {
       izhodi = (jsonDecode(p.getString(_kljucIzhodov) ?? '{}') as Map).cast<String, String>();
     } catch (_) {
@@ -136,6 +142,12 @@ class Midi extends ChangeNotifier {
     (await SharedPreferences.getInstance()).setBool(_kljucVklopa, da);
     notifyListeners();
     if (da) await _zazeni();
+  }
+
+  Future<void> nastaviObOdprtju(bool da) async {
+    obOdprtju = da;
+    notifyListeners();
+    (await SharedPreferences.getInstance()).setBool(_kljucOdprtja, da);
   }
 
   Future<void> nastaviIzhod(String izhod, String naprava) async {
@@ -350,6 +362,7 @@ class Midi extends ChangeNotifier {
     final prejsnjaKnjiznica = _knjiznicaOdprte;
     _odprta = p;
     _knjiznicaOdprte = k;
+    if (!obOdprtju) return;
     if (prejsnja != null) await poslji(prejsnjaKnjiznica!.obZaprtju(prejsnja), knjiznica: prejsnjaKnjiznica);
     await poslji(k.obOdprtju(p), knjiznica: k);
   }
@@ -360,7 +373,7 @@ class Midi extends ChangeNotifier {
     final k = _knjiznicaOdprte!;
     _odprta = null;
     _knjiznicaOdprte = null;
-    await poslji(k.obZaprtju(p), knjiznica: k);
+    if (obOdprtju) await poslji(k.obZaprtju(p), knjiznica: k);
   }
 
   @override

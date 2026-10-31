@@ -13,7 +13,7 @@ import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/odigrane.dart';
 import 'package:spadni_besedila/posodobitev.dart';
 import 'package:spadni_besedila/prijava.dart';
-import 'package:spadni_besedila/risbe.dart';
+import 'package:spadni_besedila/risbe.dart' hide Orodje;
 import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
@@ -302,6 +302,36 @@ void main() {
     await tester.tap(find.text('Vse'));
     await tester.pumpAndSettle();
     expect(find.text('ZABAVNA'), findsOneWidget);
+  });
+
+  testWidgets('povečava se shrani šele z ikono za shranjevanje', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final n = Nastavitve.aplikacija;
+    await n.nastaviOrodje(Orodje.pisava, Mesto.zgoraj);
+    Future<void> odpri() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PesemZaslon(key: UniqueKey(), pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await odpri();
+    expect(find.byTooltip('Shrani povečavo za to pesem'), findsNothing);
+    await tester.tap(find.byTooltip('Večja pisava'));
+    await tester.pumpAndSettle();
+    expect(n.pisavePesmi, isEmpty); // še ni shranjeno
+    await tester.tap(find.byTooltip('Shrani povečavo za to pesem'));
+    await tester.pumpAndSettle();
+    expect(n.pisavaZa('a'), n.pisava + 2);
+    expect(find.byTooltip('Shrani povečavo za to pesem'), findsNothing);
+
+    // Brez shranjevanja se ob ponovnem odprtju vrne shranjena povečava.
+    await tester.tap(find.byTooltip('Večja pisava'));
+    await odpri();
+    expect(n.pisavaZa('a'), n.pisava + 2);
   });
 
   testWidgets('pesem: pridržanje vklopi risanje, trojni dotik postavi klicaj', (tester) async {

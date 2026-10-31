@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../baza.dart';
 import '../config.dart';
+import '../runda.dart';
 import 'streznik.dart';
 
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
@@ -131,6 +132,9 @@ class Spil extends ChangeNotifier {
       stanje = _prikazano ?? stanje;
       if (stanje != null) s.poslji(jsonEncode(stanje!.vJson()));
       _objaviNaslednje();
+      // Časovnik runde in pavze je skupen: vodja ga pošilja ob vsaki spremembi.
+      Runda.aplikacija.addListener(_objaviRundo);
+      _objaviRundo();
     } catch (e) {
       napaka = 'Strežnika ni bilo mogoče zagnati: $e';
     }
@@ -217,6 +221,8 @@ class Spil extends ChangeNotifier {
         if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));
       case 'pocisti':
         _nastaviNaslednje([]);
+      case 'runda':
+        Runda.aplikacija.izvedi(u);
       case 'nastavi' when u['pesmi'] is List:
         _nastaviNaslednje([
           for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
@@ -230,6 +236,8 @@ class Spil extends ChangeNotifier {
     _objaviNaslednje();
     notifyListeners();
   }
+
+  void _objaviRundo() => _streznik?.poslji(jsonEncode(Runda.aplikacija.vJson()));
 
   void _objaviNaslednje() => _streznik?.poslji(
     jsonEncode({
@@ -296,6 +304,8 @@ class Spil extends ChangeNotifier {
         povezan = true;
         prekinjeno = false;
         napaka = null;
+        // Gumba runde in pavze gresta vodji, ta pa časovnik pošlje vsem.
+        Runda.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'runda', ...u});
         notifyListeners();
       }, onError: (Object _) => _prekinjeno(kanal));
       _poslusam = kanal.stream.listen(
@@ -304,6 +314,8 @@ class Spil extends ChangeNotifier {
           if (j['vrsta'] == 'stanje') {
             stanje = StanjeSpila.izJson(j);
             notifyListeners();
+          } else if (j['vrsta'] == 'runda') {
+            Runda.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'naslednje') {
             naslednje = List.unmodifiable([
               for (final n in (j['seznam'] as List?) ?? const [])
@@ -322,6 +334,7 @@ class Spil extends ChangeNotifier {
 
   void _prekinjeno(WebSocketChannel? kanal) {
     if (kanal != null && kanal != _kanal) return;
+    Runda.aplikacija.vodji = null;
     if (povezan) {
       povezan = false;
       prekinjeno = true;
@@ -334,6 +347,7 @@ class Spil extends ChangeNotifier {
   }
 
   void _ustaviSledenje() {
+    Runda.aplikacija.vodji = null;
     _ponovnaPovezava?.cancel();
     _poslusam?.cancel();
     _kanal?.sink.close();
@@ -350,6 +364,7 @@ class Spil extends ChangeNotifier {
     if (vloga == VlogaSpila.sledilec) naslednje = const [];
     _ustaviSledenje();
     _naslovVodje = null;
+    Runda.aplikacija.removeListener(_objaviRundo);
     await _streznik?.ustavi();
     _streznik = null;
     vloga = VlogaSpila.nic;

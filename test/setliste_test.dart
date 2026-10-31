@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:idb_shim/idb_client_memory.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
@@ -11,6 +12,7 @@ import 'package:spadni_besedila/midi/midi.dart';
 import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/prijava.dart';
+import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/spil/streznik.dart';
@@ -45,13 +47,17 @@ Map<String, dynamic> _podatki() => {
 
 class _Streznik implements StreznikVodje {
   final poslano = <Map<String, dynamic>>[];
+  void Function(Map<String, dynamic>)? odSledilca;
 
   @override
   Future<String> zacni(
     Baza baza,
     void Function(int) obSpremembi, {
     void Function(Map<String, dynamic>)? obSporocilu,
-  }) async => 'http://10.0.0.2:8765';
+  }) async {
+    odSledilca = obSporocilu;
+    return 'http://10.0.0.2:8765';
+  }
 
   @override
   void poslji(String sporocilo) => poslano.add(jsonDecode(sporocilo) as Map<String, dynamic>);
@@ -156,6 +162,35 @@ void main() {
     await _naprej(tester); // »na konec« pride po zadnji pesmi setliste
     expect(vNaslovu('ČEŠNJE'), findsOneWidget);
     expect(spil.naslednje, isEmpty);
+  });
+
+  test('časovnik runde je skupen: vodja ga pošlje, sledilec ga prevzame in pošlje gumbe vodji', () async {
+    SharedPreferences.setMockInitialValues({});
+    Runda.aplikacija = Runda();
+    final baza = (await _baza()).$1;
+    final streznik = _Streznik();
+    final vodja = Spil(streznik: () => streznik);
+    await vodja.zacniVoditi(baza);
+    expect(streznik.poslano.last, {'vrsta': 'runda', 'pavza': null, 'tece': 0});
+    await Runda.aplikacija.zacni(true);
+    expect(streznik.poslano.last, {'vrsta': 'runda', 'pavza': true, 'tece': 0});
+    // Sledilec pritisne ŠPILEJ: ukaz pride do vodje.
+    streznik.odSledilca!({'vrsta': 'ukaz', 'ukaz': 'runda', 'akcija': 'zacni', 'pavza': false});
+    await Future<void>.delayed(Duration.zero);
+    expect(Runda.aplikacija.pavza, isFalse);
+    expect(streznik.poslano.last['pavza'], isFalse);
+    await vodja.ustavi();
+
+    // Sledilec: stanje od vodje (teče že 90 s), gumbi gredo vodji.
+    final sledilec = Runda();
+    await sledilec.prevzemi({'vrsta': 'runda', 'pavza': false, 'tece': 90});
+    expect(sledilec.pavza, isFalse);
+    expect(sledilec.trenutno().inSeconds, inInclusiveRange(89, 92));
+    final vodji = <Map<String, dynamic>>[];
+    sledilec.vodji = vodji.add;
+    await sledilec.zacni(true);
+    expect(vodji.single, {'akcija': 'zacni', 'pavza': true});
+    expect(sledilec.pavza, isFalse); // počaka na vodjo
   });
 
   testWidgets('playlista postane čakalna vrsta, pesem se odpre kot vsaka druga', (tester) async {
