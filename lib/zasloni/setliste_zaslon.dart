@@ -85,11 +85,15 @@ class SetlisteZaslon extends StatelessWidget {
                               ...baza.skupine.where((k) => k.id == s.skupina).map((k) => k.ime),
                           ].join(' · '),
                         ),
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
-                          ),
-                        ),
+                        // Playlista postane čakalna vrsta; naslednja pesem je vedno s čakalne vrste.
+                        onTap: () {
+                          spil?.nastaviVrsto(_pesmiPlayliste(baza, s));
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
+                            ),
+                          );
+                        },
                       ),
                   ],
                 ),
@@ -98,6 +102,12 @@ class SetlisteZaslon extends StatelessWidget {
     );
   }
 }
+
+/// ID-ji pesmi playliste od [od] naprej (brez pesmi, ki jih ni več v repertoarju).
+List<String> _pesmiPlayliste(Baza baza, Setlista s, {int od = 0}) => [
+  for (final v in (baza.pesmiSetlist[s.id] ?? const <SetlistaPesem>[]).skip(od))
+    if (baza.pesem(v.pesem) != null) v.pesem,
+];
 
 /// Pesmi ene setliste po vrsti; tap začne igranje od te pesmi.
 class SetlistaZaslon extends StatelessWidget {
@@ -180,10 +190,33 @@ class SetlistaZaslon extends StatelessWidget {
     );
   }
 
+  /// Igranje od pesmi [zacetek]: ta in vse za njo gredo v čakalno vrsto, odpre se kot vsaka pesem.
+  /// Brez špila (npr. v testih) ostane igranje po setlisti.
   void _igraj(BuildContext context, Setlista s, int zacetek) {
+    final spil = this.spil;
+    final vrsta = baza.pesmiSetlist[s.id] ?? const <SetlistaPesem>[];
+    final pesem = zacetek < vrsta.length ? baza.pesem(vrsta[zacetek].pesem) : null;
+    if (spil == null || pesem == null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => IgranjeZaslon(setlista: s, baza: baza, prijava: prijava, zacetek: zacetek, spil: spil),
+        ),
+      );
+      return;
+    }
+    spil.nastaviVrsto(_pesmiPlayliste(baza, s, od: zacetek));
+    final pesmi = [for (final v in vrsta) ?baza.pesem(v.pesem)];
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => IgranjeZaslon(setlista: s, baza: baza, prijava: prijava, zacetek: zacetek, spil: spil),
+        builder: (_) => PesemZaslon(
+          pesem: pesem,
+          baza: baza,
+          prijava: prijava,
+          spil: spil,
+          mapa: s.mapa.isEmpty ? PesemZaslon.vse : s.mapa,
+          prednostne: pesmi,
+          playlista: {for (final (j, v) in vrsta.indexed) v.pesem: (st: j + 1, opomba: v.opomba)},
+        ),
       ),
     );
   }

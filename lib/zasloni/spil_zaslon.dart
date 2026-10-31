@@ -637,7 +637,7 @@ class SledilecZaslon extends StatelessWidget {
                     ),
                     if (naslednja != null)
                       Text(
-                        'Naslednja: ${napisVrste(naslednja)}',
+                        '→ ${napisVrste(naslednja)}',
                         style: tema.textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),

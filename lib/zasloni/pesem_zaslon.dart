@@ -226,6 +226,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
           spil: widget.spil,
           seznam: widget.seznam,
           mapa: widget.mapa,
+          prednostne: widget.prednostne,
+          playlista: widget.playlista,
         ),
         smer: smer,
       ),
@@ -324,14 +326,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
     return false;
   }
 
-  /// Naslednja pesem za prikaz spodaj: s čakalne vrste ali s seznama.
+  /// Naslednja pesem za prikaz v vrstici: samo s čakalne vrste (prazna vrsta = nič).
   Pesem? get _naslednja {
     if (widget.naslednja case final n?) return n;
     if (widget.spil?.prvaNaslednja() case final n?) return widget.baza.pesem(n.pesem);
-    final seznam = widget.seznam;
-    if (seznam == null) return null;
-    final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + 1;
-    return i > 0 && i < seznam.length ? seznam[i] : null;
+    return null;
   }
 
   // ---------- Pridržanje (risanje) in trojni dotik (klicaj) ----------
@@ -665,7 +664,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       InfoVrstice.opombe => napis(besedilo(p.vrstica['Opombe'])),
       InfoVrstice.naslednja => switch (_naslednja) {
         final n? => napis(
-          'Naslednja: ${napisVrste(n)}',
+          '→ ${napisVrste(n)}',
           barva: menjaHarmoniko(p, n) ? barvaHarmonike(widget.baza, n.harmonika) : null,
         ),
         null => null,

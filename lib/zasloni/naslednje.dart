@@ -251,7 +251,7 @@ Widget? vrsticaNaslednjih(BuildContext context, Spil? spil, Baza baza, void Func
   final zdaj = trenutna ?? baza.pesem(spil.prikazano?.pesem ?? spil.stanje?.pesem ?? '');
   final utripa = Nastavitve.aplikacija.poljaVrste.contains(PoljePesmi.harmonika) && menjaHarmoniko(zdaj, p);
   final napis = Text(
-    'Naslednja: ${p == null ? prva.pesem : napisVrste(p)}${ostalih > 0 ? '  (+$ostalih)' : ''}',
+    '${p == null ? prva.pesem : napisVrste(p)}${ostalih > 0 ? '  (+$ostalih)' : ''}',
     overflow: TextOverflow.ellipsis,
   );
   return Material(

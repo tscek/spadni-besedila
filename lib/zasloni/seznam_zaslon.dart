@@ -344,7 +344,11 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               if (v == 'prijava') _prijava();
               if (v == 'zasedba') _izberiZasedbo();
               if (v == 'nastavitve') {
-                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => NastavitveZaslon(baza: baza)));
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => NastavitveZaslon(baza: baza, prijava: widget.prijava),
+                  ),
+                );
               }
               if (v == 'midi') {
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza)));

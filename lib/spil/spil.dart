@@ -155,6 +155,9 @@ class Spil extends ChangeNotifier {
   /// Odstrani [i]-to pesem s seznamčka.
   void odstraniNaslednjo(int i) => _spremeni({'ukaz': 'odstrani', 'i': i, 'pesem': naslednje[i].pesem});
 
+  /// Nova čakalna vrsta s [pesmi] po vrsti (npr. iz playliste); zamenja dosedanjo pri vseh.
+  void nastaviVrsto(List<String> pesmi) => _spremeni({'ukaz': 'nastavi', 'pesmi': pesmi});
+
   /// Izprazni čakalno vrsto (nova čakalna vrsta).
   void pocistiNaslednje() => _spremeni({'ukaz': 'pocisti'});
 
@@ -214,6 +217,11 @@ class Spil extends ChangeNotifier {
         if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));
       case 'pocisti':
         _nastaviNaslednje([]);
+      case 'nastavi' when u['pesmi'] is List:
+        _nastaviNaslednje([
+          for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
+            if (p.isNotEmpty) Naslednja(pesem: p),
+        ]);
     }
   }
 

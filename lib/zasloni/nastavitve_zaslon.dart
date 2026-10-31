@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../api.dart';
 import '../baza.dart';
 import '../models.dart';
 import '../nastavitve.dart';
+import '../prijava.dart';
+import 'deli_aplikacijo.dart';
 import 'pdf_risanje.dart';
 import 'midi_zaslon.dart';
 
 /// Osebne nastavitve na tej napravi.
 class NastavitveZaslon extends StatelessWidget {
-  const NastavitveZaslon({super.key, required this.baza});
+  const NastavitveZaslon({super.key, required this.baza, this.prijava});
 
   final Baza baza;
+
+  /// Za deljenje aplikacije (samo administrator).
+  final Prijava? prijava;
 
   @override
   Widget build(BuildContext context) {
@@ -21,6 +27,13 @@ class NastavitveZaslon extends StatelessWidget {
         listenable: n,
         builder: (context, _) => ListView(
           children: [
+            if (prijava case final prijava? when baza.vloge.any((v) => v.vloga == 'Administrator'))
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Deli aplikacijo'),
+                subtitle: const Text('Povezave za Android, Windows in splet (vidi le administrator)'),
+                onTap: () => deliAplikacijo(context, Api(prijava.zeton)),
+              ),
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
               title: const Text('Splošna velikost pisave besedila'),

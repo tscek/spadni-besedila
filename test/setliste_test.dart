@@ -143,7 +143,7 @@ void main() {
     spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
     spil.dodajNaslednjo(const Naslednja(pesem: 'c', naKonec: true));
     await tester.pumpAndSettle();
-    expect(find.text('Naslednja: BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
+    expect(find.text('BOG TE ŽIVI  (+1)'), findsOneWidget); // vrstica seznamčka
 
     await _naprej(tester);
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
@@ -155,6 +155,31 @@ void main() {
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
     await _naprej(tester); // »na konec« pride po zadnji pesmi setliste
     expect(vNaslovu('ČEŠNJE'), findsOneWidget);
+    expect(spil.naslednje, isEmpty);
+  });
+
+  testWidgets('playlista postane čakalna vrsta, pesem se odpre kot vsaka druga', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
+    spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SetlisteZaslon(baza: baza, prijava: Prijava(), spil: spil),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Poroka'));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), ['c', 'a', 'b']); // stara vrsta je zamenjana
+
+    await tester.tap(find.text('BELO OBLEKO'));
+    await tester.pumpAndSettle();
+    expect(find.byType(IgranjeZaslon), findsNothing);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), ['b']); // od izbrane naprej, odprta gre z vrste
+    await _naprej(tester);
+    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
     expect(spil.naslednje, isEmpty);
   });
 
