@@ -10,7 +10,7 @@ import '../models.dart';
 import '../prijava.dart';
 import 'midi_zaslon.dart';
 import 'oznake.dart';
-import 'pesem_zaslon.dart';
+import 'predogled.dart';
 import 'prijava_zaslon.dart';
 
 /// Prijava: na Androidu sistemsko okno, v brskalniku zaslon z Googlovim gumbom.
@@ -359,7 +359,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
                   listenable: _vsebina,
                   builder: (context, _) => _vsebina.text.trim().isEmpty
                       ? const Center(child: Text('Pesem še nima besedila.'))
-                      : BesediloPogled(vsebina: _vsebina.text, velikost: 20),
+                      : PredogledBesedila(vsebina: _vsebina.text, pesem: widget.pesem?.id ?? '', baza: widget.baza),
                 ),
                 _pdfji(context),
                 _midi(context),

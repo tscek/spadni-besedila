@@ -411,3 +411,64 @@ String poenostavi(String s) {
   }
   return b.toString();
 }
+
+/// Zvočni posnetek pesmi (list Posnetki): osebni ali skupni za vse.
+class PosnetekPesmi {
+  PosnetekPesmi({
+    required this.id,
+    required this.pesem,
+    this.clan = '',
+    this.skupno = false,
+    this.ime = '',
+    this.vrsta = 'audio/mp4',
+    this.trajanje = 0,
+    this.velikostKb = 0,
+    this.driveId = '',
+    this.cas,
+  });
+
+  factory PosnetekPesmi.izVrstice(Zapis r) => PosnetekPesmi(
+    id: besedilo(r['ID']),
+    pesem: besedilo(r['Pesem']),
+    clan: besedilo(r['Član']),
+    skupno: daNe(r['Skupno']),
+    ime: besedilo(r['Ime']),
+    vrsta: besedilo(r['Vrsta']).isEmpty ? 'audio/mp4' : besedilo(r['Vrsta']),
+    trajanje: int.tryParse(besedilo(r['Trajanje (s)'])) ?? 0,
+    velikostKb: int.tryParse(besedilo(r['Velikost (KB)'])) ?? 0,
+    driveId: besedilo(r['Drive ID']),
+    cas: DateTime.tryParse(besedilo(r['Čas']))?.toLocal(),
+  );
+
+  final String id;
+  final String pesem;
+
+  /// ID člana, ki je posnel.
+  final String clan;
+  final bool skupno;
+  final String ime;
+
+  /// MIME vrsta zvoka (audio/mp4 = AAC, audio/webm = Opus iz brskalnika).
+  final String vrsta;
+
+  /// Dolžina v sekundah.
+  final int trajanje;
+  final int velikostKb;
+
+  /// Prazno, dokler posnetek ni na strežniku.
+  final String driveId;
+  final DateTime? cas;
+
+  Zapis vVrstico() => {
+    'ID': id,
+    'Pesem': pesem,
+    'Član': clan,
+    'Skupno': skupno,
+    'Ime': ime,
+    'Vrsta': vrsta,
+    'Trajanje (s)': trajanje,
+    'Velikost (KB)': velikostKb,
+    'Drive ID': driveId,
+    'Čas': cas?.toUtc().toIso8601String() ?? '',
+  };
+}

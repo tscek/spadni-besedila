@@ -15,6 +15,7 @@ import 'iskalnik_pesmi.dart';
 import 'naslednje.dart';
 import 'nastavitve_zaslon.dart';
 import 'oznake.dart';
+import 'orodja.dart';
 import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
@@ -315,6 +316,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         ),
         actions: [
           if (_vMapi) _razvrscanje(),
+          RundaGumb(baza: baza),
           SpilGumb(spil: widget.spil, baza: baza, prijava: widget.prijava),
           IconButton(
             tooltip: 'Setliste',

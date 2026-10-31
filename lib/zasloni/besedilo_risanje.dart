@@ -30,6 +30,7 @@ class BesediloZRisanjem extends StatefulWidget {
     this.klicaji = const [],
     this.risbeSkupne,
     this.smeSkupno = false,
+    this.posnetki,
   });
 
   /// Širina strani v logičnih točkah in pisava, pri kateri je povečava 1.
@@ -59,6 +60,9 @@ class BesediloZRisanjem extends StatefulWidget {
   final Risbe? risbeSkupne;
   final bool smeSkupno;
 
+  /// Odpre posnetke pesmi (osebno ali skupno, kot je izbrano pri zapiskih).
+  final void Function(bool skupno)? posnetki;
+
   @override
   State<BesediloZRisanjem> createState() => _BesediloZRisanjemState();
 }
@@ -85,6 +89,9 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   bool get smeSkupno => widget.smeSkupno;
+
+  @override
+  void Function(bool skupno)? get posnetki => widget.posnetki;
 
   @override
   String get pesem => widget.pesem;

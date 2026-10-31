@@ -123,6 +123,8 @@ class Spil extends ChangeNotifier {
     }
     try {
       naslov = await s.zacni(baza, (n) {
+        // Nov sledilec (npr. osvežen iPad) dobi trenutni čas runde, ne tistega ob zadnji spremembi.
+        if (n > sledilcev && _streznik != null) _objaviRundo();
         sledilcev = n;
         notifyListeners();
       }, obSporocilu: _odSledilca);

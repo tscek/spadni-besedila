@@ -155,6 +155,11 @@ void main() {
     await tester.tap(find.text('Predogled'));
     await tester.pumpAndSettle();
     expect(find.text('G '), findsOneWidget);
+    // Predogled na telefonu: besedilo v okvirju velikosti telefona.
+    await tester.tap(find.text('Telefon'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('okvir-predogleda')), findsOneWidget);
+    expect(find.text('G '), findsOneWidget);
 
     await tester.tap(find.text('Shrani'));
     await tester.pump();

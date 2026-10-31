@@ -48,6 +48,7 @@ Map<String, dynamic> _podatki() => {
 class _Streznik implements StreznikVodje {
   final poslano = <Map<String, dynamic>>[];
   void Function(Map<String, dynamic>)? odSledilca;
+  void Function(int)? sprememba;
 
   @override
   Future<String> zacni(
@@ -56,6 +57,7 @@ class _Streznik implements StreznikVodje {
     void Function(Map<String, dynamic>)? obSporocilu,
   }) async {
     odSledilca = obSporocilu;
+    sprememba = obSpremembi;
     return 'http://10.0.0.2:8765';
   }
 
@@ -179,6 +181,10 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(Runda.aplikacija.pavza, isFalse);
     expect(streznik.poslano.last['pavza'], isFalse);
+    // Nov sledilec (osvežena stran na iPadu) dobi trenutni čas, ne časa ob zadnji spremembi.
+    Runda.aplikacija.zacetek = DateTime.now().subtract(const Duration(seconds: 75));
+    streznik.sprememba!(1);
+    expect(streznik.poslano.last['tece'], inInclusiveRange(75, 76));
     await vodja.ustavi();
 
     // Sledilec: stanje od vodje (teče že 90 s), gumbi gredo vodji.

@@ -35,6 +35,9 @@ class Baza extends ChangeNotifier {
 
   /// Klicaji po pesmih (skupni za vse člane).
   Map<String, List<KlicajPesmi>> klicaji = {};
+
+  /// Zvočni posnetki po pesmih: skupni in svoji.
+  Map<String, List<PosnetekPesmi>> posnetki = {};
   KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};
@@ -175,6 +178,8 @@ class Baza extends ChangeNotifier {
         } else if (n['akcija'] == 'zaVajo') {
           // Star zapis klicaja (pred klicaji na mestu): samo še pošlje.
           await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
+        } else if (n['akcija'] == 'posnetek') {
+          await _posljiPosnetek(api, n, podatki);
         } else if (n['akcija'] == 'klicaj') {
           final odg = await api.klicaj(podatki, izbrisi: n['izbrisi'] == true);
           if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Klicaji', v.cast<String, dynamic>());
@@ -193,6 +198,7 @@ class Baza extends ChangeNotifier {
           '${switch (n['akcija']) {
             'besedilo' => 'Besedilo',
             'klicaj' => 'Klicaj',
+            'posnetek' => 'Posnetek',
             _ => 'Pesem',
           }}: $e',
         );
@@ -215,6 +221,13 @@ class Baza extends ChangeNotifier {
     klicaji = {};
     for (final k in t('Klicaji').map(KlicajPesmi.izVrstice).where((k) => k.id.isNotEmpty)) {
       klicaji.putIfAbsent(k.pesem, () => []).add(k);
+    }
+    posnetki = {};
+    for (final p in t('Posnetki').map(PosnetekPesmi.izVrstice).where((p) => p.id.isNotEmpty)) {
+      posnetki.putIfAbsent(p.pesem, () => []).add(p);
+    }
+    for (final l in posnetki.values) {
+      l.sort((a, b) => (b.cas ?? DateTime(0)).compareTo(a.cas ?? DateTime(0)));
     }
     vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     final zasedba = this.zasedba;
@@ -505,6 +518,79 @@ class Baza extends ChangeNotifier {
     }
     await _shraniNeposlano();
     await _zamenjajVrstico('Klicaji', null, izbrisi: id);
+    if (api != null) await _posljiTiho(api);
+  }
+
+  // ---------- Zvočni posnetki ----------
+
+  static String _kljucPosnetka(String id) => 'posnetki/$id';
+
+  /// Nov posnetek: zvok ostane na napravi, na strežnik gre takoj ali pozneje (kot klicaji).
+  Future<PosnetekPesmi> dodajPosnetek(
+    Api? api,
+    String pesem,
+    Uint8List bajti, {
+    required bool skupno,
+    required String ime,
+    required String vrsta,
+    required int trajanje,
+  }) async {
+    final p = PosnetekPesmi(
+      id: _novId(),
+      pesem: pesem,
+      clan: clanId,
+      skupno: skupno,
+      ime: ime,
+      vrsta: vrsta,
+      trajanje: trajanje,
+      velikostKb: (bajti.length / 1024).round(),
+      cas: DateTime.now(),
+    );
+    await shramba.pisiBajte(_kljucPosnetka(p.id), bajti);
+    neposlano.add({'akcija': 'posnetek', 'podatki': p.vVrstico()});
+    await _shraniNeposlano();
+    await _zamenjajVrstico('Posnetki', p.vVrstico());
+    if (api != null) await _posljiTiho(api);
+    return p;
+  }
+
+  Future<void> _posljiPosnetek(Api api, Map<String, dynamic> n, Zapis podatki) async {
+    final id = besedilo(podatki['ID']);
+    if (n['izbrisi'] == true) {
+      await api.izbrisiPosnetek(id);
+      return;
+    }
+    final bajti = await shramba.beriBajte(_kljucPosnetka(id));
+    if (bajti == null) return; // zvoka ni več na napravi
+    final odg = await api.dodajPosnetek(podatki, bajti);
+    if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Posnetki', v.cast<String, dynamic>());
+  }
+
+  /// Zvok posnetka: z naprave ali s strežnika (in se shrani za brez interneta).
+  Future<Uint8List?> zvokPosnetka(Api? api, PosnetekPesmi p) async {
+    final lokalno = await shramba.beriBajte(_kljucPosnetka(p.id));
+    if (lokalno != null || api == null || p.driveId.isEmpty) return lokalno;
+    final bajti = await api.posnetek(p.id);
+    await shramba.pisiBajte(_kljucPosnetka(p.id), bajti);
+    return bajti;
+  }
+
+  /// Ali sme član izbrisati posnetek (svojega; administrator vse).
+  bool smeIzbrisatiPosnetek(PosnetekPesmi p) => p.clan == clanId || jeAdministrator;
+
+  Future<void> izbrisiPosnetek(Api? api, String id) async {
+    final vrstica = _vrstica('Posnetki', id) ?? {'ID': id};
+    final prej = neposlano.indexWhere(
+      (n) => n['akcija'] == 'posnetek' && n['izbrisi'] != true && besedilo((n['podatki'] as Map)['ID']) == id,
+    );
+    if (prej >= 0) {
+      neposlano.removeAt(prej);
+    } else {
+      neposlano.add({'akcija': 'posnetek', 'podatki': vrstica, 'izbrisi': true});
+    }
+    await _shraniNeposlano();
+    await shramba.izbrisi(_kljucPosnetka(id));
+    await _zamenjajVrstico('Posnetki', null, izbrisi: id);
     if (api != null) await _posljiTiho(api);
   }
 

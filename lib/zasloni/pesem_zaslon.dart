@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../api.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../config.dart';
@@ -21,6 +22,7 @@ import 'naslednje.dart';
 import 'orodja.dart';
 import 'oznake.dart';
 import 'pdf_risanje.dart';
+import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -93,6 +95,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Skupne risbe (npr. pobarvane refrene) rišejo urejevalci pesmi; na iPadu prek vodje ne.
   bool get _smeSkupno => !Config.prekoVodje && widget.baza.smeUrejatiPesem(_pesem);
+
+  /// Snemalnik in posnetki pesmi (gumb pri zapiskih); prek vodje jih ni.
+  void Function(bool skupno)? get _posnetki => Config.prekoVodje
+      ? null
+      : (skupno) => oknoPosnetkov(
+          context,
+          baza: widget.baza,
+          api: widget.prijava.prijavljen ? Api(widget.prijava.zeton) : null,
+          pesem: widget.pesem.id,
+          skupno: skupno,
+        );
 
   bool get _neshranjenZoom => _novaPisava != null || _novaPdf != null;
 
@@ -902,6 +915,13 @@ class _PesemZaslonState extends State<PesemZaslon> {
               icon: const Icon(Icons.save_outlined),
               onPressed: _shraniZoom,
             ),
+          // Pesem ima posnetke: do njih tudi brez risanja.
+          if (widget.baza.posnetki[p.id]?.length case final n? when n > 0 && _posnetki != null)
+            IconButton(
+              tooltip: 'Posnetki',
+              icon: Badge.count(count: n, child: const Icon(Icons.mic_none)),
+              onPressed: () => _posnetki!(false),
+            ),
           ..._orodja(context, Mesto.zgoraj),
           const SizedBox(width: 4),
         ],
@@ -934,6 +954,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         klicaji: _klicaji,
         risbeSkupne: widget.baza.risbeSkupne,
         smeSkupno: _smeSkupno,
+        posnetki: _posnetki,
         obPovecavi: (v) => setState(() => _novaPisava = v * BesediloZRisanjem.osnovnaPisava),
       );
     }
@@ -954,6 +975,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         klicaji: _klicaji,
         risbeSkupne: widget.baza.risbeSkupne,
         smeSkupno: _smeSkupno,
+        posnetki: _posnetki,
         obPovecavi: (z) => setState(() => _novaPdf = (z,)),
       );
     }

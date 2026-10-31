@@ -30,11 +30,15 @@ class PdfZRisanjem extends StatefulWidget {
     this.obPovecavi,
     this.risbeSkupne,
     this.smeSkupno = false,
+    this.posnetki,
   });
 
   /// Skupne risbe pesmi in ali jih član sme risati.
   final Risbe? risbeSkupne;
   final bool smeSkupno;
+
+  /// Odpre posnetke pesmi (osebno ali skupno, kot je izbrano pri zapiskih).
+  final void Function(bool skupno)? posnetki;
 
   final Uint8List pdf;
 
@@ -89,6 +93,9 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 
   @override
   bool get smeSkupno => widget.smeSkupno;
+
+  @override
+  void Function(bool skupno)? get posnetki => widget.posnetki;
 
   @override
   String get pesem => widget.pesem;
@@ -164,6 +171,9 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   /// Ali sme član risati skupne risbe (urejevalec pesmi).
   bool get smeSkupno => false;
+
+  /// Gumb za zvočne posnetke pesmi v orodjarni (dobi, ali je izbrano skupno).
+  void Function(bool skupno)? get posnetki => null;
   String get pesem;
   ValueNotifier<bool> get risanje;
   KnjiznicaMidi get knjiznica;
@@ -786,6 +796,15 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
                   ],
                   selected: {_skupno},
                   onSelectionChanged: (v) => _preklopiSkupno(v.first),
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (posnetki case final odpri?) ...[
+                IconButton.filledTonal(
+                  key: const ValueKey('posnetki'),
+                  tooltip: 'Posnetki (snemalnik)',
+                  icon: const Icon(Icons.mic_none),
+                  onPressed: () => odpri(_skupno),
                 ),
                 const SizedBox(width: 8),
               ],

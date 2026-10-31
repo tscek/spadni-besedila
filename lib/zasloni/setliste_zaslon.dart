@@ -11,6 +11,7 @@ import '../models.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'naslednje.dart';
+import 'orodja.dart';
 import 'oznake.dart';
 import 'pesem_zaslon.dart';
 import 'prehod.dart';
@@ -59,7 +60,10 @@ class SetlisteZaslon extends StatelessWidget {
         return Scaffold(
           appBar: AppBar(
             title: Text(mapa == null ? 'Playliste' : 'Playliste: ${baza.mapa(mapa!)?.ime ?? mapa}'),
-            actions: [if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava)],
+            actions: [
+              RundaGumb(baza: baza),
+              if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava),
+            ],
           ),
           floatingActionButton: baza.smeUrejati
               ? FloatingActionButton.extended(
@@ -142,6 +146,7 @@ class SetlistaZaslon extends StatelessWidget {
           appBar: AppBar(
             title: Text(s.ime),
             actions: [
+              RundaGumb(baza: baza),
               if (spil case final spil?) SpilGumb(spil: spil, baza: baza, prijava: prijava),
               if (baza.smeUrejatiSetlisto(s))
                 IconButton(

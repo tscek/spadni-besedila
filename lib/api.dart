@@ -93,6 +93,17 @@ class Api {
   Future<Map<String, dynamic>> dodajPdf(String pesem, String ime, String vrsta, Uint8List bajti) =>
       _post({'akcija': 'pdfDodaj', 'pesem': pesem, 'ime': ime, 'vrsta': vrsta, 'base64': base64Encode(bajti)});
 
+  /// Zvočni posnetek pesmi (vrstica lista Posnetki in zvok). Vrne {vrstica}.
+  Future<Map<String, dynamic>> dodajPosnetek(Map<String, dynamic> posnetek, Uint8List bajti) =>
+      _post({'akcija': 'posnetek', 'posnetek': posnetek, 'base64': base64Encode(bajti)});
+
+  /// Zvok posnetka (svojega ali skupnega).
+  Future<Uint8List> posnetek(String id) async =>
+      base64Decode((await _get({'akcija': 'posnetek', 'id': id}))['base64'] as String);
+
+  /// Izbriše posnetek (svojega; administrator tudi tuje skupne).
+  Future<Map<String, dynamic>> izbrisiPosnetek(String id) => _post({'akcija': 'posnetekIzbrisi', 'id': id});
+
   /// Odstrani PDF pesmi (datoteka gre v koš na Drivu).
   Future<Map<String, dynamic>> izbrisiPdf(String id) => _post({'akcija': 'pdfIzbrisi', 'id': id});
 
