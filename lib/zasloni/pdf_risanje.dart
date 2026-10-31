@@ -28,7 +28,13 @@ class PdfZRisanjem extends StatefulWidget {
     required this.knjiznica,
     this.klicaji = const [],
     this.obPovecavi,
+    this.risbeSkupne,
+    this.smeSkupno = false,
   });
+
+  /// Skupne risbe pesmi in ali jih član sme risati.
+  final Risbe? risbeSkupne;
+  final bool smeSkupno;
 
   final Uint8List pdf;
 
@@ -77,6 +83,12 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 
   @override
   Risbe get risbe => widget.risbe;
+
+  @override
+  Risbe? get risbeSkupne => widget.risbeSkupne;
+
+  @override
+  bool get smeSkupno => widget.smeSkupno;
 
   @override
   String get pesem => widget.pesem;
@@ -146,6 +158,12 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 /// x glede na širino strani, y glede na [enotaY] (višino strani pri PDF-ju, širino pri besedilu).
 mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   Risbe get risbe;
+
+  /// Skupne risbe pesmi (vidijo jih vsi); null, če jih ta prikaz nima.
+  Risbe? get risbeSkupne => null;
+
+  /// Ali sme član risati skupne risbe (urejevalec pesmi).
+  bool get smeSkupno => false;
   String get pesem;
   ValueNotifier<bool> get risanje;
   KnjiznicaMidi get knjiznica;
@@ -166,6 +184,16 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   /// Vrstice besedila na strani (relativno, od zgoraj navzdol), za markiranje besedila; prazno, če ga ni.
   List<Rect> vrsticeStrani(int stran) => const [];
 
+  /// Indeksi vrstic besedila za [vrsticeStrani], če stran oznake veže na besedilo (sicer prazno).
+  /// Taka oznaka ostane na svoji vrstici ob povečavi, prelomu ali novih vrsticah.
+  List<int> indeksiVrstic(int stran) => const [];
+
+  /// Besedilo vrstice z [indeks] (za iskanje vrstice oznake, ko se besedilo spremeni).
+  String besediloVrstice(int indeks) => '';
+
+  /// Kje je oznaka zdaj (za radirko); vezana na besedilo se izračuna iz trenutnih vrstic.
+  Rect? obmocjeOznake(int stran, Oznaka o) => o.obmocje;
+
   /// Indeks vrstice pri višini [y]; z [natancno] samo, če je [y] v vrstici, sicer najbližja.
   static int? _indeksVrstice(List<Rect> vrstice, double y, {bool natancno = false}) {
     int? najblizja;
@@ -184,7 +212,16 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   bool get lahkoOznacuje => false;
 
-  Risba _risba = Risba();
+  // Osebna risba (privzeto) in skupna risba pesmi; urejaš tisto, ki je izbrana v orodjarni.
+  Risba _osebna = Risba();
+  Risba _skupna = Risba();
+  bool _skupno = false;
+
+  Risba get _risba => _skupno ? _skupna : _osebna;
+  set _risba(Risba r) => _skupno ? _skupna = r : _osebna = r;
+
+  /// Obe risbi za prikaz: najprej skupna (spodaj), nato osebna.
+  List<Risba> get _obe => [if (risbeSkupne != null) _skupna, _osebna];
   bool get risem => risanje.value;
   _Nacin _nacin = _Nacin.pisalo;
   late Color _barvaPisala = _pisala[1];
@@ -195,6 +232,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   Poteza? _poteza;
   // Markiranje besedila: vrstice strani, začetna vrstica in točka ter oznake, ki jih vlečenje riše.
   List<Rect> _vrsticeOznake = const [];
+  List<int> _indeksiOznake = const [];
   int _zacetnaVrstica = 0;
   double _zacetekOznake = 0;
   List<Oznaka> _oznakeVlecenja = [];
@@ -215,16 +253,32 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   List<Color> get _pisala => temnoOzadje ? _barvePisalaTemno : _barvePisala;
 
-  Risba get risba => _risba;
+  Risba get risba => _osebna;
 
   @override
   void initState() {
     super.initState();
     risanje.addListener(_spremembaRisanja);
     risbe.nalozi(pesem).then((r) {
-      if (mounted) setState(() => _risba = r);
+      if (mounted) setState(() => _osebna = r);
+    });
+    risbeSkupne?.nalozi(pesem).then((r) {
+      if (mounted) setState(() => _skupna = r);
     });
   }
+
+  /// Oznake obeh risb na [stran], vezane na vrstice besedila (nariše jih besedilo ob vrstici).
+  List<Oznaka> oznakeVrstic(int stran) => [
+    for (final r in _obe)
+      for (final o in r.oznake[stran] ?? const <Oznaka>[])
+        if (o.vrstica != null) o,
+  ];
+
+  /// Preklop med osebno in skupno risbo (razveljavljanje velja za vsako posebej).
+  void _preklopiSkupno(bool skupno) => setState(() {
+    _skupno = skupno && smeSkupno && risbeSkupne != null;
+    _zgodovina.clear();
+  });
 
   @override
   void dispose() {
@@ -243,7 +297,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     if (_zgodovina.length > 50) _zgodovina.removeAt(0);
   }
 
-  void _shrani() => risbe.shrani(pesem, _risba);
+  void _shrani() => (_skupno ? risbeSkupne! : risbe).shrani(pesem, _risba);
 
   void _razveljavi() {
     if (_zgodovina.isEmpty) return;
@@ -421,6 +475,8 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
         _zapomniZaRazveljavi();
         _zaceto = true;
         _vrsticeOznake = vrstice;
+        final indeksi = indeksiVrstic(stran);
+        _indeksiOznake = indeksi.length == vrstice.length ? indeksi : const [];
         _zacetnaVrstica = i;
         _zacetekOznake = p.dx.clamp(vrstice[i].left, vrstice[i].right);
         _oznakeVlecenja = [];
@@ -458,15 +514,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
         : (j, x, i, _zacetekOznake);
     final nove = [
       for (var k = od; k <= doo; k++)
-        Oznaka(
-          obmocje: Rect.fromLTRB(
-            k == od ? odX : vrstice[k].left,
-            vrstice[k].top,
-            k == doo ? doX : vrstice[k].right,
-            vrstice[k].bottom,
-          ),
-          barva: barva,
-        ),
+        _novaOznaka(vrstice, k, k == od ? odX : vrstice[k].left, k == doo ? doX : vrstice[k].right, barva),
     ];
     final oznake = _risba.oznakeStrani(stran);
     setState(() {
@@ -474,6 +522,22 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       oznake.addAll(nove);
       _oznakeVlecenja = nove;
     });
+  }
+
+  /// Oznaka na vrstici [k] od [levo] do [desno]; na besedilu vezana na vrstico (deleža širine vrstice).
+  Oznaka _novaOznaka(List<Rect> vrstice, int k, double levo, double desno, int barva) {
+    final v = vrstice[k];
+    final obmocje = Rect.fromLTRB(levo, v.top, desno, v.bottom);
+    if (_indeksiOznake.isEmpty || v.width <= 0) return Oznaka(obmocje: obmocje, barva: barva);
+    final i = _indeksiOznake[k];
+    return Oznaka(
+      obmocje: obmocje,
+      barva: barva,
+      vrstica: i,
+      besedilo: besediloVrstice(i),
+      od: ((levo - v.left) / v.width).clamp(0, 1),
+      doo: ((desno - v.left) / v.width).clamp(0, 1),
+    );
   }
 
   void _konec(int stran, Offset p) {
@@ -488,13 +552,15 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     // Dotik brez vlečenja označi celo vrstico.
     if (_oznakeVlecenja case [final o] when o.obmocje.width < 0.01) {
       final oznake = _risba.oznakeStrani(stran);
-      oznake[oznake.indexOf(o)] = Oznaka(obmocje: _vrsticeOznake[_zacetnaVrstica], barva: o.barva);
+      final v = _vrsticeOznake[_zacetnaVrstica];
+      oznake[oznake.indexOf(o)] = _novaOznaka(_vrsticeOznake, _zacetnaVrstica, v.left, v.right, o.barva);
     }
     final spremenjeno = _zaceto;
     _zaceto = false;
     _poteza = null;
     _oznakeVlecenja = [];
     _vrsticeOznake = const [];
+    _indeksiOznake = const [];
     _stranPoteze = null;
     if (spremenjeno) {
       setState(() {});
@@ -511,7 +577,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     poteze.removeWhere((x) => x.blizu(p, _polmerRadirke));
     final predmet = _predmetPri(stran, p);
     opombe.removeWhere((o) => o == predmet || (o.polozaj - p).distance < _polmerRadirke * 2);
-    oznake.removeWhere((o) => o.obmocje.inflate(_polmerRadirke / 2).contains(p));
+    oznake.removeWhere((o) => obmocjeOznake(stran, o)?.inflate(_polmerRadirke / 2).contains(p) ?? false);
     gumbi.removeWhere((g) => g == predmet || (g.polozaj - p).distance < _polmerRadirke * 2);
     if (poteze.length + opombe.length + oznake.length + gumbi.length != pred) setState(() {});
   }
@@ -599,7 +665,12 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     child: CustomPaint(
       size: velikost,
       painter: _OznakeSlikar(
-        oznake: List.of(_risba.oznake[stran] ?? const []),
+        // Oznake, vezane na besedilo, nariše besedilo samo (vsaka ob svoji vrstici).
+        oznake: [
+          for (final r in _obe)
+            for (final o in r.oznake[stran] ?? const <Oznaka>[])
+              if (o.vrstica == null) o,
+        ],
         enota: Size(enotaX ?? velikost.width, enotaY ?? velikost.height),
       ),
     ),
@@ -621,23 +692,24 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     final risba = CustomPaint(
       size: velikost,
       painter: _RisbaSlikar(
-        poteze: List.of(_risba.poteze[stran] ?? const []),
-        opombe: List.of(_risba.opombe[stran] ?? const []),
-        oznake: zOznakami ? List.of(_risba.oznake[stran] ?? const []) : const [],
+        poteze: [for (final r in _obe) ...?r.poteze[stran]],
+        opombe: [for (final r in _obe) ...?r.opombe[stran]],
+        oznake: zOznakami ? [for (final r in _obe) ...?r.oznake[stran]] : const [],
         enota: enota,
         temnoOzadje: temnoOzadje,
       ),
     );
     final gumbi = [
-      for (final g in _risba.gumbi[stran] ?? const <GumbNaStrani>[])
-        Positioned(
-          left: g.polozaj.dx * enota.width,
-          top: g.polozaj.dy * enota.height,
-          child: IgnorePointer(
-            ignoring: risem,
-            child: GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
+      for (final r in _obe)
+        for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[])
+          Positioned(
+            left: g.polozaj.dx * enota.width,
+            top: g.polozaj.dy * enota.height,
+            child: IgnorePointer(
+              ignoring: risem,
+              child: GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
+            ),
           ),
-        ),
       // Klicaj: točka je pod klicajem, klicaj stoji nad njo.
       for (final k in klicaji)
         if (k.stran == stran)
@@ -703,6 +775,20 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
                 label: const Text('Končano'),
               ),
               const SizedBox(width: 8),
+              // Osebno (privzeto) ali skupno za vse (npr. pobarvani refreni); skupno le urejevalci.
+              if (smeSkupno && risbeSkupne != null) ...[
+                SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  segments: const [
+                    ButtonSegment(value: false, icon: Icon(Icons.person_outline), tooltip: 'Osebno (samo zame)'),
+                    ButtonSegment(value: true, icon: Icon(Icons.groups_outlined), tooltip: 'Skupno (za vse)'),
+                  ],
+                  selected: {_skupno},
+                  onSelectionChanged: (v) => _preklopiSkupno(v.first),
+                ),
+                const SizedBox(width: 8),
+              ],
               gumb(_Nacin.pisalo, Icons.edit, 'Pisalo'),
               gumb(_Nacin.marker, Icons.brush, 'Marker (prostoročno)'),
               if (lahkoOznacuje) gumb(_Nacin.oznacevalec, Icons.format_color_fill, 'Označi besedilo'),

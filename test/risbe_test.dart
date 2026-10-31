@@ -96,4 +96,51 @@ void main() {
     await risbe.sinhroniziraj(api);
     expect(poslano, isEmpty);
   });
+
+  test('skupne risbe: ločene od osebnih, stara skripta jih ne prepiše z osebnimi', () async {
+    final mapa = await Directory.systemTemp.createTemp('skupne');
+    addTearDown(() => mapa.delete(recursive: true));
+    final poslano = <Map<String, dynamic>>[];
+    var novaSkripta = false;
+    final risba = _primer()..spremenjeno = DateTime.utc(2030);
+    final api = Api(
+      () async => 'zeton',
+      url: 'https://example.com/exec',
+      client: MockClient((r) async {
+        if (r.method == 'POST') {
+          poslano.add(jsonDecode(r.body) as Map<String, dynamic>);
+          return http.Response(jsonEncode({'shranjeno': true}), 200);
+        }
+        final osebne = {
+          'osebna': {'vsebina': risba.vBesedilo()},
+        };
+        if (!novaSkripta || r.url.queryParameters['skupne'] != '1') return http.Response(jsonEncode(osebne), 200);
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode({
+              '_skupne': true,
+              'risbe': {
+                'refren': {'vsebina': risba.vBesedilo()},
+              },
+            }),
+          ),
+          200,
+        );
+      }),
+    );
+    final shramba = ShrambaDatoteke(() async => mapa);
+    final skupne = Risbe(shramba, skupne: true);
+    await skupne.sinhroniziraj(api);
+    expect((await skupne.nalozi('osebna')).prazna, isTrue); // stara skripta vrne osebne: ne prevzame
+
+    novaSkripta = true;
+    await skupne.sinhroniziraj(api);
+    expect((await skupne.nalozi('refren')).prazna, isFalse);
+    expect((await Risbe(shramba).nalozi('refren')).prazna, isTrue); // osebne so ločene
+
+    await skupne.shrani('refren', _primer());
+    await skupne.posljiNeposlane();
+    expect(poslano.single['skupna'], isTrue);
+    expect((await skupne.izvozi(['refren', 'ni']))['risbe'], contains('refren'));
+  });
 }

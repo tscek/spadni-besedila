@@ -14,6 +14,7 @@ import 'shramba/shramba.dart';
 class Baza extends ChangeNotifier {
   Baza({Shramba? shramba}) : shramba = shramba ?? Shramba() {
     risbe = Risbe(this.shramba);
+    risbeSkupne = Risbe(this.shramba, skupne: true);
     risbeClanov = RisbeClanov(this.shramba);
   }
 
@@ -40,6 +41,9 @@ class Baza extends ChangeNotifier {
 
   /// Osebne risbe prijavljenega člana.
   late final Risbe risbe;
+
+  /// Skupne risbe pesmi (npr. pobarvani refreni), enake za vse; rišejo jih urejevalci.
+  late final Risbe risbeSkupne;
 
   /// Vodja: risbe ostalih članov za iPade na špilu.
   late final RisbeClanov risbeClanov;
@@ -317,6 +321,7 @@ class Baza extends ChangeNotifier {
       var risbeNapaka = false;
       try {
         await risbe.sinhroniziraj(api);
+        await risbeSkupne.sinhroniziraj(api);
       } catch (e) {
         risbeNapaka = true;
       }

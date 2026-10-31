@@ -418,9 +418,51 @@ void main() {
     baza.risbe.nalozi('a').then((r) => risba = r);
     await tester.pump();
     expect(risba!.oznake[0], hasLength(2));
+    // Oznaki sta vezani na vrstici besedila (ne na mesto na strani).
+    expect(risba!.oznake[0]!.map((o) => (o.vrstica, o.besedilo)), [(0, 'Belo obleko si že nosila'), (1, 'la la la')]);
     await tester.tap(find.text('Končano'));
     await tester.pumpAndSettle();
     expect(find.text('Končano'), findsNothing);
+  });
+
+  testWidgets('oznaka ostane na svoji vrstici, tudi če se vrstice premaknejo; skupne vidijo vsi', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async {
+      baza = (await _baza()).$1;
+      // Osebna oznaka je bila narisana, ko je bila »la la la« prva vrstica; zdaj je druga.
+      await baza.risbe.shrani(
+        'a',
+        Risba(
+          oznake: {
+            0: [Oznaka(obmocje: Rect.zero, barva: 0xFFFFEB3B, vrstica: 0, besedilo: 'la la la', od: 0, doo: 0.5)],
+          },
+        ),
+      );
+      // Skupna oznaka (refren) na prvi vrstici.
+      await baza.risbeSkupne.shrani(
+        'a',
+        Risba(
+          oznake: {
+            0: [Oznaka(obmocje: Rect.zero, barva: 0xFF4CAF50, vrstica: 0, besedilo: 'Belo obleko si že nosila')],
+          },
+        ),
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    int oznakPod(String besedilo) => find
+        .descendant(
+          of: find.ancestor(of: find.text(besedilo), matching: find.byType(KeyedSubtree)).first,
+          matching: find.byType(CustomPaint),
+        )
+        .evaluate()
+        .length;
+    expect(oznakPod('la la la'), 1);
+    expect(oznakPod('Belo obleko '), 1);
   });
 
   testWidgets('iskalnik: pavza na vrhu, hitri filtri, zapre se ob dotiku mimo', (tester) async {

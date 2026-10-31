@@ -45,10 +45,12 @@ class Api {
   Future<Map<String, dynamic>> verzija({String? platforma}) => _get({'akcija': 'verzija', 'platforma': ?platforma});
 
   /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.
-  Future<Map<String, dynamic>> risbe() => _get({'akcija': 'risbe'});
+  /// Z [skupne] skupne risbe pesmi: {_skupne: true, risbe: {pesem: {vsebina, spremenjeno}}}.
+  Future<Map<String, dynamic>> risbe({bool skupne = false}) => _get({'akcija': 'risbe', if (skupne) 'skupne': '1'});
 
   /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
-  Future<void> risba(String pesem, String vsebina) => _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina});
+  Future<void> risba(String pesem, String vsebina, {bool skupna = false}) =>
+      _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina, if (skupna) 'skupna': true});
 
   /// Vodja: risbe vseh članov njegovih skupin {član: {pesem: {vsebina, spremenjeno}}}.
   Future<Map<String, dynamic>> risbeClanov() => _get({'akcija': 'risbeClanov'});

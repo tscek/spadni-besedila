@@ -180,6 +180,8 @@ class StreznikIo implements StreznikVodje {
         return jsonEncode({'id': id, 'base64': base64Encode(b)});
       case 'verzija':
         return jsonEncode({'verzija': 0});
+      case 'risbe' when p['skupne'] == '1':
+        return jsonEncode(await baza.risbeSkupne.izvozi(baza.pesmi.map((x) => x.id)));
       case 'risbe':
         final clan = p['clan'] ?? '';
         return jsonEncode(clan.isEmpty ? {} : await baza.risbeClanov.zaClana(clan));

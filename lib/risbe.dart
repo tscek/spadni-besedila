@@ -90,8 +90,10 @@ class Opomba {
 }
 
 /// Označen del besedila (pravokotnik čez vrstico, kot z markerjem), v relativnih koordinatah.
+/// Na besedilu pesmi je oznaka vezana na vrstico ([vrstica], [besedilo]) in del njene širine ([od]–[doo]),
+/// zato ostane na pravem mestu ob povečavi, prelomu in dodanih vrsticah; [obmocje] je le mesto ob nastanku.
 class Oznaka {
-  Oznaka({required this.obmocje, required this.barva});
+  Oznaka({required this.obmocje, required this.barva, this.vrstica, this.besedilo = '', this.od = 0, this.doo = 1});
 
   factory Oznaka.izJson(Map<String, dynamic> j) => Oznaka(
     obmocje: Rect.fromLTRB(
@@ -101,10 +103,24 @@ class Oznaka {
       (j['b'] as num).toDouble(),
     ),
     barva: j['c'] as int,
+    vrstica: (j['v'] as num?)?.toInt(),
+    besedilo: j['s'] as String? ?? '',
+    od: (j['od'] as num?)?.toDouble() ?? 0,
+    doo: (j['do'] as num?)?.toDouble() ?? 1,
   );
 
   final Rect obmocje;
   final int barva;
+
+  /// Indeks vrstice besedila (null: oznaka na mestu strani, npr. na PDF-ju).
+  final int? vrstica;
+
+  /// Besedilo vrstice ob označevanju (brez akordov), da se vrstica najde tudi, če se premakne.
+  final String besedilo;
+
+  /// Začetek in konec oznake kot delež širine vrstice.
+  final double od;
+  final double doo;
 
   Map<String, dynamic> vJson() => {
     'l': _zaokrozi(obmocje.left),
@@ -112,6 +128,7 @@ class Oznaka {
     'r': _zaokrozi(obmocje.right),
     'b': _zaokrozi(obmocje.bottom),
     'c': barva,
+    if (vrstica != null) ...{'v': vrstica, 's': besedilo, 'od': _zaokrozi(od), 'do': _zaokrozi(doo)},
   };
 }
 
@@ -357,16 +374,20 @@ class Risba {
 
 /// Shramba risb: lokalno pod ključi `risbe/<pesem>.json`, kopija na Drivu prek skripte.
 /// Spremembe, ki še niso na strežniku, so zapisane v `risbe/_neposlano.json`.
+/// S [skupne] so to skupne risbe pesmi (npr. pobarvani refreni), ki jih vidijo vsi člani
+/// (lokalno `risbe_skupne/…`, na Drivu mapa `_skupne`).
 class Risbe {
-  Risbe(this._shramba);
+  Risbe(this._shramba, {this.skupne = false});
 
   final Shramba _shramba;
+  final bool skupne;
   Api? api;
   Set<String>? _neposlano;
   Timer? _odlozenoPosiljanje;
 
-  static String _kljuc(String pesem) => 'risbe/$pesem.json';
-  static const _kljucNeposlanih = 'risbe/_neposlano.json';
+  String get _mapa => skupne ? 'risbe_skupne' : 'risbe';
+  String _kljuc(String pesem) => '$_mapa/$pesem.json';
+  String get _kljucNeposlanih => '$_mapa/_neposlano.json';
 
   Future<Set<String>> _neposlane() async {
     if (_neposlano != null) return _neposlano!;
@@ -410,7 +431,7 @@ class Risbe {
     for (final pesem in neposlano.toList()) {
       final vsebina = await _shramba.beriBesedilo(_kljuc(pesem)) ?? '';
       try {
-        await a.risba(pesem, vsebina);
+        await a.risba(pesem, vsebina, skupna: skupne);
         neposlano.remove(pesem);
       } catch (_) {
         break; // brez povezave: poskusimo ob naslednji osvežitvi
@@ -419,13 +440,25 @@ class Risbe {
     await _zapisiNeposlane();
   }
 
+  /// Vodja: skupne risbe [pesmi] v obliki, kot jo vrne skripta (za iPade na špilu).
+  Future<Map<String, dynamic>> izvozi(Iterable<String> pesmi) async => {
+    '_skupne': true,
+    'risbe': {
+      for (final p in pesmi)
+        if (await _shramba.beriBesedilo(_kljuc(p)) case final v? when v.isNotEmpty) p: {'vsebina': v},
+    },
+  };
+
   /// Najprej pošlje svoje spremembe, nato prenese risbe s strežnika, ki so novejše od lokalnih
   /// (npr. narisane na drugi tablici istega člana).
   Future<void> sinhroniziraj(Api a) async {
     api = a;
     await posljiNeposlane();
     final neposlano = await _neposlane();
-    final streznik = await a.risbe();
+    final odgovor = await a.risbe(skupne: skupne);
+    // Starejša skripta ne pozna skupnih risb in vrne osebne: teh ne prepišemo med skupne.
+    if (skupne && odgovor['_skupne'] != true) return;
+    final streznik = skupne ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
     for (final e in streznik.entries) {
       if (neposlano.contains(e.key)) continue;
       final vsebina = (e.value as Map)['vsebina']?.toString() ?? '';

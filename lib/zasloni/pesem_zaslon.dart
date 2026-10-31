@@ -91,6 +91,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
   double? _novaPisava;
   (double?,)? _novaPdf;
 
+  /// Skupne risbe (npr. pobarvane refrene) rišejo urejevalci pesmi; na iPadu prek vodje ne.
+  bool get _smeSkupno => !Config.prekoVodje && widget.baza.smeUrejatiPesem(_pesem);
+
   bool get _neshranjenZoom => _novaPisava != null || _novaPdf != null;
 
   Future<void> _shraniZoom() async {
@@ -929,6 +932,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
         knjiznica: widget.baza.midi,
         prelom: Nastavitve.aplikacija.prelom,
         klicaji: _klicaji,
+        risbeSkupne: widget.baza.risbeSkupne,
+        smeSkupno: _smeSkupno,
         obPovecavi: (v) => setState(() => _novaPisava = v * BesediloZRisanjem.osnovnaPisava),
       );
     }
@@ -947,6 +952,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
         risanje: _risanje,
         knjiznica: widget.baza.midi,
         klicaji: _klicaji,
+        risbeSkupne: widget.baza.risbeSkupne,
+        smeSkupno: _smeSkupno,
         obPovecavi: (z) => setState(() => _novaPdf = (z,)),
       );
     }

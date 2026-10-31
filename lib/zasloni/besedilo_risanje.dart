@@ -28,6 +28,8 @@ class BesediloZRisanjem extends StatefulWidget {
     this.obPovecavi,
     this.prelom = false,
     this.klicaji = const [],
+    this.risbeSkupne,
+    this.smeSkupno = false,
   });
 
   /// Širina strani v logičnih točkah in pisava, pri kateri je povečava 1.
@@ -53,6 +55,10 @@ class BesediloZRisanjem extends StatefulWidget {
   /// Klicaji pesmi (na besedilu so tisti s stranjo 0).
   final List<KlicajPesmi> klicaji;
 
+  /// Skupne risbe pesmi (npr. pobarvani refreni) in ali jih član sme risati.
+  final Risbe? risbeSkupne;
+  final bool smeSkupno;
+
   @override
   State<BesediloZRisanjem> createState() => _BesediloZRisanjemState();
 }
@@ -73,6 +79,12 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   Risbe get risbe => widget.risbe;
+
+  @override
+  Risbe? get risbeSkupne => widget.risbeSkupne;
+
+  @override
+  bool get smeSkupno => widget.smeSkupno;
 
   @override
   String get pesem => widget.pesem;
@@ -105,9 +117,15 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     super.dispose();
   }
 
-  /// Vrstice besedila (pri vrstici z akordi samo besedilo, brez akordov), relativno na širino strani.
-  @override
-  List<Rect> vrsticeStrani(int stran) {
+  /// Besedilo vrstice brez akordov (za iskanje vrstice oznake, ko se besedilo spremeni).
+  static String _besedilo(cp.Vrstica v) => (v.komentar + v.kosi.map((k) => k.besedilo).join()).trim();
+
+  /// Ali je vrstica z akordi nad besedilom (oznaka pokrije le besedilo, ne akordov).
+  bool _zAkordi(int i) =>
+      _vrstice[i].vrsta == cp.VrstaVrstice.besedilo && _vrstice[i].imaAkorde && Nastavitve.aplikacija.akordi;
+
+  /// Izrisane neprazne vrstice: indeks vrstice in njen pravokotnik, relativno na širino strani.
+  List<(int, Rect)> _izrisaneVrstice() {
     final strTelo = _stranKljuc.currentContext?.findRenderObject() as RenderBox?;
     if (strTelo == null) return const [];
     const sirina = BesediloZRisanjem.sirinaStrani;
@@ -116,16 +134,53 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
         if (_vrstice[i].vrsta != cp.VrstaVrstice.prazna)
           if (_kljuci[i].currentContext?.findRenderObject() case final RenderBox telo when telo.hasSize)
             () {
-              final v = _vrstice[i];
               final zgoraj = strTelo.globalToLocal(telo.localToGlobal(Offset.zero));
               var r = zgoraj & telo.size;
-              if (v.vrsta == cp.VrstaVrstice.besedilo && v.imaAkorde && Nastavitve.aplikacija.akordi) {
+              if (_zAkordi(i) && !_prelomljena(telo.size.height)) {
                 r = Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom);
               }
               r = r.inflate(2);
-              return Rect.fromLTRB(r.left / sirina, r.top / sirina, r.right / sirina, r.bottom / sirina);
+              return (i, Rect.fromLTRB(r.left / sirina, r.top / sirina, r.right / sirina, r.bottom / sirina));
             }(),
     ];
+  }
+
+  /// Vrstica z akordi, ki se je prelomila v več vrstic (oznaka takrat pokrije vse).
+  static bool _prelomljena(double visina) => visina > BesediloZRisanjem.osnovnaPisava * 1.3 * 2.6;
+
+  /// Vrstice besedila (pri vrstici z akordi samo besedilo, brez akordov), relativno na širino strani.
+  @override
+  List<Rect> vrsticeStrani(int stran) => [for (final (_, r) in _izrisaneVrstice()) r];
+
+  @override
+  List<int> indeksiVrstic(int stran) => [for (final (i, _) in _izrisaneVrstice()) i];
+
+  @override
+  String besediloVrstice(int indeks) => indeks < _vrstice.length ? _besedilo(_vrstice[indeks]) : '';
+
+  /// Vrstica, na katero spada oznaka: ista, če se besedilo ujema, sicer najbližja z enakim besedilom.
+  int? _vrsticaOznake(Oznaka o) {
+    final v = o.vrstica;
+    if (v == null) return null;
+    if (v < _vrstice.length && (o.besedilo.isEmpty || _besedilo(_vrstice[v]) == o.besedilo)) return v;
+    if (o.besedilo.isEmpty) return null;
+    int? najblizja;
+    for (var i = 0; i < _vrstice.length; i++) {
+      if (_besedilo(_vrstice[i]) == o.besedilo && (najblizja == null || (i - v).abs() < (najblizja - v).abs())) {
+        najblizja = i;
+      }
+    }
+    return najblizja;
+  }
+
+  @override
+  Rect? obmocjeOznake(int stran, Oznaka o) {
+    if (o.vrstica == null) return o.obmocje;
+    final k = _vrsticaOznake(o);
+    for (final (i, r) in _izrisaneVrstice()) {
+      if (i == k) return Rect.fromLTRB(r.left + o.od * r.width, r.top, r.left + o.doo * r.width, r.bottom);
+    }
+    return null;
   }
 
   void _dol(PointerDownEvent e) {
@@ -181,6 +236,11 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     _vrstice = cp.razcleni(widget.vsebina);
     if (_kljuci.length != _vrstice.length) _kljuci = [for (final _ in _vrstice) GlobalKey()];
     final vrstice = BesediloPogled.vrstice(context, widget.vsebina, BesediloZRisanjem.osnovnaPisava);
+    // Oznake, vezane na vrstice, se narišejo pod svojo vrstico, kjerkoli je ta zdaj.
+    final poVrsticah = <int, List<Oznaka>>{};
+    for (final o in oznakeVrstic(BesediloZRisanjem.stran)) {
+      if (_vrsticaOznake(o) case final i?) poVrsticah.putIfAbsent(i, () => []).add(o);
+    }
     return Stack(
       children: [
         Listener(
@@ -231,7 +291,23 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     for (var i = 0; i < vrstice.length; i++)
-                                      KeyedSubtree(key: i < _kljuci.length ? _kljuci[i] : null, child: vrstice[i]),
+                                      KeyedSubtree(
+                                        key: i < _kljuci.length ? _kljuci[i] : null,
+                                        child: switch (poVrsticah[i]) {
+                                          final oznake? => Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              Positioned.fill(
+                                                child: CustomPaint(
+                                                  painter: _OznakeVrstice(oznake, zAkordi: _zAkordi(i)),
+                                                ),
+                                              ),
+                                              vrstice[i],
+                                            ],
+                                          ),
+                                          null => vrstice[i],
+                                        },
+                                      ),
                                   ],
                                 ),
                               ),
@@ -272,4 +348,33 @@ class _Stran extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Oznake ene vrstice besedila: delež širine vrstice, pri vrstici z akordi le pas besedila.
+class _OznakeVrstice extends CustomPainter {
+  _OznakeVrstice(this.oznake, {required this.zAkordi});
+
+  final List<Oznaka> oznake;
+  final bool zAkordi;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = Offset.zero & size;
+    final pas = zAkordi && !_BesediloZRisanjemState._prelomljena(size.height)
+        ? Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom)
+        : r;
+    final v = pas.inflate(2);
+    for (final o in oznake) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(v.left + o.od * v.width, v.top, v.left + o.doo * v.width, v.bottom),
+          const Radius.circular(3),
+        ),
+        Paint()..color = Color(o.barva).withValues(alpha: 0.55),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OznakeVrstice old) => true;
 }
