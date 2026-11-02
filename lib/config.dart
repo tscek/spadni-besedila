@@ -19,12 +19,15 @@ class Config {
   /// Vrata strežnika, ki ga na špilu zažene vodja.
   static const vrataVodje = 8765;
 
+  /// Rezervna vrata, če so prva zasedena (Windows nekatera vrata rezervira zase, napaka 10013).
+  static const vsaVrataVodje = [vrataVodje, 8775, 18765, 28765, 38765, 5765];
+
   /// Vrata UDP, na katerih vodja oddaja svoj naslov, da ga sledilci najdejo sami.
   static const vrataIskanja = 8766;
 
   /// Ali je spletna različica odprta s strežnika vodje na lokalnem WiFi-ju (iPad na špilu).
   /// Takrat podatke daje vodja, Google prijava pa ni potrebna.
-  static bool get prekoVodje => kIsWeb && Uri.base.port == vrataVodje;
+  static bool get prekoVodje => kIsWeb && vsaVrataVodje.contains(Uri.base.port);
 
   /// Neprijavljen sledilec (iPad prek vodje): sme le gledati, dodajati klicaje in predlagati pesmi
   /// (na konec čakalne vrste). Risanje, čakalna vrsta, časovnik, MIDI in snemanje so zaklenjeni.

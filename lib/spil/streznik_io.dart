@@ -26,6 +26,7 @@ class StreznikIo implements StreznikVodje {
   void Function(int)? _obSpremembi;
   RawDatagramSocket? _oddajnik;
   Timer? _oddajanje;
+  int _vrata = Config.vrataVodje;
 
   @override
   Future<String> zacni(
@@ -36,8 +37,20 @@ class StreznikIo implements StreznikVodje {
     _obSpremembi = obSpremembi;
     _obSporocilu = obSporocilu;
     _splet = await _naloziSplet();
-    final s = await HttpServer.bind(InternetAddress.anyIPv4, Config.vrataVodje, shared: true);
+    // Prva prosta od dogovorjenih vrat (Windows nekatera rezervira zase); sledilci jih izvejo iz oddajanja.
+    HttpServer? s;
+    Object? napaka;
+    for (final v in Config.vsaVrataVodje) {
+      try {
+        s = await HttpServer.bind(InternetAddress.anyIPv4, v, shared: true);
+        break;
+      } on SocketException catch (e) {
+        napaka = e;
+      }
+    }
+    if (s == null) throw napaka ?? StateError('Ni prostih vrat');
     _streznik = s;
+    _vrata = s.port;
     s.listen((zahteva) async {
       try {
         await _obdelaj(zahteva, baza);
@@ -49,7 +62,7 @@ class StreznikIo implements StreznikVodje {
       }
     });
     await _zacniOddajati(baza.imeClana);
-    return 'http://${await lokalniNaslov() ?? 'localhost'}:${Config.vrataVodje}';
+    return 'http://${await lokalniNaslov() ?? 'localhost'}:$_vrata';
   }
 
   /// Vsaki 2 s pošlje na lokalno omrežje kratko sporočilo, po katerem sledilci najdejo vodjo.
@@ -59,7 +72,7 @@ class StreznikIo implements StreznikVodje {
       final u = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       u.broadcastEnabled = true;
       _oddajnik = u;
-      final sporocilo = utf8.encode(jsonEncode({'spadni': 1, 'vrata': Config.vrataVodje, 'ime': ime}));
+      final sporocilo = utf8.encode(jsonEncode({'spadni': 1, 'vrata': _vrata, 'ime': ime}));
       Future<void> oddaj() async {
         // Splošni naslov in še naslov vsakega omrežja posebej (dostopna točka telefona splošnega ne prepusti vedno).
         final cilji = {'255.255.255.255'};
