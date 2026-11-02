@@ -101,6 +101,13 @@ class Api {
   Future<Uint8List> posnetek(String id) async =>
       base64Decode((await _get({'akcija': 'posnetek', 'id': id}))['base64'] as String);
 
+  /// Sličice članov (stolpec Slika v Nastopih): {ID: {slika, base64}}.
+  Future<Map<String, dynamic>> slikeClanov() => _get({'akcija': 'slikeClanov'});
+
+  /// Nov naslov posnetka (svojega; administrator vseh).
+  Future<Map<String, dynamic>> preimenujPosnetek(String id, String ime) =>
+      _post({'akcija': 'posnetekIme', 'id': id, 'ime': ime});
+
   /// Izbriše posnetek (svojega; administrator tudi tuje skupne).
   Future<Map<String, dynamic>> izbrisiPosnetek(String id) => _post({'akcija': 'posnetekIzbrisi', 'id': id});
 

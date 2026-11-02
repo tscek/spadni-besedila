@@ -136,6 +136,12 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
   String? _predvajam;
   String? _nalagam;
   Duration _pozicija = Duration.zero;
+  Duration _trajanje = Duration.zero;
+  bool _pavza = false;
+  _Zanka _zanka = _Zanka.brez;
+  Duration? _a;
+  Duration? _b;
+  double _hitrost = 1;
   final _narocnine = <StreamSubscription<Object?>>[];
 
   @override
@@ -189,12 +195,17 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
       final p = await s.ustavi();
       if (p == null) return _sporoci('Nič ni bilo posneto.');
       final t = DateTime.now();
+      final ime = await _vprasajIme(
+        'Posnetek ${t.day}. ${t.month}. ${t.hour}:${t.minute.toString().padLeft(2, '0')}',
+        zavrzi: true,
+      );
+      if (ime == null) return;
       await widget.baza.dodajPosnetek(
         widget.api,
         widget.pesem,
         p.bajti,
         skupno: _skupno,
-        ime: 'Posnetek ${t.day}.${t.month}. ${t.hour}:${t.minute.toString().padLeft(2, '0')}',
+        ime: ime,
         vrsta: p.vrsta,
         trajanje: p.sekund,
       );
@@ -205,9 +216,77 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
     }
   }
 
+  /// Naslov posnetka (privzeti je predlagan); null = zavrzi ali prekliči.
+  Future<String?> _vprasajIme(String privzeto, {bool zavrzi = false}) async {
+    final c = TextEditingController(text: privzeto)
+      ..selection = TextSelection(baseOffset: 0, extentOffset: privzeto.length);
+    final ime = await showDialog<String>(
+      context: context,
+      barrierDismissible: !zavrzi,
+      builder: (context) => AlertDialog(
+        title: const Text('Naslov posnetka'),
+        content: TextField(
+          key: const ValueKey('naslov-posnetka'),
+          controller: c,
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(zavrzi ? 'Zavrzi' : 'Prekliči')),
+          FilledButton(
+            key: const ValueKey('shrani-posnetek'),
+            onPressed: () => Navigator.pop(context, c.text),
+            child: const Text('Shrani'),
+          ),
+        ],
+      ),
+    );
+    c.dispose();
+    if (ime == null) return null;
+    return ime.trim().isEmpty ? privzeto : ime.trim();
+  }
+
+  Future<void> _preimenuj(PosnetekPesmi p) async {
+    final ime = await _vprasajIme(p.ime.isEmpty ? 'Posnetek' : p.ime);
+    if (ime == null || ime == p.ime) return;
+    await widget.baza.preimenujPosnetek(widget.api, p.id, ime);
+  }
+
   Future<void> _ustaviPredvajanje() async {
     await _predvajalnik?.stop();
     if (mounted) setState(() => _predvajam = null);
+  }
+
+  Future<void> _premakni(Duration d) async {
+    final pl = _predvajalnik;
+    if (pl == null) return;
+    var t = d < Duration.zero ? Duration.zero : d;
+    if (_trajanje > Duration.zero && t > _trajanje) t = _trajanje;
+    await pl.seek(t);
+    if (mounted) setState(() => _pozicija = t);
+  }
+
+  Future<void> _pavzaNadaljuj() async {
+    final pl = _predvajalnik;
+    if (pl == null) return;
+    if (_pavza) {
+      await pl.resume();
+    } else {
+      await pl.pause();
+    }
+    if (mounted) setState(() => _pavza = !_pavza);
+  }
+
+  Future<void> _nastaviZanko(_Zanka z) async {
+    await _predvajalnik?.setReleaseMode(z == _Zanka.brez ? ReleaseMode.stop : ReleaseMode.loop);
+    setState(() => _zanka = z);
+  }
+
+  void _obPoziciji(Duration d) {
+    if (!mounted) return;
+    setState(() => _pozicija = d);
+    // Ponavljanje odseka A–B (za vadbo težavnega dela).
+    if (_zanka == _Zanka.odsek && _a != null && _b != null && d >= _b!) _predvajalnik?.seek(_a!);
   }
 
   Future<void> _predvajaj(PosnetekPesmi p) async {
@@ -221,11 +300,18 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
       }
       final pl = _predvajalnik ??= _novPredvajalnik();
       await pl.stop();
+      await pl.setReleaseMode(_zanka == _Zanka.brez ? ReleaseMode.stop : ReleaseMode.loop);
       await pl.play(BytesSource(bajti, mimeType: p.vrsta));
+      if (_hitrost != 1) await pl.setPlaybackRate(_hitrost);
       if (mounted) {
         setState(() {
           _predvajam = p.id;
           _pozicija = Duration.zero;
+          _trajanje = Duration(seconds: p.trajanje);
+          _pavza = false;
+          _a = null;
+          _b = null;
+          if (_zanka == _Zanka.odsek) _zanka = _Zanka.brez;
         });
       }
     } catch (e) {
@@ -238,8 +324,11 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
   AudioPlayer _novPredvajalnik() {
     final pl = AudioPlayer();
     _narocnine
-      ..add(pl.onPositionChanged.listen((d) => mounted ? setState(() => _pozicija = d) : null))
-      ..add(pl.onPlayerComplete.listen((_) => mounted ? setState(() => _predvajam = null) : null));
+      ..add(pl.onPositionChanged.listen(_obPoziciji))
+      ..add(pl.onDurationChanged.listen((d) => mounted && d > Duration.zero ? setState(() => _trajanje = d) : null))
+      ..add(
+        pl.onPlayerComplete.listen((_) => mounted && _zanka == _Zanka.brez ? setState(() => _predvajam = null) : null),
+      );
     return pl;
   }
 
@@ -323,6 +412,7 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                     label: Text(_skupno ? 'Snemaj skupni posnetek' : 'Snemaj osebni posnetek'),
                   ),
                 const SizedBox(height: 8),
+                if (posnetki.where((p) => p.id == _predvajam).firstOrNull case final p?) _predvajalnikPanel(context, p),
                 if (posnetki.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
@@ -364,15 +454,25 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                                 else
                                   casBesedilo(Duration(seconds: p.trajanje)),
                                 if (p.velikostKb > 0) '${p.velikostKb} KB',
-                                if (p.skupno) widget.baza.imeClanaZ(p.clan),
+                                if (p.clan.isNotEmpty) 'Posnel: ${widget.baza.imeClanaZ(p.clan)}',
                                 if (p.driveId.isEmpty) 'čaka na pošiljanje',
                               ].join(' · '),
                             ),
                             trailing: widget.baza.smeIzbrisatiPosnetek(p)
-                                ? IconButton(
-                                    tooltip: 'Izbriši',
-                                    icon: const Icon(Icons.delete_outline),
-                                    onPressed: () => _izbrisi(p),
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: 'Popravi naslov',
+                                        icon: const Icon(Icons.edit_outlined),
+                                        onPressed: () => _preimenuj(p),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Izbriši',
+                                        icon: const Icon(Icons.delete_outline),
+                                        onPressed: () => _izbrisi(p),
+                                      ),
+                                    ],
                                   )
                                 : null,
                           ),
@@ -386,4 +486,105 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
       },
     );
   }
+
+  /// Predvajalnik: drsnik, nazaj/naprej za 10 s, ponavljanje (vse ali odsek A–B) in hitrost.
+  Widget _predvajalnikPanel(BuildContext context, PosnetekPesmi p) {
+    final barve = Theme.of(context).colorScheme;
+    final skupaj = _trajanje > Duration.zero ? _trajanje : const Duration(seconds: 1);
+    final poz = _pozicija > skupaj ? skupaj : _pozicija;
+    String oznakaAB(Duration? d, String crka) => d == null ? crka : '$crka ${casBesedilo(d)}';
+    return Card(
+      key: const ValueKey('predvajalnik'),
+      color: barve.secondaryContainer,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(p.ime.isEmpty ? 'Posnetek' : p.ime, style: Theme.of(context).textTheme.titleSmall),
+            Row(
+              children: [
+                Text(casBesedilo(poz)),
+                Expanded(
+                  child: Slider(
+                    value: poz.inMilliseconds.toDouble(),
+                    max: skupaj.inMilliseconds.toDouble(),
+                    onChanged: (v) => _premakni(Duration(milliseconds: v.round())),
+                  ),
+                ),
+                Text(casBesedilo(_trajanje)),
+              ],
+            ),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              children: [
+                IconButton(
+                  tooltip: 'Nazaj 10 s',
+                  icon: const Icon(Icons.replay_10),
+                  onPressed: () => _premakni(_pozicija - const Duration(seconds: 10)),
+                ),
+                IconButton.filled(
+                  tooltip: _pavza ? 'Nadaljuj' : 'Pavza',
+                  icon: Icon(_pavza ? Icons.play_arrow : Icons.pause),
+                  onPressed: _pavzaNadaljuj,
+                ),
+                IconButton(
+                  tooltip: 'Naprej 10 s',
+                  icon: const Icon(Icons.forward_10),
+                  onPressed: () => _premakni(_pozicija + const Duration(seconds: 10)),
+                ),
+                IconButton(
+                  tooltip: switch (_zanka) {
+                    _Zanka.brez => 'Ponavljaj ves posnetek',
+                    _Zanka.ves => _a != null && _b != null ? 'Ponavljaj odsek A–B' : 'Brez ponavljanja',
+                    _Zanka.odsek => 'Brez ponavljanja',
+                  },
+                  isSelected: _zanka != _Zanka.brez,
+                  icon: Icon(_zanka == _Zanka.odsek ? Icons.repeat_one : Icons.repeat),
+                  onPressed: () => _nastaviZanko(switch (_zanka) {
+                    _Zanka.brez => _Zanka.ves,
+                    _Zanka.ves => _a != null && _b != null ? _Zanka.odsek : _Zanka.brez,
+                    _Zanka.odsek => _Zanka.brez,
+                  }),
+                ),
+                TextButton(
+                  onPressed: () => setState(() {
+                    _a = _pozicija;
+                    if (_b != null && _b! <= _a!) _b = null;
+                  }),
+                  child: Text(oznakaAB(_a, 'A')),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (_a == null || _pozicija <= _a!) return;
+                    setState(() => _b = _pozicija);
+                    _nastaviZanko(_Zanka.odsek);
+                  },
+                  child: Text(oznakaAB(_b, 'B')),
+                ),
+                PopupMenuButton<double>(
+                  tooltip: 'Hitrost',
+                  initialValue: _hitrost,
+                  onSelected: (h) {
+                    setState(() => _hitrost = h);
+                    _predvajalnik?.setPlaybackRate(h);
+                  },
+                  itemBuilder: (_) => [
+                    for (final h in const [0.5, 0.75, 1.0, 1.25]) PopupMenuItem(value: h, child: Text('$h×')),
+                  ],
+                  child: Padding(padding: const EdgeInsets.all(8), child: Text('$_hitrost×')),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+/// Ponavljanje v predvajalniku posnetkov.
+enum _Zanka { brez, ves, odsek }

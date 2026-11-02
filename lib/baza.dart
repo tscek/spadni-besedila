@@ -69,6 +69,12 @@ class Baza extends ChangeNotifier {
     if (n != null) neposlano = (jsonDecode(n) as List).cast<Map<String, dynamic>>();
     final s = await shramba.beriBesedilo(_kljucPodatkov);
     if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
+    final slike = await shramba.beriBesedilo(_kljucSlik);
+    if (slike != null) {
+      try {
+        _uporabiSlike((jsonDecode(slike) as Map).cast<String, dynamic>());
+      } catch (_) {}
+    }
     final d = await shramba.beriBesedilo(_kljucDnevnika);
     if (d != null) dnevnik = (jsonDecode(d) as List).cast<Map<String, dynamic>>();
     notifyListeners();
@@ -241,9 +247,14 @@ class Baza extends ChangeNotifier {
     // Neposlani posnetki ostanejo vidni tudi po osvežitvi (dokler jih strežnik ne sprejme).
     final neposlaniPosnetki = [
       for (final n in neposlano)
-        if (n['akcija'] == 'posnetek')
+        if (n['akcija'] == 'posnetek' && n['ime'] != true)
           (izbrisi: n['izbrisi'] == true, vrstica: (n['podatki'] as Map).cast<String, dynamic>()),
     ];
+    final noviNaslovi = {
+      for (final n in neposlano)
+        if (n['akcija'] == 'posnetek' && n['ime'] == true)
+          besedilo((n['podatki'] as Map)['ID']): besedilo((n['podatki'] as Map)['Ime']),
+    };
     final izbrisani = {
       for (final n in neposlaniPosnetki)
         if (n.izbrisi) besedilo(n.vrstica['ID']),
@@ -251,7 +262,8 @@ class Baza extends ChangeNotifier {
     final streznik = t('Posnetki');
     final ids = {for (final r in streznik) besedilo(r['ID'])};
     final vrsticePosnetkov = [
-      ...streznik,
+      for (final r in streznik)
+        if (noviNaslovi[besedilo(r['ID'])] case final ime?) {...r, 'Ime': ime} else r,
       for (final n in neposlaniPosnetki)
         if (!n.izbrisi && !ids.contains(besedilo(n.vrstica['ID']))) n.vrstica,
     ];
@@ -335,6 +347,11 @@ class Baza extends ChangeNotifier {
       final podatki = await api.podatki();
       await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(podatki));
       _uporabi(podatki);
+      try {
+        await osveziSlikeClanov(api);
+      } catch (_) {
+        // slike niso nujne (npr. stara skripta)
+      }
 
       final preneseni = await shramba.kljuci('pdf/');
       final manjkajo = [
@@ -628,6 +645,11 @@ class Baza extends ChangeNotifier {
       await api.izbrisiPosnetek(id);
       return;
     }
+    if (n['ime'] == true) {
+      final odg = await api.preimenujPosnetek(id, besedilo(podatki['Ime']));
+      if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Posnetki', v.cast<String, dynamic>());
+      return;
+    }
     final bajti = await shramba.beriBajte(_kljucPosnetka(id));
     if (bajti == null) return; // zvoka ni več na napravi
     final odg = await api.dodajPosnetek(podatki, bajti);
@@ -643,7 +665,31 @@ class Baza extends ChangeNotifier {
     return bajti;
   }
 
-  /// Ali sme član izbrisati posnetek (svojega; administrator vse).
+  /// Nov naslov posnetka. Če posnetek še čaka na pošiljanje, se popravi kar tam.
+  Future<void> preimenujPosnetek(Api? api, String id, String ime) async {
+    final vrstica = {...?_vrstica('Posnetki', id), 'ID': id, 'Ime': ime};
+    final caka = neposlano.where(
+      (n) =>
+          n['akcija'] == 'posnetek' &&
+          n['izbrisi'] != true &&
+          n['ime'] != true &&
+          besedilo((n['podatki'] as Map)['ID']) == id,
+    );
+    if (caka.firstOrNull case final n?) {
+      n['podatki'] = {...(n['podatki'] as Map).cast<String, dynamic>(), 'Ime': ime};
+    } else {
+      neposlano.add({
+        'akcija': 'posnetek',
+        'ime': true,
+        'podatki': {'ID': id, 'Ime': ime},
+      });
+    }
+    await _shraniNeposlano();
+    await _zamenjajVrstico('Posnetki', vrstica);
+    if (api != null) await _posljiTiho(api);
+  }
+
+  /// Ali sme član izbrisati ali preimenovati posnetek (svojega; administrator vse).
   bool smeIzbrisatiPosnetek(PosnetekPesmi p) => p.clan == clanId || jeAdministrator;
 
   Future<void> izbrisiPosnetek(Api? api, String id) async {
@@ -709,6 +755,46 @@ class Baza extends ChangeNotifier {
         ],
       },
     });
+  }
+
+  // ---------- Slike članov ----------
+
+  static const _kljucSlik = 'slike_clanov.json';
+
+  /// Sličice članov po ID-ju (za izbiro člana na iPadu).
+  Map<String, Uint8List> slikeClanov = {};
+  Map<String, dynamic> _slike = {};
+
+  /// Za vodjo: sličice, kot jih da skripta (iPadi jih dobijo od vodje).
+  String get slikeClanovJson => jsonEncode(_slike);
+
+  /// Poti slik v podatkih članov (prazno = brez slike).
+  Map<String, String> get _potiSlik => {
+    for (final c in ((_podatki['tabele'] as Map?)?['Člani'] as List?) ?? const [])
+      if (c is Map && besedilo(c['Slika']).isNotEmpty) besedilo(c['ID']): besedilo(c['Slika']),
+  };
+
+  void _uporabiSlike(Map<String, dynamic> s) {
+    _slike = s;
+    slikeClanov = {
+      for (final e in s.entries)
+        if (e.value is Map && (e.value as Map)['base64'] is String)
+          e.key: base64Decode((e.value as Map)['base64'] as String),
+    };
+  }
+
+  /// Prenese sličice članov, kadar se je kakšna slika spremenila.
+  Future<void> osveziSlikeClanov(Api api) async {
+    final poti = _potiSlik;
+    final imamo = {for (final e in _slike.entries) e.key: besedilo((e.value as Map?)?['slika'])};
+    if (mapEquals(poti, imamo)) return;
+    if (poti.isEmpty) {
+      _uporabiSlike({});
+    } else {
+      _uporabiSlike(await api.slikeClanov());
+    }
+    await shramba.pisiBesedilo(_kljucSlik, jsonEncode(_slike));
+    notifyListeners();
   }
 
   /// Aktivni člani (ID, ime), npr. za izbiro na iPadu prek vodje.

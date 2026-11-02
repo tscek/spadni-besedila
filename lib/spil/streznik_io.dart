@@ -174,6 +174,8 @@ class StreznikIo implements StreznikVodje {
     switch (p['akcija']) {
       case 'podatki':
         return baza.podatkiZaSledilce();
+      case 'slikeClanov':
+        return baza.slikeClanovJson;
       case 'pdf':
         final id = p['id'] ?? '';
         final b = await baza.pdf(id);

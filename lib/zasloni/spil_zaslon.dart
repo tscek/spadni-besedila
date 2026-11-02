@@ -52,15 +52,29 @@ Future<void> izberiClana(BuildContext context, Baza baza) async {
   if (clani.isEmpty) return;
   final id = await showDialog<String>(
     context: context,
-    builder: (context) => SimpleDialog(
+    builder: (context) => AlertDialog(
       title: const Text('Kdo igra na tem iPadu?'),
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Text('Tako vidiš svoje opombe in risbe, nove pa vodja shrani zate.'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Tako vidiš svoje opombe in risbe.'),
+              const SizedBox(height: 16),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final c in clani)
+                    GumbClana(ime: c.ime, slika: baza.slikeClanov[c.id], onPressed: () => Navigator.pop(context, c.id)),
+                ],
+              ),
+            ],
+          ),
         ),
-        for (final c in clani) SimpleDialogOption(onPressed: () => Navigator.pop(context, c.id), child: Text(c.ime)),
-      ],
+      ),
     ),
   );
   if (id == null) return;
@@ -652,6 +666,48 @@ class SledilecZaslon extends StatelessWidget {
                   label: const Text('Seznam'),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Velik gumb člana s sličico (ali začetnicami) in imenom.
+class GumbClana extends StatelessWidget {
+  const GumbClana({super.key, required this.ime, this.slika, required this.onPressed});
+
+  final String ime;
+  final Uint8List? slika;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final barve = Theme.of(context).colorScheme;
+    final zacetnice = ime.trim().split(RegExp(r'\s+')).where((d) => d.isNotEmpty).take(2).map((d) => d[0]).join();
+    return SizedBox(
+      width: 120,
+      child: Material(
+        color: barve.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 44,
+                  backgroundColor: barve.primaryContainer,
+                  foregroundImage: slika == null ? null : MemoryImage(slika!),
+                  child: Text(zacetnice.toUpperCase(), style: TextStyle(fontSize: 28, color: barve.onPrimaryContainer)),
+                ),
+                const SizedBox(height: 8),
+                Text(ime, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+              ],
+            ),
           ),
         ),
       ),

@@ -38,6 +38,7 @@ http.Response _odg(String telo, int koda) => http.Response.bytes(utf8.encode(tel
 void main() {
   late List<Map<String, dynamic>> poslano;
   late bool povezava;
+  var slik = 0;
   var staraSkripta = false;
 
   Api api() => Api(
@@ -45,6 +46,18 @@ void main() {
     url: 'https://example.com/exec',
     client: MockClient((r) async {
       if (!povezava) throw http.ClientException('Ni povezave');
+      if (r.method == 'GET' && r.url.queryParameters['akcija'] == 'slikeClanov') {
+        slik++;
+        return _odg(
+          jsonEncode({
+            'c1': {
+              'slika': 'Člani_Images/t.jpg',
+              'base64': base64Encode([7, 7, 7]),
+            },
+          }),
+          200,
+        );
+      }
       if (r.method == 'GET' && r.url.queryParameters['akcija'] == 'posnetek') {
         return _odg(
           jsonEncode({
@@ -62,7 +75,7 @@ void main() {
                 {'ID': 'a', 'Koda': 1, 'Naslov': 'BELO OBLEKO', 'Aktivna': true},
               ],
               'Člani': [
-                {'ID': 'c1', 'Ime': 'Tomaž'},
+                {'ID': 'c1', 'Ime': 'Tomaž', 'Slika': 'Člani_Images/t.jpg'},
                 {'ID': 'c2', 'Ime': 'Jože'},
               ],
               'Posnetki': [
@@ -160,11 +173,41 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('ustavi-snemanje')));
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    // Ob ustavitvi ponudi privzeti naslov, ki ga lahko popraviš.
+    expect(find.byKey(const ValueKey('naslov-posnetka')), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('naslov-posnetka')), 'Refren počasi');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('shrani-posnetek')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pump(const Duration(milliseconds: 300));
     final nov = baza.posnetki['a']!.firstWhere((p) => p.id != 'p2');
+    expect(nov.ime, 'Refren počasi');
     expect(nov.skupno, isTrue);
     expect(nov.trajanje, 7);
     expect(find.textContaining('čaka na pošiljanje'), findsOneWidget);
+    expect(find.textContaining('Posnel: Tomaž'), findsOneWidget);
+    expect(find.textContaining('Posnel: Jože'), findsOneWidget);
+
+    // Preimenovanje neposlanega posnetka popravi kar čakajoči zapis.
+    await tester.runAsync(() => baza.preimenujPosnetek(null, nov.id, 'Refren'));
+    expect(baza.neposlano.single['podatki']['Ime'], 'Refren');
+    expect(baza.posnetki['a']!.firstWhere((p) => p.id == nov.id).ime, 'Refren');
+  });
+
+  test('preimenovanje poslanega posnetka gre na strežnik', () async {
+    final baza = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+    await baza.osvezi(api());
+    povezava = false;
+    await baza.preimenujPosnetek(api(), 'p2', 'Uvod počasi');
+    expect(baza.posnetki['a']!.single.ime, 'Uvod počasi');
+    povezava = true;
+    await baza.posljiNeposlano(api());
+    expect(poslano.last, containsPair('akcija', 'posnetekIme'));
+    expect(poslano.last['ime'], 'Uvod počasi');
   });
 
   test('stara skripta: posnetek ostane viden in na napravi, osvežitev dela, pošlje se po novi skripti', () async {
@@ -195,5 +238,18 @@ void main() {
     await znova.osvezi(api());
     expect(poslano.map((t) => t['akcija']), contains('posnetek'));
     expect(znova.neposlano, isEmpty);
+  });
+
+  test('sličice članov se prenesejo le, ko se slika v Nastopih spremeni', () async {
+    slik = 0;
+    final shramba = ShrambaIdb(newIdbFactoryMemory());
+    final baza = Baza(shramba: shramba);
+    await baza.osvezi(api());
+    expect(baza.slikeClanov['c1'], [7, 7, 7]);
+    await baza.osvezi(api());
+    expect(slik, 1);
+    final znova = Baza(shramba: shramba);
+    await znova.nalozi();
+    expect(znova.slikeClanov['c1'], [7, 7, 7]);
   });
 }
