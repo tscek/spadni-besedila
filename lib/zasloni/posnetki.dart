@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../baza.dart';
@@ -511,11 +512,58 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                       ],
                     ),
                   ),
+                _igranja(context),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// Kdaj je bila pesem igrana na špilih, s povezavo na YouTube na pravem mestu (ko je video narejen).
+  Widget _igranja(BuildContext context) {
+    final igranja = widget.baza.igranja[widget.pesem] ?? const <Igranje>[];
+    if (igranja.isEmpty) return const SizedBox.shrink();
+    final tema = Theme.of(context);
+    String dv(int x) => x.toString().padLeft(2, '0');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(),
+        Text('Igrana na špilih (${igranja.length})', style: tema.textTheme.titleMedium),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.3),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final ig in igranja)
+                () {
+                  final c = ig.cas.toLocal();
+                  final sn = widget.baza.snemanjeOb(ig.cas);
+                  final povezava = sn?.povezava(ig.cas);
+                  return ListTile(
+                    key: ValueKey('igranje-${ig.cas.toIso8601String()}'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.event_note, color: tema.colorScheme.primary),
+                    title: Text('${c.day}. ${c.month}. ${c.year} ob ${c.hour}:${dv(c.minute)}'),
+                    subtitle: sn == null
+                        ? null
+                        : Text(povezava == null ? '${sn.naslov} · video še ni narejen' : sn.naslov),
+                    trailing: povezava == null
+                        ? null
+                        : IconButton(
+                            tooltip: 'Odpri na YouTubu',
+                            icon: const Icon(Icons.smart_display_outlined, color: Colors.red),
+                            onPressed: () => launchUrl(Uri.parse(povezava), mode: LaunchMode.externalApplication),
+                          ),
+                  );
+                }(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

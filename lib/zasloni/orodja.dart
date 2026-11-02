@@ -8,7 +8,9 @@ import '../config.dart';
 import '../midi/midi.dart';
 import '../nastavitve.dart';
 import '../runda.dart';
+import '../snemanje.dart';
 import 'midi_zaslon.dart';
+import 'snemanje_zaslon.dart';
 
 /// Majhna ikona Bluetooth: modra, ko je povezana vsaj ena naprava Bluetooth MIDI. Dotik odpre nastavitve MIDI.
 class BluetoothIkona extends StatelessWidget {
@@ -197,34 +199,52 @@ class RundaGumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final runda = Runda.aplikacija;
     return ListenableBuilder(
-      listenable: Listenable.merge([runda, Nastavitve.aplikacija]),
+      listenable: Listenable.merge([runda, Nastavitve.aplikacija, SnemanjeSpila.aplikacija]),
       builder: (context, _) {
         final n = Nastavitve.aplikacija;
         final pavza = runda.pavza;
+        final snema = SnemanjeSpila.aplikacija.aktivno;
+        // Rdeča pika: špil se snema (na kateri napravi, piše v oknu runde).
+        Widget sPiko(Widget w) => !snema
+            ? w
+            : Badge(
+                key: const ValueKey('snemanje-pika'),
+                backgroundColor: SnemanjeSpila.aplikacija.pavza ? Colors.grey : Colors.red,
+                smallSize: 10,
+                child: w,
+              );
         // Neprijavljen sledilec časovnik samo vidi.
         final odpri = Config.samoKlicaji ? null : () => oknoRunde(context, baza);
         if (pavza == null) {
-          if (Config.samoKlicaji) return const SizedBox.shrink();
-          return IconButton(tooltip: 'Runda / pavza', icon: const Icon(Icons.timer_outlined), onPressed: odpri);
+          if (Config.samoKlicaji && !snema) return const SizedBox.shrink();
+          return sPiko(
+            IconButton(
+              tooltip: snema ? 'Runda / pavza (snema: ${SnemanjeSpila.aplikacija.naprava})' : 'Runda / pavza',
+              icon: const Icon(Icons.timer_outlined),
+              onPressed: odpri,
+            ),
+          );
         }
         final barva = Color(pavza ? n.pavza.barva : n.igranje.barva);
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Material(
-            color: barva,
-            shape: const StadiumBorder(),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: odpri,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(pavza ? Icons.pause : Icons.music_note, size: 18, color: Colors.white),
-                    const SizedBox(width: 4),
-                    const CasRunde(barva: Colors.white),
-                  ],
+        return sPiko(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Material(
+              color: barva,
+              shape: const StadiumBorder(),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: odpri,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(pavza ? Icons.pause : Icons.music_note, size: 18, color: Colors.white),
+                      const SizedBox(width: 4),
+                      const CasRunde(barva: Colors.white),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -329,6 +349,8 @@ Future<void> oknoRunde(BuildContext context, Baza baza) => showDialog<void>(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [gumb(true), const SizedBox(width: 12), gumb(false)],
               ),
+              // Snemanje špila: kje se snema; administrator ga začne in konča (tudi z druge naprave).
+              PloscaSnemanja(baza: baza),
               const SizedBox(height: 12),
               if (r.zgodovina.isEmpty)
                 const Text('Pretekle runde in pavze se pokažejo tukaj.')

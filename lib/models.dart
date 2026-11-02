@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Vrstica iz preglednice Besedila baza, kot jo vrne skripta (ključ = ime stolpca).
 typedef Zapis = Map<String, dynamic>;
 
@@ -516,3 +518,89 @@ class PosnetekPesmi {
     'Čas': cas?.toUtc().toIso8601String() ?? '',
   };
 }
+
+/// Kos posnetka špila: zaporedna številka, začetek (prava ura) in dolžina.
+typedef KosSnemanja = ({int i, DateTime zacetek, int sekund});
+
+/// Posneti špil (list Snemanja): naslov (nastop ali datum), stanje in video na YouTubu.
+class Snemanje {
+  Snemanje({
+    required this.id,
+    required this.naslov,
+    this.nastop = '',
+    this.zasedba = '',
+    this.zacetek,
+    this.konec,
+    this.naprava = '',
+    this.stanje = '',
+    this.youtube = '',
+    this.kosi = const [],
+  });
+
+  factory Snemanje.izVrstice(Zapis r) {
+    var kosi = <KosSnemanja>[];
+    try {
+      final j = jsonDecode(besedilo(r['Kosi']).isEmpty ? '[]' : besedilo(r['Kosi'])) as List;
+      kosi = [
+        for (final k in j.whereType<Map>())
+          if (DateTime.tryParse(k['z']?.toString() ?? '') case final z?)
+            (i: (k['i'] as num).toInt(), zacetek: z, sekund: (k['t'] as num? ?? 0).toInt()),
+      ]..sort((a, b) => a.i.compareTo(b.i));
+    } catch (_) {}
+    return Snemanje(
+      id: besedilo(r['ID']),
+      naslov: besedilo(r['Naslov']),
+      nastop: besedilo(r['Nastop']),
+      zasedba: besedilo(r['Zasedba']),
+      zacetek: DateTime.tryParse(besedilo(r['Začetek'])),
+      konec: DateTime.tryParse(besedilo(r['Konec'])),
+      naprava: besedilo(r['Naprava']),
+      stanje: besedilo(r['Stanje']),
+      youtube: besedilo(r['YouTube ID']),
+      kosi: kosi,
+    );
+  }
+
+  final String id;
+  final String naslov;
+  final String nastop;
+  final String zasedba;
+  final DateTime? zacetek;
+  final DateTime? konec;
+  final String naprava;
+  final String stanje;
+
+  /// ID videa na YouTubu (ko je video narejen).
+  final String youtube;
+  final List<KosSnemanja> kosi;
+
+  /// Ali je trenutek [t] znotraj tega snemanja (od začetka do konca, z nekaj minutami rezerve).
+  bool vsebuje(DateTime t) {
+    final z = zacetek;
+    if (z == null || t.isBefore(z.subtract(const Duration(minutes: 1)))) return false;
+    final k = konec ?? (kosi.isEmpty ? null : kosi.last.zacetek.add(Duration(seconds: kosi.last.sekund)));
+    return k == null || !t.isAfter(k.add(const Duration(minutes: 1)));
+  }
+
+  /// Mesto v videu (sekunde), kjer je trenutek [t]: pavze so izpuščene, zato se šteje po kosih.
+  int? odmik(DateTime t) {
+    var pred = 0;
+    for (final k in kosi) {
+      final od = t.difference(k.zacetek).inSeconds;
+      if (od < 0) return pred; // v pavzi pred tem kosom: začetek kosa
+      if (od <= k.sekund) return pred + od;
+      pred += k.sekund;
+    }
+    return kosi.isEmpty ? null : pred;
+  }
+
+  /// Povezava na YouTube na mestu [t] (ali na začetek videa).
+  String? povezava([DateTime? t]) {
+    if (youtube.isEmpty) return null;
+    final s = t == null ? null : odmik(t);
+    return 'https://youtu.be/$youtube${s == null || s == 0 ? '' : '?t=$s'}';
+  }
+}
+
+/// Igranje pesmi na špilu (iz dnevnika vodje in sledilcev).
+typedef Igranje = ({String pesem, DateTime cas, int sekund});

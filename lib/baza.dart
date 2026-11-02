@@ -38,6 +38,13 @@ class Baza extends ChangeNotifier {
 
   /// Zvočni posnetki po pesmih: skupni in svoji.
   Map<String, List<PosnetekPesmi>> posnetki = {};
+
+  /// Posneti špili (najnovejši prvi) in igranja po pesmih (najnovejša prva).
+  List<Snemanje> snemanja = [];
+  Map<String, List<Igranje>> igranja = {};
+
+  /// Snemanje, v katerem je bila pesem igrana ob [cas].
+  Snemanje? snemanjeOb(DateTime cas) => snemanja.where((s) => s.vsebuje(cas)).firstOrNull;
   KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};
@@ -114,6 +121,8 @@ class Baza extends ChangeNotifier {
   static int _stevec = 0;
 
   /// Kratek ID, ki ga določi naprava (klicaj, zapis dnevnika), da ga je mogoče izbrisati tudi brez interneta.
+  static String novId() => _novId();
+
   static String _novId() {
     _stevec = (_stevec + 1) % 1296;
     final t = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
@@ -273,6 +282,22 @@ class Baza extends ChangeNotifier {
     }
     for (final l in posnetki.values) {
       l.sort((a, b) => (b.cas ?? DateTime(0)).compareTo(a.cas ?? DateTime(0)));
+    }
+    snemanja = t('Snemanja').map(Snemanje.izVrstice).where((s) => s.id.isNotEmpty).toList()
+      ..sort((a, b) => (b.zacetek ?? DateTime(0)).compareTo(a.zacetek ?? DateTime(0)));
+    igranja = {};
+    for (final r in t('Igranja')) {
+      final cas = DateTime.tryParse(besedilo(r['Čas']));
+      final pesem = besedilo(r['Pesem']);
+      if (cas == null || pesem.isEmpty) continue;
+      igranja.putIfAbsent(pesem, () => []).add((
+        pesem: pesem,
+        cas: cas,
+        sekund: int.tryParse(besedilo(r['Trajanje (s)'])) ?? 0,
+      ));
+    }
+    for (final l in igranja.values) {
+      l.sort((a, b) => b.cas.compareTo(a.cas));
     }
     vloge = ((podatki['vloge'] as List?) ?? []).cast<Map<String, dynamic>>().map(Vloga.izVrstice).toList();
     final zasedba = this.zasedba;

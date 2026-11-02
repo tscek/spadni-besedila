@@ -105,6 +105,34 @@ class Api {
   Future<Uint8List> posnetek(String id) async =>
       base64Decode((await _get({'akcija': 'posnetek', 'id': id}))['base64'] as String);
 
+  /// Nastopi iz Nastopov okrog datuma (±1 dan): {nastopi: [{ID, Datum, Kraj, Dogodek, Zasedba, ZasedbaIme, Od}]}.
+  Future<Map<String, dynamic>> nastopi(DateTime datum) => _get({
+    'akcija': 'nastopi',
+    'datum': '${datum.year}-${datum.month.toString().padLeft(2, '0')}-${datum.day.toString().padLeft(2, '0')}',
+  });
+
+  /// Nova ali spremenjena vrstica snemanja špila.
+  Future<Map<String, dynamic>> snemanje(Map<String, dynamic> vrstica) =>
+      _post({'akcija': 'snemanje', 'snemanje': vrstica});
+
+  /// Kos posnetka špila (ponovno poslan kos se ne podvoji).
+  Future<Map<String, dynamic>> snemanjeKos({
+    required String id,
+    required int i,
+    required String zacetek,
+    required int trajanje,
+    required Uint8List bajti,
+  }) => _post({
+    'akcija': 'snemanjeKos',
+    'id': id,
+    'i': i,
+    'zacetek': zacetek,
+    'trajanje': trajanje,
+    'vrsta': 'audio/mp4',
+    'koncnica': 'm4a',
+    'base64': base64Encode(bajti),
+  });
+
   /// Sličice članov (stolpec Slika v Nastopih): {ID: {slika, base64}}.
   Future<Map<String, dynamic>> slikeClanov() => _get({'akcija': 'slikeClanov'});
 

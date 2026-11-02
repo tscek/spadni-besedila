@@ -15,6 +15,7 @@ import 'nastavitve.dart';
 import 'odigrane.dart';
 import 'risbe.dart';
 import 'runda.dart';
+import 'snemanje.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
@@ -29,6 +30,14 @@ Future<void> main() async {
   await Odigrane.aplikacija.nalozi();
   await Predloge.aplikacija.nalozi();
   await Runda.aplikacija.nalozi();
+  // Snemanje špila: kosi, ki še niso na Drivu, gredo, ko je član prijavljen.
+  if (!Config.prekoVodje) {
+    SnemanjeSpila.aplikacija
+      ..baza = baza
+      ..api = (() => prijava.prijavljen ? Api(prijava.zeton) : null)
+      ..imeNaprave = kIsWeb ? 'Splet' : defaultTargetPlatform.name;
+    await SnemanjeSpila.aplikacija.nalozi();
+  }
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   if (Config.samoKlicaji) {
     // iPad prek vodje MIDI nima in ga tudi ne sme pošiljati vodji (zaklenjeno za neprijavljene).
@@ -48,6 +57,7 @@ Future<void> main() async {
       posodobitev.preveri(api);
       // Vodja: kar so člani narisali na zadnjem špilu, gre zdaj na Drive.
       if (baza.smeVoditi) baza.risbeClanov.posljiNeposlane().ignore();
+      SnemanjeSpila.aplikacija.poslji().ignore();
       // Spremembe pesmi in besedil, shranjene brez interneta.
       if (baza.neposlano.isNotEmpty) baza.posljiNeposlano(api).ignore();
       // Prva prijava na novi napravi: takoj prenesi pesmi.

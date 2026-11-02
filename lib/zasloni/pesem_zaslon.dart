@@ -965,11 +965,16 @@ class _PesemZaslonState extends State<PesemZaslon> {
               icon: const Icon(Icons.save_outlined),
               onPressed: _shraniZoom,
             ),
-          // Pesem ima posnetke: do njih tudi brez risanja.
-          if (widget.baza.posnetki[p.id]?.length case final n? when n > 0 && _posnetki != null)
+          // Pesem ima posnetke ali je bila igrana na špilih: do njih tudi brez risanja.
+          if (_posnetki != null &&
+              ((widget.baza.posnetki[p.id]?.isNotEmpty ?? false) || (widget.baza.igranja[p.id]?.isNotEmpty ?? false)))
             IconButton(
               tooltip: 'Posnetki',
-              icon: Badge.count(count: n, child: const Icon(Icons.mic_none)),
+              icon: Badge.count(
+                count: widget.baza.posnetki[p.id]?.length ?? 0,
+                isLabelVisible: widget.baza.posnetki[p.id]?.isNotEmpty ?? false,
+                child: const Icon(Icons.mic_none),
+              ),
               onPressed: () => _posnetki!(false),
             ),
           ..._orodja(context, Mesto.zgoraj),

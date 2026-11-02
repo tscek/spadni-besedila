@@ -184,7 +184,7 @@ void main() {
     // Nov sledilec (osvežena stran na iPadu) dobi trenutni čas, ne časa ob zadnji spremembi.
     Runda.aplikacija.zacetek = DateTime.now().subtract(const Duration(seconds: 75));
     streznik.sprememba!(1);
-    expect(streznik.poslano.last['tece'], inInclusiveRange(75, 76));
+    expect(streznik.poslano.lastWhere((m) => m['vrsta'] == 'runda')['tece'], inInclusiveRange(75, 76));
     await vodja.ustavi();
 
     // Sledilec: stanje od vodje (teče že 90 s), gumbi gredo vodji.

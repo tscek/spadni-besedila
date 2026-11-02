@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../baza.dart';
 import '../config.dart';
 import '../runda.dart';
+import '../snemanje.dart';
 import 'streznik.dart';
 
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
@@ -129,7 +130,10 @@ class Spil extends ChangeNotifier {
     try {
       naslov = await s.zacni(baza, (n) {
         // Nov sledilec (npr. osvežen iPad) dobi trenutni čas runde, ne tistega ob zadnji spremembi.
-        if (n > sledilcev && _streznik != null) _objaviRundo();
+        if (n > sledilcev && _streznik != null) {
+          _objaviRundo();
+          _objaviSnemanje();
+        }
         sledilcev = n;
         notifyListeners();
       }, obSporocilu: _odSledilca);
@@ -142,6 +146,9 @@ class Spil extends ChangeNotifier {
       // Časovnik runde in pavze je skupen: vodja ga pošilja ob vsaki spremembi.
       Runda.aplikacija.addListener(_objaviRundo);
       _objaviRundo();
+      // Snemanje špila: vsi vidijo, da in na kateri napravi se snema.
+      SnemanjeSpila.aplikacija.addListener(_objaviSnemanje);
+      _objaviSnemanje();
       // Klicaji: vsak nov ali izbrisan gre takoj vsem.
       _bazaVodje = baza;
       _zadnjiKlicaji = null;
@@ -256,6 +263,9 @@ class Spil extends ChangeNotifier {
         _nastaviNaslednje([]);
       case 'runda':
         Runda.aplikacija.izvedi(u);
+      // Snemanje vodi samo administrator (iPad prek vodje ukaza ne more poslati, glej streznik_io).
+      case 'snemanje' when u['admin'] == true:
+        SnemanjeSpila.aplikacija.izvedi(u);
       case 'klicaj' when u['klicaj'] is Map && _bazaVodje != null:
         final k = (u['klicaj'] as Map).cast<String, dynamic>();
         final b = _bazaVodje!;
@@ -279,6 +289,8 @@ class Spil extends ChangeNotifier {
   }
 
   void _objaviRundo() => _streznik?.poslji(jsonEncode(Runda.aplikacija.vJson()));
+
+  void _objaviSnemanje() => _streznik?.poslji(jsonEncode(SnemanjeSpila.aplikacija.vJson()));
 
   void _objaviKlicaje() {
     final b = _bazaVodje;
@@ -356,6 +368,8 @@ class Spil extends ChangeNotifier {
         napaka = null;
         // Gumba runde in pavze gresta vodji, ta pa časovnik pošlje vsem.
         Runda.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'runda', ...u});
+        SnemanjeSpila.aplikacija.vodji = (u) =>
+            _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'snemanje', 'admin': baza?.jeAdministrator ?? false, ...u});
         // Klicaj iz aplikacije gre tudi vodji (iPad ga vodji pošlje sam prek /api).
         if (!Config.prekoVodje) {
           baza?.obKlicaju = (v, izbrisi) =>
@@ -371,6 +385,8 @@ class Spil extends ChangeNotifier {
             notifyListeners();
           } else if (j['vrsta'] == 'runda') {
             Runda.aplikacija.prevzemi(j);
+          } else if (j['vrsta'] == 'snemanje') {
+            SnemanjeSpila.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'klicaji' && j['klicaji'] is List) {
             baza?.prevzemiKlicaje(
               (j['klicaji'] as List).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList(),
@@ -394,6 +410,9 @@ class Spil extends ChangeNotifier {
   void _prekinjeno(WebSocketChannel? kanal) {
     if (kanal != null && kanal != _kanal) return;
     Runda.aplikacija.vodji = null;
+    SnemanjeSpila.aplikacija
+      ..vodji = null
+      ..pozabiVodjo();
     baza?.obKlicaju = null;
     if (povezan) {
       povezan = false;
@@ -408,6 +427,9 @@ class Spil extends ChangeNotifier {
 
   void _ustaviSledenje() {
     Runda.aplikacija.vodji = null;
+    SnemanjeSpila.aplikacija
+      ..vodji = null
+      ..pozabiVodjo();
     baza?.obKlicaju = null;
     _ponovnaPovezava?.cancel();
     _poslusam?.cancel();
@@ -426,6 +448,7 @@ class Spil extends ChangeNotifier {
     _ustaviSledenje();
     _naslovVodje = null;
     Runda.aplikacija.removeListener(_objaviRundo);
+    SnemanjeSpila.aplikacija.removeListener(_objaviSnemanje);
     _bazaVodje?.removeListener(_objaviKlicaje);
     _bazaVodje = null;
     await _streznik?.ustavi();
