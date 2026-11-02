@@ -1,0 +1,67 @@
+name: YouTube
+
+# Posneti špili: iz kosov na Drivu naredi video in ga naloži na YouTube kot zasebnega (tool/youtube/video.py).
+# Teče trikrat na dan in ročno (Run workflow). Brez YouTube skrivnosti video samo naredi in ga priloži gradnji.
+on:
+  schedule:
+    - cron: "15 4,10,16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube
+  cancel-in-progress: false
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Posneti špili brez videa
+        id: seznam
+        env:
+          UPLOAD_KLJUC: ${{ secrets.UPLOAD_KLJUC }}
+        run: |
+          url=$(grep -o "https://script.google.com/macros/s/[^']*/exec" lib/config.dart)
+          echo "API_URL=$url" >> "$GITHUB_ENV"
+          odg=$(curl -sS -L --max-time 120 -H "Content-Type: text/plain" \
+            --data "{\"akcija\":\"snemanjaZaVideo\",\"kljuc\":\"$UPLOAD_KLJUC\"}" "$url")
+          echo "$odg" | head -c 400; echo
+          if echo "$odg" | grep -q '"snemanja":\[\]'; then
+            echo "dela=0" >> "$GITHUB_OUTPUT"
+          elif echo "$odg" | grep -q '"snemanja"'; then
+            echo "dela=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Skripta ne pozna snemanjaZaVideo. V Apps Scriptu: Deploy > Manage deployments > New version."
+            exit 1
+          fi
+
+      - name: Orodja
+        if: steps.seznam.outputs.dela == '1'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core > /dev/null
+          pip install -q requests pillow
+
+      - name: Video in YouTube
+        if: steps.seznam.outputs.dela == '1'
+        env:
+          UPLOAD_KLJUC: ${{ secrets.UPLOAD_KLJUC }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python tool/youtube/video.py --izhod video
+
+      # Brez YouTube skrivnosti: video za ogled med artefakti gradnje (7 dni).
+      - name: Video za ogled
+        if: steps.seznam.outputs.dela == '1' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: video/*/video.mp4
+          retention-days: 7
+          if-no-files-found: ignore
