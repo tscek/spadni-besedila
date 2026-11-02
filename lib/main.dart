@@ -6,6 +6,7 @@ import 'api.dart';
 import 'config.dart';
 import 'baza.dart';
 import 'posodobitev.dart';
+import 'posodobitev_windows_web.dart' if (dart.library.io) 'posodobitev_windows_io.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
 import 'zasloni/pesem_zaslon.dart';
@@ -19,8 +20,10 @@ import 'snemanje.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> argumenti) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Windows: nova različica iz začasne mape zamenja datoteke in zažene posodobljeno aplikacijo.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) await dokoncajNamestitev(argumenti);
   final prijava = Prijava();
   final baza = Baza();
   final posodobitev = Posodobitev();
