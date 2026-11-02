@@ -59,6 +59,52 @@ enum InfoVrstice {
   };
 }
 
+/// Oblaček na besedilu pesmi: podatek, velikost, barva in kot (zlagajo se navzdol).
+@immutable
+class Oblacek {
+  const Oblacek({required this.vsebina, this.velikost = 1, this.barva, this.levo = false});
+
+  factory Oblacek.izJson(Map<String, dynamic> j) => Oblacek(
+    vsebina: InfoVrstice.values.asNameMap()[j['v']] ?? InfoVrstice.tonaliteta,
+    velikost: ((j['s'] as num?)?.toInt() ?? 1).clamp(0, 2),
+    barva: (j['b'] as num?)?.toInt(),
+    levo: j['l'] == true,
+  );
+
+  final InfoVrstice vsebina;
+
+  /// 0 majhen, 1 srednji, 2 velik.
+  final int velikost;
+
+  /// Ozadje (ARGB); null = barva teme.
+  final int? barva;
+
+  /// Levi (sicer desni) zgornji kot.
+  final bool levo;
+
+  static const velikosti = ['Majhen', 'Srednji', 'Velik'];
+
+  Map<String, dynamic> vJson() => {'v': vsebina.name, 's': velikost, 'b': ?barva, if (levo) 'l': true};
+
+  Oblacek kopija({InfoVrstice? vsebina, int? velikost, int? Function()? barva, bool? levo}) => Oblacek(
+    vsebina: vsebina ?? this.vsebina,
+    velikost: velikost ?? this.velikost,
+    barva: barva == null ? this.barva : barva(),
+    levo: levo ?? this.levo,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is Oblacek &&
+      other.vsebina == vsebina &&
+      other.velikost == velikost &&
+      other.barva == barva &&
+      other.levo == levo;
+
+  @override
+  int get hashCode => Object.hash(vsebina, velikost, barva, levo);
+}
+
 /// Gumb v oknu runde: pavza ali igranje, z napisom, barvo in MIDI ukazom ob kliku.
 class GumbRunde {
   const GumbRunde({required this.napis, required this.barva, this.midi = ''});
@@ -93,6 +139,7 @@ class Nastavitve extends ChangeNotifier {
   static const _zgoraj = 'zgornja_vrstica';
   static const _prelom = 'prelom_vrstic';
   static const _oblacek = 'oblacek_tonalitete';
+  static const _oblacki = 'oblacki';
   static const _zasedba = 'zasedba';
   static const _barvaZgoraj = 'barva_zgoraj';
   static const _barvaSpodaj = 'barva_spodaj';
@@ -130,8 +177,11 @@ class Nastavitve extends ChangeNotifier {
   /// Izbrana zasedba (ID), če je član v več zasedbah; prikažejo se njene pesmi in setliste.
   String zasedba = '';
 
-  /// Tonaliteta v oblačku v zgornjem desnem kotu pesmi (pod zgornjo vrstico).
+  /// Stara nastavitev (samo tonaliteta v oblačku); ob nalaganju postane prvi oblaček.
   bool oblacekTonalitete = false;
+
+  /// Oblački na besedilu pesmi (levo in desno zgoraj, zloženi navzdol).
+  List<Oblacek> oblacki = const [];
 
   /// Pri pesmi z besedilom in PDF-jem najprej pokaži PDF.
   bool pdfNajprej = false;
@@ -230,6 +280,13 @@ class Nastavitve extends ChangeNotifier {
     }
     prelom = p.getBool(_prelom) ?? d.prelom;
     oblacekTonalitete = p.getBool(_oblacek) ?? d.oblacekTonalitete;
+    final ob = p.getString(_oblacki);
+    oblacki = ob == null
+        ? (oblacekTonalitete ? const [Oblacek(vsebina: InfoVrstice.tonaliteta)] : const [])
+        : [
+            for (final o in (jsonDecode(ob) as List? ?? const []))
+              if (o is Map) Oblacek.izJson(o.cast<String, dynamic>()),
+          ];
     zasedba = p.getString(_zasedba) ?? d.zasedba;
     pogledPrevzet = p.getString(_pogledPrevzet) ?? '';
     barvaZgoraj = p.getInt(_barvaZgoraj);
@@ -256,7 +313,7 @@ class Nastavitve extends ChangeNotifier {
   static bool _kljucPogleda(String k) =>
       const {
         _pisava, _pdfNajprej, _akordi, _svetla, _poljaSeznama, _ikoneSeznama, _razvrsti, _padajoce, //
-        _minuteOdigrane, _spodaj, _poljaVrste, _zgoraj, _prelom, _oblacek, _barvaZgoraj, _barvaSpodaj,
+        _minuteOdigrane, _spodaj, _poljaVrste, _zgoraj, _prelom, _oblacek, _oblacki, _barvaZgoraj, _barvaSpodaj,
         _poljaIskalnika, _razvrstiIskalnik,
       }.contains(k) ||
       k.startsWith('orodje_') ||
@@ -351,6 +408,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviOblacekTonalitete(bool v) {
     oblacekTonalitete = v;
     return _shrani((p) => p.setBool(_oblacek, v));
+  }
+
+  Future<void> nastaviOblacke(List<Oblacek> v) {
+    oblacki = List.unmodifiable(v);
+    return _shrani((p) => p.setString(_oblacki, jsonEncode([for (final o in oblacki) o.vJson()])));
   }
 
   Future<void> nastaviZgoraj(int del, InfoVrstice v) {

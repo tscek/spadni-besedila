@@ -19,6 +19,7 @@ import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/naslednje.dart';
+import 'package:spadni_besedila/zasloni/oznake.dart' show kontrastnaBarva;
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/seznam_zaslon.dart';
 
@@ -483,8 +484,12 @@ void main() {
       greaterThan(tester.getSize(find.descendant(of: find.byType(AppBar), matching: find.text('F'))).width),
     );
     expect(find.descendant(of: find.byType(AppBar), matching: find.byType(Expanded)), findsOneWidget);
-    // Tonaliteta v oblačku, ko je vklopljena.
-    await Nastavitve.aplikacija.nastaviOblacekTonalitete(true);
+    // Oblački: tonaliteta desno, harmonika (prazna se skrije) in BPM levo, zloženi navzdol.
+    await Nastavitve.aplikacija.nastaviOblacke(const [
+      Oblacek(vsebina: InfoVrstice.tonaliteta, velikost: 2),
+      Oblacek(vsebina: InfoVrstice.ocena, levo: true),
+      Oblacek(vsebina: InfoVrstice.naslov, levo: true, barva: 0xFF000000),
+    ]);
     await tester.pumpWidget(
       MaterialApp(
         home: PesemZaslon(key: const ValueKey(2), pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
@@ -492,7 +497,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('F'), findsNWidgets(2));
-    await Nastavitve.aplikacija.nastaviOblacekTonalitete(false);
+    expect(find.descendant(of: find.byKey(const ValueKey('oblacki-desno')), matching: find.text('F')), findsOneWidget);
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('oblacki-levo')), matching: find.text('BELO OBLEKO')),
+      findsOneWidget,
+    );
+    // Naslov v črnem oblačku je bel.
+    final naslov = tester.widget<Text>(
+      find.descendant(of: find.byKey(const ValueKey('oblacki-levo')), matching: find.text('BELO OBLEKO')),
+    );
+    expect(naslov.style?.color, kontrastnaBarva(const Color(0xFF000000)));
+    await Nastavitve.aplikacija.nastaviOblacke(const []);
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
     final iskalnik = find.byType(IskalnikPesmi);

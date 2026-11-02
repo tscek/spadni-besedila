@@ -833,32 +833,63 @@ class _PesemZaslonState extends State<PesemZaslon> {
     );
   }
 
-  /// Tonaliteta v oblačku v zgornjem desnem kotu pesmi (če je vklopljena v nastavitvah).
+  /// Oblački v zgornjem levem in desnem kotu pesmi (nastavitve), zloženi navzdol; brez podatka se skrijejo.
   Widget? _oblacekTonalitete(BuildContext context) {
-    final p = _pesem;
-    if (!Nastavitve.aplikacija.oblacekTonalitete || p.tonaliteta.isEmpty || _risem) return null;
+    final oblacki = Nastavitve.aplikacija.oblacki;
+    if (oblacki.isEmpty || _risem) return null;
     final tema = Theme.of(context);
-    return Positioned(
-      top: 8,
-      right: 8,
-      child: IgnorePointer(
+    Widget? oblacek(Oblacek o) {
+      final ozadje = o.barva == null ? tema.colorScheme.primaryContainer : Color(o.barva!);
+      final crke = o.barva == null ? tema.colorScheme.onPrimaryContainer : kontrastnaBarva(ozadje);
+      final slog = TextStyle(fontSize: const [15.0, 22.0, 30.0][o.velikost], fontWeight: FontWeight.w900, color: crke);
+      var w = _info(context, o.vsebina, TextAlign.center, slog: slog);
+      if (w == null) return null;
+      if (w is Align) w = w.child!;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
         child: Material(
-          color: tema.colorScheme.primaryContainer.withValues(alpha: 0.92),
+          color: ozadje.withValues(alpha: 0.92),
           elevation: 3,
           borderRadius: BorderRadius.circular(14),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Text(
-              p.tonaliteta,
-              style: tema.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: tema.colorScheme.onPrimaryContainer,
+            padding: EdgeInsets.symmetric(horizontal: 8.0 + 2 * o.velikost, vertical: 2.0 + 2 * o.velikost),
+            child: DefaultTextStyle.merge(
+              style: slog,
+              child: IconTheme.merge(
+                data: IconThemeData(color: crke),
+                child: w,
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
+
+    Widget? stolpec(bool levo) {
+      final deli = [for (final o in oblacki.where((o) => o.levo == levo)) ?oblacek(o)];
+      if (deli.isEmpty) return null;
+      return Positioned(
+        key: ValueKey(levo ? 'oblacki-levo' : 'oblacki-desno'),
+        top: 8,
+        left: levo ? 8 : null,
+        right: levo ? null : 8,
+        child: IgnorePointer(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 260),
+            child: Column(
+              crossAxisAlignment: levo ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: deli,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final l = stolpec(true);
+    final d = stolpec(false);
+    if (l == null && d == null) return null;
+    return Positioned.fill(child: Stack(children: [?l, ?d]));
   }
 
   /// Spodnja vrstica: trije deli s podatki, orodja »spodaj« in vedno iskanje v desnem vogalu.

@@ -135,12 +135,54 @@ class NastavitveZaslon extends StatelessWidget {
               barva: n.barvaZgoraj,
               izberi: (b) => n.nastaviBarvoVrstice(zgoraj: true, barva: b),
             ),
-            SwitchListTile(
-              title: const Text('Tonaliteta v oblačku'),
-              subtitle: const Text('Vedno vidna v zgornjem desnem kotu pesmi, pod zgornjo vrstico'),
-              value: n.oblacekTonalitete,
-              onChanged: n.nastaviOblacekTonalitete,
+            const Divider(),
+            ListTile(
+              title: const Text('Oblački na besedilu'),
+              subtitle: const Text('V zgornjem levem ali desnem kotu pesmi, zloženi navzdol'),
+              trailing: TextButton.icon(
+                key: const ValueKey('dodaj-oblacek'),
+                icon: const Icon(Icons.add),
+                label: const Text('Dodaj'),
+                onPressed: () async {
+                  final o = await _urediOblacek(context, const Oblacek(vsebina: InfoVrstice.tonaliteta));
+                  if (o != null) await n.nastaviOblacke([...n.oblacki, o]);
+                },
+              ),
             ),
+            for (final (i, o) in n.oblacki.indexed)
+              ListTile(
+                leading: CircleAvatar(
+                  radius: 12,
+                  backgroundColor: o.barva == null ? Theme.of(context).colorScheme.primaryContainer : Color(o.barva!),
+                ),
+                title: Text(o.vsebina.ime),
+                subtitle: Text('${Oblacek.velikosti[o.velikost]} · ${o.levo ? 'levo' : 'desno'}'),
+                onTap: () async {
+                  final nov = await _urediOblacek(context, o);
+                  if (nov != null) await n.nastaviOblacke([...n.oblacki]..[i] = nov);
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Višje',
+                      icon: const Icon(Icons.arrow_upward),
+                      onPressed: i == 0
+                          ? null
+                          : () => n.nastaviOblacke(
+                              [...n.oblacki]
+                                ..removeAt(i)
+                                ..insert(i - 1, o),
+                            ),
+                    ),
+                    IconButton(
+                      tooltip: 'Odstrani',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => n.nastaviOblacke([...n.oblacki]..removeAt(i)),
+                    ),
+                  ],
+                ),
+              ),
             const Divider(),
             const ListTile(
               title: Text('Spodnja vrstica pri pesmi'),
@@ -417,3 +459,68 @@ class _IzbiraBarve extends StatelessWidget {
     );
   }
 }
+
+/// Okno za urejanje oblačka: podatek, velikost, kot in barva.
+Future<Oblacek?> _urediOblacek(BuildContext context, Oblacek zacetni) => showDialog<Oblacek>(
+  context: context,
+  builder: (context) {
+    var o = zacetni;
+    return StatefulBuilder(
+      builder: (context, nastavi) => AlertDialog(
+        title: const Text('Oblaček'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<InfoVrstice>(
+                  initialValue: o.vsebina,
+                  decoration: const InputDecoration(labelText: 'Podatek'),
+                  items: [
+                    for (final v in InfoVrstice.values)
+                      if (v != InfoVrstice.nic) DropdownMenuItem(value: v, child: Text(v.ime)),
+                  ],
+                  onChanged: (v) => v == null ? null : nastavi(() => o = o.kopija(vsebina: v)),
+                ),
+                const SizedBox(height: 16),
+                SegmentedButton<int>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final (i, ime) in Oblacek.velikosti.indexed) ButtonSegment(value: i, label: Text(ime)),
+                  ],
+                  selected: {o.velikost},
+                  onSelectionChanged: (v) => nastavi(() => o = o.kopija(velikost: v.first)),
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: true, icon: Icon(Icons.north_west), label: Text('Levo')),
+                    ButtonSegment(value: false, icon: Icon(Icons.north_east), label: Text('Desno')),
+                  ],
+                  selected: {o.levo},
+                  onSelectionChanged: (v) => nastavi(() => o = o.kopija(levo: v.first)),
+                ),
+                _IzbiraBarve(
+                  naslov: 'Barva oblačka',
+                  barva: o.barva,
+                  izberi: (b) => nastavi(() => o = o.kopija(barva: () => b)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          FilledButton(
+            key: const ValueKey('shrani-oblacek'),
+            onPressed: () => Navigator.pop(context, o),
+            child: const Text('Shrani'),
+          ),
+        ],
+      ),
+    );
+  },
+);
