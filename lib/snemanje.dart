@@ -82,8 +82,11 @@ class SnemanjeSpila extends ChangeNotifier {
   /// Ime te naprave, kot ga vidijo drugi (npr. »Tomaž (windows)«).
   String imeNaprave = '';
 
-  /// Sledilec: ukazi gredo vodji (ta snema), stanje pride od vodje.
+  /// Sledilec: ukazi gredo vodji (ta snema ali jih pošlje snemalcu), stanje pride od vodje.
   void Function(Map<String, dynamic> ukaz)? vodji;
+
+  /// Vodja: ukaz za snemalca, ki ni vodja (pošlje ga vsem, izvede ga naprava, ki snema).
+  void Function(Map<String, dynamic> ukaz)? snemalcu;
 
   bool aktivno = false;
   bool pavza = false;
@@ -159,30 +162,41 @@ class SnemanjeSpila extends ChangeNotifier {
     }
   }
 
-  /// Začne snemanje (ali ukaz pošlje vodji).
-  Future<void> zacni({required String naslov, String nastop = '', String zasedba = ''}) async {
-    if (vodji case final f?) {
+  /// Začne snemanje: s [tu] na tej napravi, sicer na vodji (sledilec ukaz pošlje vodji).
+  Future<void> zacni({required String naslov, String nastop = '', String zasedba = '', bool tu = false}) async {
+    if (vodji case final f? when !tu) {
       return f({'dejanje': 'zacni', 'naslov': naslov, 'nastop': nastop, 'zasedba': zasedba});
     }
     await _zacni(naslov: naslov, nastop: nastop, zasedba: zasedba);
   }
 
-  /// Konča snemanje (ali ukaz pošlje vodji).
+  /// Konča snemanje: na tej napravi, če snema ona, sicer prek vodje.
   Future<void> zakljuci() async {
-    if (vodji case final f?) return f({'dejanje': 'zakljuci'});
-    await _zakljuci();
+    if (_snemaTu) return _zakljuci();
+    if (vodji case final f?) return f({'dejanje': 'zakljuci', 'id': id});
+    snemalcu?.call({'dejanje': 'zakljuci', 'id': id});
   }
 
-  /// Vodja: ukaz administratorja z druge naprave.
-  Future<void> izvedi(Map<String, dynamic> u) => switch (u['dejanje']) {
-    'zacni' => _zacni(
-      naslov: u['naslov']?.toString() ?? '',
-      nastop: u['nastop']?.toString() ?? '',
-      zasedba: u['zasedba']?.toString() ?? '',
-    ),
-    'zakljuci' => _zakljuci(),
-    _ => Future.value(),
-  };
+  /// Vodja: ukaz administratorja z druge naprave. Če snema druga naprava, ga vodja pošlje njej.
+  Future<void> izvedi(Map<String, dynamic> u) async {
+    switch (u['dejanje']) {
+      case 'zacni' when !aktivno:
+        await _zacni(
+          naslov: u['naslov']?.toString() ?? '',
+          nastop: u['nastop']?.toString() ?? '',
+          zasedba: u['zasedba']?.toString() ?? '',
+        );
+      case 'zakljuci' when _snemaTu:
+        await _zakljuci();
+      case 'zakljuci':
+        snemalcu?.call({'dejanje': 'zakljuci', 'id': id});
+    }
+  }
+
+  /// Naprava, ki snema (ni vodja): ukaz, ki ga je poslal vodja. Velja samo za trenutno snemanje.
+  Future<void> izvediTu(Map<String, dynamic> u) async {
+    if (_snemaTu && u['dejanje'] == 'zakljuci' && u['id'] == id) await _zakljuci();
+  }
 
   Future<void> _zacni({required String naslov, required String nastop, required String zasedba}) async {
     if (aktivno && _snemaTu) return;
@@ -360,6 +374,7 @@ class SnemanjeSpila extends ChangeNotifier {
   /// Stanje za sledilce.
   Map<String, dynamic> vJson() => {
     'vrsta': 'snemanje',
+    'id': id,
     'aktivno': aktivno,
     'pavza': pavza,
     'naslov': naslov,
@@ -372,6 +387,7 @@ class SnemanjeSpila extends ChangeNotifier {
     if (_snemaTu) return;
     aktivno = j['aktivno'] == true;
     pavza = j['pavza'] == true;
+    id = j['id']?.toString() ?? '';
     naslov = j['naslov']?.toString() ?? '';
     naprava = j['naprava']?.toString() ?? '';
     _posnetoVodje = Duration(seconds: (j['posneto'] as num?)?.toInt() ?? 0);

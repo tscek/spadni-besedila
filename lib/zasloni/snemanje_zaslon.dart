@@ -144,7 +144,9 @@ PredlogNastopa predlogIzNastopa(Map<String, dynamic> n) {
 Future<void> zacniSnemanje(BuildContext context, Baza baza) async {
   final s = SnemanjeSpila.aplikacija;
   final api = s.api?.call();
-  final tuSnema = s.vodji == null;
+  // Sledilec v aplikaciji lahko snema sam ali naroči vodji; brez špila snema ta naprava.
+  final lahkoTu = !kIsWeb;
+  var tuSnema = s.vodji == null;
   final nastopi = api == null
       ? Future.value(const <PredlogNastopa>[])
       : api
@@ -153,8 +155,8 @@ Future<void> zacniSnemanje(BuildContext context, Baza baza) async {
               (o) => [for (final n in (o['nastopi'] as List? ?? const []).whereType<Map>()) predlogIzNastopa(n.cast())],
             )
             .catchError((Object _) => const <PredlogNastopa>[]);
-  final vhodi = tuSnema ? s.vhodi() : Future.value(const <VhodZvoka>[]);
-  var vhod = tuSnema ? await s.shranjenVhod() : null;
+  final vhodi = lahkoTu ? s.vhodi() : Future.value(const <VhodZvoka>[]);
+  var vhod = lahkoTu ? await s.shranjenVhod() : null;
   if (!context.mounted) return;
   final brez = SnemanjeSpila.privzetNaslov(DateTime.now());
   final naslov = TextEditingController(text: brez);
@@ -214,6 +216,18 @@ Future<void> zacniSnemanje(BuildContext context, Baza baza) async {
                   controller: naslov,
                   decoration: const InputDecoration(labelText: 'Naslov na videu', border: OutlineInputBorder()),
                 ),
+                if (s.vodji != null && lahkoTu) ...[
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                    key: const ValueKey('kdo-snema'),
+                    segments: const [
+                      ButtonSegment(value: false, icon: Icon(Icons.cast), label: Text('Snema vodja')),
+                      ButtonSegment(value: true, icon: Icon(Icons.phone_android), label: Text('Snema ta naprava')),
+                    ],
+                    selected: {tuSnema},
+                    onSelectionChanged: (v) => nastavi(() => tuSnema = v.first),
+                  ),
+                ],
                 if (tuSnema) ...[
                   const SizedBox(height: 12),
                   FutureBuilder(
@@ -261,5 +275,5 @@ Future<void> zacniSnemanje(BuildContext context, Baza baza) async {
   );
   if (ok != true) return;
   if (tuSnema) await s.nastaviVhod(vhod);
-  await s.zacni(naslov: naslov.text, nastop: izbran?.id ?? '', zasedba: izbran?.zasedba ?? baza.zasedba);
+  await s.zacni(naslov: naslov.text, nastop: izbran?.id ?? '', zasedba: izbran?.zasedba ?? baza.zasedba, tu: tuSnema);
 }

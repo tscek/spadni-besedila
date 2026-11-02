@@ -147,7 +147,9 @@ class Spil extends ChangeNotifier {
       Runda.aplikacija.addListener(_objaviRundo);
       _objaviRundo();
       // Snemanje špila: vsi vidijo, da in na kateri napravi se snema.
-      SnemanjeSpila.aplikacija.addListener(_objaviSnemanje);
+      SnemanjeSpila.aplikacija
+        ..addListener(_objaviSnemanje)
+        ..snemalcu = (u) => _streznik?.poslji(jsonEncode({'vrsta': 'snemanjeUkaz', ...u}));
       _objaviSnemanje();
       // Klicaji: vsak nov ali izbrisan gre takoj vsem.
       _bazaVodje = baza;
@@ -266,6 +268,9 @@ class Spil extends ChangeNotifier {
       // Snemanje vodi samo administrator (iPad prek vodje ukaza ne more poslati, glej streznik_io).
       case 'snemanje' when u['admin'] == true:
         SnemanjeSpila.aplikacija.izvedi(u);
+      // Snema sledilec: njegovo stanje gre prek vodje vsem.
+      case 'snemanjeStanje':
+        SnemanjeSpila.aplikacija.prevzemi(u);
       case 'klicaj' when u['klicaj'] is Map && _bazaVodje != null:
         final k = (u['klicaj'] as Map).cast<String, dynamic>();
         final b = _bazaVodje!;
@@ -291,6 +296,16 @@ class Spil extends ChangeNotifier {
   void _objaviRundo() => _streznik?.poslji(jsonEncode(Runda.aplikacija.vJson()));
 
   void _objaviSnemanje() => _streznik?.poslji(jsonEncode(SnemanjeSpila.aplikacija.vJson()));
+
+  /// Sledilec, ki snema: stanje pošlje vodji, ta ga pošlje vsem.
+  void _snemamKotSledilec() {
+    final s = SnemanjeSpila.aplikacija;
+    if (!s.snemaTu && !_poslalSnemanje) return;
+    _poslalSnemanje = s.snemaTu;
+    _posljiVodji({...s.vJson(), 'vrsta': 'ukaz', 'ukaz': 'snemanjeStanje'});
+  }
+
+  bool _poslalSnemanje = false;
 
   void _objaviKlicaje() {
     final b = _bazaVodje;
@@ -387,6 +402,8 @@ class Spil extends ChangeNotifier {
             Runda.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'snemanje') {
             SnemanjeSpila.aplikacija.prevzemi(j);
+          } else if (j['vrsta'] == 'snemanjeUkaz') {
+            SnemanjeSpila.aplikacija.izvediTu(j);
           } else if (j['vrsta'] == 'klicaji' && j['klicaji'] is List) {
             baza?.prevzemiKlicaje(
               (j['klicaji'] as List).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList(),
@@ -412,6 +429,7 @@ class Spil extends ChangeNotifier {
     Runda.aplikacija.vodji = null;
     SnemanjeSpila.aplikacija
       ..vodji = null
+      ..removeListener(_snemamKotSledilec)
       ..pozabiVodjo();
     baza?.obKlicaju = null;
     if (povezan) {
@@ -429,6 +447,7 @@ class Spil extends ChangeNotifier {
     Runda.aplikacija.vodji = null;
     SnemanjeSpila.aplikacija
       ..vodji = null
+      ..removeListener(_snemamKotSledilec)
       ..pozabiVodjo();
     baza?.obKlicaju = null;
     _ponovnaPovezava?.cancel();
@@ -448,7 +467,9 @@ class Spil extends ChangeNotifier {
     _ustaviSledenje();
     _naslovVodje = null;
     Runda.aplikacija.removeListener(_objaviRundo);
-    SnemanjeSpila.aplikacija.removeListener(_objaviSnemanje);
+    SnemanjeSpila.aplikacija
+      ..removeListener(_objaviSnemanje)
+      ..snemalcu = null;
     _bazaVodje?.removeListener(_objaviKlicaje);
     _bazaVodje = null;
     await _streznik?.ustavi();

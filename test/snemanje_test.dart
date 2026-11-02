@@ -171,4 +171,22 @@ void main() {
     // V pavzi: začetek naslednjega kosa.
     expect(s.odmik(DateTime.parse('2026-11-07T19:20:00Z')), 600);
   });
+
+  test('snemalec je lahko sledilec: snema sam, stanje gre vodji, konča ga ukaz vodje za to snemanje', () async {
+    final baza = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+    await baza.osvezi(api());
+    final vodji = <Map<String, dynamic>>[];
+    final s = SnemanjeSpila()
+      ..baza = baza
+      ..imeNaprave = 'windows'
+      ..vodji = vodji.add;
+    await s.zacni(naslov: 'Vaja', tu: true);
+    expect(s.snemaTu, isTrue);
+    expect(vodji, isEmpty);
+    // Ukaz za drugo (staro) snemanje ne velja.
+    await s.izvediTu({'dejanje': 'zakljuci', 'id': 'staro'});
+    expect(s.aktivno, isTrue);
+    await s.izvediTu({'dejanje': 'zakljuci', 'id': s.id});
+    expect(s.aktivno, isFalse);
+  });
 }
