@@ -118,7 +118,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
   ];
   static const _poljaMidi = [
     ('MIDI ob odprtju', 'Ukazi pesmi ob odprtju (npr. cue na Multiplayu).'),
-    ('MIDI za uvod', 'Ukaz za uvod (npr. PC 1 23); pošlje ga gumb Uvod na pesmi ali nožno stikalo.'),
+    ('MIDI za uvod', 'Uvod (npr. PC 1 23): pošlje se ob odprtju takoj za ukazi pesmi, znova z gumbom Uvod na pesmi.'),
     ('Makro ob odprtju', 'Pošlje se za ukazi pesmi.'),
     ('Makro ob zaprtju', 'Pošlje se, ko pesem zapreš ali odpreš naslednjo.'),
   ];
@@ -769,7 +769,11 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
       padding: const EdgeInsets.all(16),
       children: [
         for (final (stolpec, pomoc) in _poljaMidi) ...[
-          PoljeMidi(oznaka: stolpec, vnos: _vnosi[stolpec]!, knjiznica: widget.baza.midi, pomoc: pomoc),
+          // Uvod je podsekcija ukazov ob odprtju.
+          Padding(
+            padding: EdgeInsets.only(left: stolpec == 'MIDI za uvod' ? 24 : 0),
+            child: PoljeMidi(oznaka: stolpec, vnos: _vnosi[stolpec]!, knjiznica: widget.baza.midi, pomoc: pomoc),
+          ),
           if (stolpec == 'MIDI za uvod')
             ListenableBuilder(
               listenable: _vnosi[stolpec]!,

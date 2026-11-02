@@ -102,6 +102,10 @@ void main() {
     });
     expect(s.obOdprtju(p).map((u) => u.ukaz.zapis), ['PC 1 1', 'CC 15 0 7', 'CC 9 12 127']);
     expect(s.obZaprtju(p).map((u) => u.ukaz.zapis), ['PC 5 3', 'PC 1 2']);
+
+    // Uvod se pošlje ob odprtju takoj za ukazi pesmi, pred makrom.
+    final u = Pesem.izVrstice({...p.vrstica, 'MIDI za uvod': 'PC 1 23'});
+    expect(k.obOdprtju(u).map((u) => u.ukaz.zapis), ['CC 15 0 7', 'PC 1 23', 'CC 9 12 127']);
   });
 
   test('pošiljanje na naprave po izhodih in zaprtje prejšnje pesmi', () async {

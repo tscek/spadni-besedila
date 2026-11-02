@@ -343,10 +343,11 @@ class KnjiznicaMidi {
   static const makroOdprtja = 'Ob odprtju vsake pesmi';
   static const makroZaprtja = 'Ob zaprtju vsake pesmi';
 
-  /// Ukazi ob odprtju pesmi: najprej splošni makro, nato ukaz pesmi (MIDI ob odprtju) in makro ob odprtju.
+  /// Ukazi ob odprtju pesmi: najprej splošni makro, nato ukaz pesmi (MIDI ob odprtju), uvod (MIDI za uvod)
+  /// in makro ob odprtju.
   List<PoslaniUkaz> obOdprtju(Pesem p) => razsiri(
     '${makro(makroOdprtja)?.ime ?? ''}; '
-    '${besedilo(p.vrstica['MIDI ob odprtju'])}; ${besedilo(p.vrstica['Makro ob odprtju'])}',
+    '${besedilo(p.vrstica['MIDI ob odprtju'])}; ${p.midiZaUvod}; ${besedilo(p.vrstica['Makro ob odprtju'])}',
   );
 
   /// Ukazi ob zaprtju pesmi: najprej makro pesmi, nato splošni makro.
