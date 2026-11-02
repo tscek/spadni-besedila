@@ -38,6 +38,7 @@ http.Response _odg(String telo, int koda) => http.Response.bytes(utf8.encode(tel
 void main() {
   late List<Map<String, dynamic>> poslano;
   late bool povezava;
+  var staraSkripta = false;
 
   Api api() => Api(
     () async => 'z',
@@ -82,6 +83,7 @@ void main() {
       }
       final telo = jsonDecode(r.body) as Map<String, dynamic>;
       poslano.add(telo);
+      if (staraSkripta) return _odg(jsonEncode({'napaka': 'Neznana akcija'}), 200);
       if (telo['akcija'] == 'posnetek') {
         return _odg(
           jsonEncode({
@@ -97,6 +99,7 @@ void main() {
   setUp(() {
     poslano = [];
     povezava = true;
+    staraSkripta = false;
   });
 
   test('posnetek ostane na napravi, na strežnik gre z zvokom, skupnega drugega člana se prenese', () async {
@@ -162,5 +165,35 @@ void main() {
     expect(nov.skupno, isTrue);
     expect(nov.trajanje, 7);
     expect(find.textContaining('čaka na pošiljanje'), findsOneWidget);
+  });
+
+  test('stara skripta: posnetek ostane viden in na napravi, osvežitev dela, pošlje se po novi skripti', () async {
+    final shramba = ShrambaIdb(newIdbFactoryMemory());
+    final baza = Baza(shramba: shramba);
+    await baza.osvezi(api());
+    staraSkripta = true;
+    final p = await baza.dodajPosnetek(
+      api(),
+      'a',
+      Uint8List.fromList([5]),
+      skupno: true,
+      ime: 'Vaja',
+      vrsta: 'audio/mp4',
+      trajanje: 3,
+    );
+    await baza.osvezi(api());
+    expect(baza.napaka, isNull);
+    expect(baza.posnetki['a']!.map((x) => x.id), contains(p.id));
+
+    // Po ponovnem zagonu aplikacije je še vedno tam.
+    final znova = Baza(shramba: shramba);
+    await znova.nalozi();
+    expect(znova.posnetki['a']!.map((x) => x.id), contains(p.id));
+
+    staraSkripta = false;
+    poslano.clear();
+    await znova.osvezi(api());
+    expect(poslano.map((t) => t['akcija']), contains('posnetek'));
+    expect(znova.neposlano, isEmpty);
   });
 }

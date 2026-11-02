@@ -64,10 +64,11 @@ class Baza extends ChangeNotifier {
   Future<Uint8List?> pdf(String driveId) => shramba.beriBajte(_kljucPdf(driveId));
 
   Future<void> nalozi() async {
-    final s = await shramba.beriBesedilo(_kljucPodatkov);
-    if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
+    // Najprej neposlano, da so neposlani posnetki vidni takoj.
     final n = await shramba.beriBesedilo(_kljucNeposlanih);
     if (n != null) neposlano = (jsonDecode(n) as List).cast<Map<String, dynamic>>();
+    final s = await shramba.beriBesedilo(_kljucPodatkov);
+    if (s != null) _uporabi(jsonDecode(s) as Map<String, dynamic>);
     final d = await shramba.beriBesedilo(_kljucDnevnika);
     if (d != null) dnevnik = (jsonDecode(d) as List).cast<Map<String, dynamic>>();
     notifyListeners();
@@ -166,10 +167,14 @@ class Baza extends ChangeNotifier {
 
   bool _posiljamNeposlano = false;
 
+  /// Ali kaj čaka na internet (posnetki, ki čakajo na novo skripto, ne zadržijo osvežitve).
+  bool get _cakaInternet => neposlano.any((n) => n['cakaSkripto'] != true);
+
   Future<String?> _posljiNeposlano(Api api) async {
     final zavrnjene = <String>[];
-    while (neposlano.isNotEmpty) {
-      final n = neposlano.first;
+    var i = 0;
+    while (i < neposlano.length) {
+      final n = neposlano[i];
       final podatki = (n['podatki'] as Map).cast<String, dynamic>();
       try {
         if (n['akcija'] == 'pesem') {
@@ -194,6 +199,12 @@ class Baza extends ChangeNotifier {
         }
       } on ApiNapaka catch (e) {
         if (e is NiPovezave) break;
+        // Stara skripta posnetkov še ne pozna: posnetek ostane na napravi, dokler ni nove različice.
+        if (n['akcija'] == 'posnetek' && e.sporocilo.contains('Neznana akcija')) {
+          n['cakaSkripto'] = true;
+          i++;
+          continue;
+        }
         zavrnjene.add(
           '${switch (n['akcija']) {
             'besedilo' => 'Besedilo',
@@ -205,11 +216,15 @@ class Baza extends ChangeNotifier {
       } catch (_) {
         break; // še vedno brez povezave
       }
-      neposlano.removeAt(0);
+      neposlano.removeAt(i);
       await _shraniNeposlano();
       notifyListeners();
     }
-    if (neposlano.isNotEmpty) return '${neposlano.length} sprememb še čaka na internet.';
+    await _shraniNeposlano();
+    if (_cakaInternet) return '${neposlano.length} sprememb še čaka na internet.';
+    if (neposlano.isNotEmpty) {
+      zavrnjene.add('Posnetki: skripta jih še ne pozna (uvedi novo različico skripte), ostanejo na napravi');
+    }
     return zavrnjene.isEmpty ? null : 'Strežnik ni sprejel: ${zavrnjene.join('; ')}';
   }
 
@@ -223,7 +238,25 @@ class Baza extends ChangeNotifier {
       klicaji.putIfAbsent(k.pesem, () => []).add(k);
     }
     posnetki = {};
-    for (final p in t('Posnetki').map(PosnetekPesmi.izVrstice).where((p) => p.id.isNotEmpty)) {
+    // Neposlani posnetki ostanejo vidni tudi po osvežitvi (dokler jih strežnik ne sprejme).
+    final neposlaniPosnetki = [
+      for (final n in neposlano)
+        if (n['akcija'] == 'posnetek')
+          (izbrisi: n['izbrisi'] == true, vrstica: (n['podatki'] as Map).cast<String, dynamic>()),
+    ];
+    final izbrisani = {
+      for (final n in neposlaniPosnetki)
+        if (n.izbrisi) besedilo(n.vrstica['ID']),
+    };
+    final streznik = t('Posnetki');
+    final ids = {for (final r in streznik) besedilo(r['ID'])};
+    final vrsticePosnetkov = [
+      ...streznik,
+      for (final n in neposlaniPosnetki)
+        if (!n.izbrisi && !ids.contains(besedilo(n.vrstica['ID']))) n.vrstica,
+    ];
+    for (final p
+        in vrsticePosnetkov.map(PosnetekPesmi.izVrstice).where((p) => p.id.isNotEmpty && !izbrisani.contains(p.id))) {
       posnetki.putIfAbsent(p.pesem, () => []).add(p);
     }
     for (final l in posnetki.values) {
@@ -293,7 +326,7 @@ class Baza extends ChangeNotifier {
         stanje = 'Pošiljam spremembe, shranjene brez interneta …';
         notifyListeners();
         zavrnjene = await posljiNeposlano(api);
-        if (neposlano.isNotEmpty) {
+        if (_cakaInternet) {
           stanje = zavrnjene;
           return;
         }
@@ -394,8 +427,8 @@ class Baza extends ChangeNotifier {
     final Map<String, dynamic> odg;
     try {
       // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
-      if (neposlano.isNotEmpty) await posljiNeposlano(api);
-      if (neposlano.isNotEmpty) throw StateError('Prejšnje spremembe še niso poslane');
+      if (_cakaInternet) await posljiNeposlano(api);
+      if (_cakaInternet) throw StateError('Prejšnje spremembe še niso poslane');
       odg = await api.shraniPesem(podatki);
     } catch (e) {
       final stara = _vrstica('Pesmi', besedilo(podatki['ID']));
@@ -682,8 +715,8 @@ class Baza extends ChangeNotifier {
     final Map<String, dynamic> odg;
     try {
       // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
-      if (neposlano.isNotEmpty) await posljiNeposlano(api);
-      if (neposlano.isNotEmpty) throw StateError('Prejšnje spremembe še niso poslane');
+      if (_cakaInternet) await posljiNeposlano(api);
+      if (_cakaInternet) throw StateError('Prejšnje spremembe še niso poslane');
       odg = await api.shraniBesedilo(podatki);
     } catch (e) {
       if (!_brezPovezave(e)) rethrow;
