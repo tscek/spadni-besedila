@@ -10,6 +10,7 @@ import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/zasloni/posnetki.dart';
+import 'package:spadni_besedila/zvocnik.dart';
 
 class _Snemalnik implements Snemalnik {
   bool tece = false;
@@ -31,6 +32,38 @@ class _Snemalnik implements Snemalnik {
 
   @override
   Future<void> zapri() async {}
+}
+
+class _Zvocnik implements Zvocnik {
+  final pripravljeni = <String, Uint8List>{};
+  final klici = <String>[];
+
+  @override
+  bool pripravljen(String id) => pripravljeni.containsKey(id);
+  @override
+  void pripravi(String id, Uint8List bajti, String vrsta) => pripravljeni[id] = bajti;
+  @override
+  Future<void> predvajaj(String id, {required bool zanka, required double hitrost}) async => klici.add('predvajaj $id');
+  @override
+  Future<void> ustavi() async => klici.add('ustavi');
+  @override
+  Future<void> pavza() async {}
+  @override
+  Future<void> nadaljuj() async {}
+  @override
+  Future<void> premakni(Duration d) async {}
+  @override
+  Future<void> hitrost(double h) async {}
+  @override
+  Future<void> zanka(bool z) async {}
+  @override
+  Stream<Duration> get pozicija => const Stream.empty();
+  @override
+  Stream<Duration> get trajanje => const Stream.empty();
+  @override
+  Stream<void> get konec => const Stream.empty();
+  @override
+  void zapri() {}
 }
 
 http.Response _odg(String telo, int koda) => http.Response.bytes(utf8.encode(telo), koda);
@@ -251,5 +284,29 @@ void main() {
     final znova = Baza(shramba: shramba);
     await znova.nalozi();
     expect(znova.slikeClanov['c1'], [7, 7, 7]);
+  });
+
+  testWidgets('iPad: zvok se pripravi ob odprtju, predvajanje steče takoj ob dotiku', (tester) async {
+    final baza = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+    await tester.runAsync(() => baza.osvezi(api()));
+    final zv = _Zvocnik();
+    Zvocnik.tovarna = () => zv;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OknoPosnetkov(baza: baza, api: api(), pesem: 'a'),
+        ),
+      ),
+    );
+    for (var i = 0; i < 10 && !zv.pripravljen('p2'); i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(zv.pripravljeni['p2'], [9, 9]);
+    await tester.tap(find.byTooltip('Predvajaj'));
+    // Brez čakanja: predvajanje se mora začeti že v dotiku.
+    expect(zv.klici, ['predvajaj p2']);
+    await tester.pump();
+    expect(find.byTooltip('Ustavi'), findsOneWidget);
   });
 }

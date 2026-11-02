@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
@@ -10,6 +9,7 @@ import '../baza.dart';
 import '../config.dart';
 import '../models.dart';
 import '../runda.dart' show casBesedilo;
+import '../zvocnik.dart';
 import '../snemalnik_web.dart' if (dart.library.io) '../snemalnik_io.dart' as datoteka;
 
 /// Posnet zvok: bajti, MIME vrsta in dolžina.
@@ -132,9 +132,13 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
   DateTime? _zacetek;
   Timer? _ura;
 
-  AudioPlayer? _predvajalnik;
+  final _zvocnik = Zvocnik.tovarna();
+  bool _naroceno = false;
+
+  /// Posnetki, katerih zvok se pripravlja, in tisti, ki niso dostopni (brez prijave ali interneta).
+  final _pripravljam = <String>{};
+  final _niDostopa = <String>{};
   String? _predvajam;
-  String? _nalagam;
   Duration _pozicija = Duration.zero;
   Duration _trajanje = Duration.zero;
   bool _pavza = false;
@@ -143,6 +147,12 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
   Duration? _b;
   double _hitrost = 1;
   final _narocnine = <StreamSubscription<Object?>>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _pripraviVse();
+  }
 
   @override
   void dispose() {
@@ -155,7 +165,7 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
     for (final n in _narocnine) {
       n.cancel();
     }
-    _predvajalnik?.dispose();
+    _zvocnik.zapri();
     super.dispose();
   }
 
@@ -253,32 +263,30 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
   }
 
   Future<void> _ustaviPredvajanje() async {
-    await _predvajalnik?.stop();
+    if (_predvajam != null) await _zvocnik.ustavi();
     if (mounted) setState(() => _predvajam = null);
   }
 
   Future<void> _premakni(Duration d) async {
-    final pl = _predvajalnik;
-    if (pl == null) return;
+    if (_predvajam == null) return;
     var t = d < Duration.zero ? Duration.zero : d;
     if (_trajanje > Duration.zero && t > _trajanje) t = _trajanje;
-    await pl.seek(t);
+    await _zvocnik.premakni(t);
     if (mounted) setState(() => _pozicija = t);
   }
 
   Future<void> _pavzaNadaljuj() async {
-    final pl = _predvajalnik;
-    if (pl == null) return;
+    if (_predvajam == null) return;
     if (_pavza) {
-      await pl.resume();
+      await _zvocnik.nadaljuj();
     } else {
-      await pl.pause();
+      await _zvocnik.pavza();
     }
     if (mounted) setState(() => _pavza = !_pavza);
   }
 
   Future<void> _nastaviZanko(_Zanka z) async {
-    await _predvajalnik?.setReleaseMode(z == _Zanka.brez ? ReleaseMode.stop : ReleaseMode.loop);
+    if (_predvajam != null) await _zvocnik.zanka(z != _Zanka.brez);
     setState(() => _zanka = z);
   }
 
@@ -286,50 +294,69 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
     if (!mounted) return;
     setState(() => _pozicija = d);
     // Ponavljanje odseka A–B (za vadbo težavnega dela).
-    if (_zanka == _Zanka.odsek && _a != null && _b != null && d >= _b!) _predvajalnik?.seek(_a!);
+    if (_zanka == _Zanka.odsek && _a != null && _b != null && d >= _b!) _zvocnik.premakni(_a!);
   }
 
-  Future<void> _predvajaj(PosnetekPesmi p) async {
-    if (_predvajam == p.id) return _ustaviPredvajanje();
-    setState(() => _nalagam = p.id);
-    try {
-      final bajti = await widget.baza.zvokPosnetka(widget.api, p);
-      if (bajti == null) {
-        _sporoci('Posnetek je dostopen šele s prijavo in internetom.');
-        return;
+  /// Vnaprej pripravi zvok vseh posnetkov pesmi (so majhni), da predvajanje steče takoj ob dotiku.
+  Future<void> _pripraviVse() async {
+    final posnetki = widget.baza.posnetki[widget.pesem] ?? const <PosnetekPesmi>[];
+    for (final p in posnetki) {
+      if (!mounted) return;
+      if (_zvocnik.pripravljen(p.id) || _pripravljam.contains(p.id) || _niDostopa.contains(p.id)) continue;
+      setState(() => _pripravljam.add(p.id));
+      try {
+        final bajti = await widget.baza.zvokPosnetka(widget.api, p);
+        if (bajti == null) {
+          _niDostopa.add(p.id);
+        } else {
+          _zvocnik.pripravi(p.id, bajti, p.vrsta);
+        }
+      } catch (_) {
+        _niDostopa.add(p.id);
+      } finally {
+        if (mounted) setState(() => _pripravljam.remove(p.id));
       }
-      final pl = _predvajalnik ??= _novPredvajalnik();
-      await pl.stop();
-      await pl.setReleaseMode(_zanka == _Zanka.brez ? ReleaseMode.stop : ReleaseMode.loop);
-      await pl.play(BytesSource(bajti, mimeType: p.vrsta));
-      if (_hitrost != 1) await pl.setPlaybackRate(_hitrost);
-      if (mounted) {
-        setState(() {
-          _predvajam = p.id;
-          _pozicija = Duration.zero;
-          _trajanje = Duration(seconds: p.trajanje);
-          _pavza = false;
-          _a = null;
-          _b = null;
-          if (_zanka == _Zanka.odsek) _zanka = _Zanka.brez;
-        });
-      }
-    } catch (e) {
-      _sporoci('Predvajanje ni uspelo: $e');
-    } finally {
-      if (mounted) setState(() => _nalagam = null);
     }
   }
 
-  AudioPlayer _novPredvajalnik() {
-    final pl = AudioPlayer();
+  void _predvajaj(PosnetekPesmi p) {
+    if (_predvajam == p.id) {
+      _ustaviPredvajanje();
+      return;
+    }
+    if (!_zvocnik.pripravljen(p.id)) {
+      if (_niDostopa.remove(p.id)) _pripraviVse();
+      if (!_pripravljam.contains(p.id) && !_zvocnik.pripravljen(p.id)) {
+        _sporoci('Posnetek je dostopen šele s prijavo in internetom.');
+      }
+      return;
+    }
+    _naroci();
+    // Predvajanje se začne takoj, brez čakanja pred tem (zahteva Safarija na iPadu).
+    final zacetek = _zvocnik.predvajaj(p.id, zanka: _zanka == _Zanka.ves, hitrost: _hitrost);
+    setState(() {
+      _predvajam = p.id;
+      _pozicija = Duration.zero;
+      _trajanje = Duration(seconds: p.trajanje);
+      _pavza = false;
+      _a = null;
+      _b = null;
+      if (_zanka == _Zanka.odsek) _zanka = _Zanka.brez;
+    });
+    zacetek.catchError((Object e) {
+      if (!mounted) return;
+      setState(() => _predvajam = null);
+      _sporoci('Predvajanje ni uspelo: $e');
+    });
+  }
+
+  void _naroci() {
+    if (_naroceno) return;
+    _naroceno = true;
     _narocnine
-      ..add(pl.onPositionChanged.listen(_obPoziciji))
-      ..add(pl.onDurationChanged.listen((d) => mounted && d > Duration.zero ? setState(() => _trajanje = d) : null))
-      ..add(
-        pl.onPlayerComplete.listen((_) => mounted && _zanka == _Zanka.brez ? setState(() => _predvajam = null) : null),
-      );
-    return pl;
+      ..add(_zvocnik.pozicija.listen(_obPoziciji))
+      ..add(_zvocnik.trajanje.listen((d) => mounted && d > Duration.zero ? setState(() => _trajanje = d) : null))
+      ..add(_zvocnik.konec.listen((_) => mounted && _zanka == _Zanka.brez ? setState(() => _predvajam = null) : null));
   }
 
   Future<void> _izbrisi(PosnetekPesmi p) async {
@@ -356,6 +383,11 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
       listenable: widget.baza,
       builder: (context, _) {
         final posnetki = widget.baza.posnetki[widget.pesem] ?? const <PosnetekPesmi>[];
+        if (posnetki.any(
+          (p) => !_zvocnik.pripravljen(p.id) && !_pripravljam.contains(p.id) && !_niDostopa.contains(p.id),
+        )) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _pripraviVse());
+        }
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -429,7 +461,7 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                             contentPadding: EdgeInsets.zero,
                             leading: IconButton(
                               tooltip: _predvajam == p.id ? 'Ustavi' : 'Predvajaj',
-                              icon: _nalagam == p.id
+                              icon: _pripravljam.contains(p.id)
                                   ? const SizedBox(
                                       width: 20,
                                       height: 20,
@@ -570,7 +602,7 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                   initialValue: _hitrost,
                   onSelected: (h) {
                     setState(() => _hitrost = h);
-                    _predvajalnik?.setPlaybackRate(h);
+                    if (_predvajam != null) _zvocnik.hitrost(h);
                   },
                   itemBuilder: (_) => [
                     for (final h in const [0.5, 0.75, 1.0, 1.25]) PopupMenuItem(value: h, child: Text('$h×')),
