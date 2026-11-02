@@ -45,30 +45,11 @@ class NastavitveZaslon extends StatelessWidget {
             ],
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
-              title: const Text('Splošna velikost pisave besedila'),
-              subtitle: Slider(
-                value: n.pisava,
-                min: 12,
-                max: 64,
-                divisions: 26,
-                label: n.pisava.round().toString(),
-                onChanged: n.nastaviPisavo,
-              ),
-            ),
-            ListTile(
-              title: const Text('Povečave posameznih pesmi'),
-              subtitle: Text(
-                'Ščip na besedilu ali PDF-ju se zapomni za tisto pesem. Pesmi s svojo pisavo: ${n.pisavePesmi.length}',
+              title: const Text('Povečave PDF-jev'),
+              subtitle: const Text(
+                'Ščip na PDF-ju se zapomni za tisto pesem. Pisavo besedila nastavi urednik pri pesmi in je enaka za vse.',
               ),
               trailing: TextButton(onPressed: n.ponastaviPovecavePesmi, child: const Text('Ponastavi')),
-            ),
-            SwitchListTile(
-              title: const Text('Prelom vrstic pri povečavi'),
-              subtitle: const Text(
-                'Večje besedilo gre v novo vrstico namesto čez rob. Risbe na besedilu se lahko zamaknejo.',
-              ),
-              value: n.prelom,
-              onChanged: n.nastaviPrelom,
             ),
             SwitchListTile(
               title: const Text('Akordi nad besedilom'),

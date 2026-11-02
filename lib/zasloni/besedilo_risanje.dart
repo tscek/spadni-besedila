@@ -12,46 +12,42 @@ import 'pesem_zaslon.dart';
 
 /// Besedilo kot stran z risbami, oznakami in opombami (enako kot pri PDF-ju). Risbe besedila so v isti
 /// risbi pesmi kot stran 0, koordinate so v enotah strani širine [sirinaStrani].
-/// Brez preloma ([prelom] false) se vrstice vedno prelomijo enako in večja pisava stran le poveča
-/// (premikanje tudi vstran). S prelomom je stran vedno široka kot zaslon in se ob večji pisavi
-/// prelomi v več vrstic; risbe ostanejo na istem mestu strani, zato se lahko zamaknejo glede na besedilo.
-/// Z dvema prstoma (ščip) se besedilo poveča ali pomanjša, tudi med risanjem.
+/// Stran ima stalno širino in pisavo pesmi ([pisava], skupna vsem), zato so vrstice na vseh napravah enake.
+/// Kratka pesem se pomanjša ali poveča tako, da je vsa na zaslonu; daljša se raztegne na širino zaslona
+/// in se skrola (puščica spodaj pove, da besedila še ni konec). Ščip pogled le začasno poveča.
 class BesediloZRisanjem extends StatefulWidget {
   const BesediloZRisanjem({
     super.key,
     required this.vsebina,
-    required this.povecava,
+    this.pisava = osnovnaPisava,
     required this.pesem,
     required this.risbe,
     required this.risanje,
     required this.knjiznica,
-    this.obPovecavi,
-    this.prelom = false,
     this.klicaji = const [],
     this.risbeSkupne,
     this.smeSkupno = false,
     this.posnetki,
   });
 
-  /// Širina strani v logičnih točkah in pisava, pri kateri je povečava 1.
+  /// Širina strani v enotah strani in privzeta pisava pesmi na njej.
   static const sirinaStrani = 600.0;
   static const osnovnaPisava = 22.0;
+
+  /// Pod to velikostjo (v točkah zaslona) se kratka pesem ne pomanjša več, ampak se skrola.
+  static const najmanjsaPisava = 14.0;
 
   /// Stran 0 v risbi pesmi je besedilo (PDF ima strani od 1 naprej).
   static const stran = 0;
 
   final String vsebina;
-  final double povecava;
+
+  /// Velikost pisave na strani (lastnost pesmi, enaka na vseh napravah).
+  final double pisava;
   final String pesem;
   final Risbe risbe;
   final ValueNotifier<bool> risanje;
   final KnjiznicaMidi knjiznica;
-
-  /// Konec ščipa: nova povečava (shrani se kot velikost pisave).
-  final ValueChanged<double>? obPovecavi;
-
-  /// Vrstice se prelomijo na širino zaslona.
-  final bool prelom;
 
   /// Klicaji pesmi (na besedilu so tisti s stranjo 0).
   final List<KlicajPesmi> klicaji;
@@ -74,12 +70,19 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   List<GlobalKey> _kljuci = [];
   List<cp.Vrstica> _vrstice = [];
 
-  // Ščip: prsti na zaslonu, začetna razdalja in povečava.
+  // Ščip: prsti na zaslonu, začetna razdalja in povečava (začasna, samo za ta ogled).
   final _prsti = <int, Offset>{};
   double? _zacetnaRazdalja;
   double _zacetnaPovecava = 1;
   Offset? _zadnjeSredisce;
-  double? _zacasna;
+  double _povecava = 1;
+
+  /// Višina strani v enotah strani (izmeri se po izrisu) in merilo med risanjem (da stran ne skoči).
+  double? _visina;
+  double? _meriloRisanja;
+
+  /// Besedilo se nadaljuje pod spodnjim robom zaslona.
+  bool _seNadaljuje = false;
 
   @override
   Risbe get risbe => widget.risbe;
@@ -143,8 +146,8 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
             () {
               final zgoraj = strTelo.globalToLocal(telo.localToGlobal(Offset.zero));
               var r = zgoraj & telo.size;
-              if (_zAkordi(i) && !_prelomljena(telo.size.height)) {
-                r = Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom);
+              if (_zAkordi(i) && !_prelomljena(telo.size.height, widget.pisava)) {
+                r = Rect.fromLTRB(r.left, r.bottom - widget.pisava * 1.3, r.right, r.bottom);
               }
               r = r.inflate(2);
               return (i, Rect.fromLTRB(r.left / sirina, r.top / sirina, r.right / sirina, r.bottom / sirina));
@@ -153,7 +156,7 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   }
 
   /// Vrstica z akordi, ki se je prelomila v več vrstic (oznaka takrat pokrije vse).
-  static bool _prelomljena(double visina) => visina > BesediloZRisanjem.osnovnaPisava * 1.3 * 2.6;
+  static bool _prelomljena(double visina, double pisava) => visina > pisava * 1.3 * 2.6;
 
   /// Vrstice besedila (pri vrstici z akordi samo besedilo, brez akordov), relativno na širino strani.
   @override
@@ -195,7 +198,7 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     if (_prsti.length == 2) {
       final t = _prsti.values.toList();
       _zacetnaRazdalja = (t[0] - t[1]).distance;
-      _zacetnaPovecava = widget.povecava;
+      _zacetnaPovecava = _povecava;
       _zadnjeSredisce = (t[0] + t[1]) / 2;
     }
   }
@@ -206,7 +209,7 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     final d0 = _zacetnaRazdalja;
     if (_prsti.length != 2 || d0 == null || d0 < 20) return;
     final t = _prsti.values.toList();
-    final nova = (_zacetnaPovecava * (t[0] - t[1]).distance / d0).clamp(12 / 22, 64 / 22);
+    final nova = (_zacetnaPovecava * (t[0] - t[1]).distance / d0).clamp(0.5, 4.0);
     final sredisce = (t[0] + t[1]) / 2;
     // Med risanjem se stran ne premika s prstom, zato jo premikata dva prsta.
     if (risem && _zadnjeSredisce != null) {
@@ -216,38 +219,65 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
       }
     }
     _zadnjeSredisce = sredisce;
-    setState(() => _zacasna = nova);
+    setState(() => _povecava = nova);
   }
 
   void _gor(PointerEvent e) {
     _prsti.remove(e.pointer);
     if (_prsti.length < 2) {
-      final z = _zacasna;
       _zacetnaRazdalja = null;
       _zadnjeSredisce = null;
-      if (z != null) {
-        _zacasna = null;
-        widget.obPovecavi?.call(z);
-        setState(() {});
-      }
+      // Skoraj osnovna povečava se vrne na osnovno (cela pesem spet na zaslonu).
+      if ((_povecava - 1).abs() < 0.08 && _povecava != 1) setState(() => _povecava = 1);
     }
+  }
+
+  /// Izmeri višino strani po izrisu; od nje je odvisno, ali gre cela pesem na zaslon.
+  void _izmeri() {
+    if (!mounted) return;
+    final telo = _stranKljuc.currentContext?.findRenderObject() as RenderBox?;
+    if (telo == null || !telo.hasSize) return;
+    final v = telo.size.height;
+    if (_visina == null || (v - _visina!).abs() > 1) setState(() => _visina = v);
+  }
+
+  bool _obSkrolu(ScrollNotification n) {
+    if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
+    _osveziNadaljevanje(n.metrics);
+    return false;
+  }
+
+  void _osveziNadaljevanje(ScrollMetrics m) {
+    final nadaljuje = m.maxScrollExtent - m.pixels > 24;
+    if (nadaljuje != _seNadaljuje) setState(() => _seNadaljuje = nadaljuje);
+  }
+
+  void _naprej() {
+    if (!_navpicno.hasClients) return;
+    final p = _navpicno.position;
+    _navpicno.animateTo(
+      math.min(p.pixels + p.viewportDimension * 0.8, p.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     const enota = BesediloZRisanjem.sirinaStrani;
     final premikanje = risem ? const NeverScrollableScrollPhysics() : null;
-    final povecava = _zacasna ?? widget.povecava;
-    // S prelomom je stran ožja (v enotah strani), prikazana pa čez cel zaslon: pisava je enako velika.
-    final sirina = widget.prelom ? math.max(enota / povecava, 150.0) : enota;
     _vrstice = cp.razcleni(widget.vsebina);
     if (_kljuci.length != _vrstice.length) _kljuci = [for (final _ in _vrstice) GlobalKey()];
-    final vrstice = BesediloPogled.vrstice(context, widget.vsebina, BesediloZRisanjem.osnovnaPisava);
+    final vrstice = BesediloPogled.vrstice(context, widget.vsebina, widget.pisava);
     // Oznake, vezane na vrstice, se narišejo pod svojo vrstico, kjerkoli je ta zdaj.
     final poVrsticah = <int, List<Oznaka>>{};
     for (final o in oznakeVrstic(BesediloZRisanjem.stran)) {
       if (_vrsticaOznake(o) case final i?) poVrsticah.putIfAbsent(i, () => []).add(o);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _izmeri();
+      if (mounted && _navpicno.hasClients) _osveziNadaljevanje(_navpicno.position);
+    });
     return Stack(
       children: [
         Listener(
@@ -257,65 +287,90 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
           onPointerCancel: _gor,
           child: LayoutBuilder(
             builder: (context, omejitve) {
-              // Pri povečavi 1 je stran široka kot zaslon; večja pisava jo poveča (premikanje tudi vstran),
-              // s prelomom pa ostane široka kot zaslon.
-              final prikazano = math.max(omejitve.maxWidth * (widget.prelom ? 1 : povecava), 1.0);
-              return SingleChildScrollView(
-                controller: _navpicno,
-                physics: premikanje,
-                padding: EdgeInsets.only(bottom: risem ? 160 : 88),
+              // Stran je široka kot zaslon; kratka pesem se pomanjša (ali na širokem zaslonu poveča) tako,
+              // da je vsa vidna, razen če bi bila pisava premajhna za branje.
+              final poSirini = omejitve.maxWidth / enota;
+              var merilo = poSirini;
+              var cela = false;
+              final visina = _visina;
+              if (visina != null && omejitve.maxHeight.isFinite) {
+                final naZaslon = (omejitve.maxHeight - 8) / visina;
+                if (naZaslon >= poSirini) {
+                  cela = true;
+                } else if (widget.pisava * naZaslon >= BesediloZRisanjem.najmanjsaPisava) {
+                  merilo = naZaslon;
+                  cela = true;
+                }
+              }
+              if (risem) {
+                merilo = _meriloRisanja ??= merilo;
+              } else {
+                _meriloRisanja = null;
+              }
+              merilo *= _povecava;
+              final prikazano = math.max(enota * merilo, 1.0);
+              return NotificationListener<ScrollNotification>(
+                onNotification: _obSkrolu,
                 child: SingleChildScrollView(
-                  controller: _vodoravno,
-                  scrollDirection: Axis.horizontal,
+                  controller: _navpicno,
                   physics: premikanje,
-                  child: SizedBox(
-                    width: math.max(prikazano, omejitve.maxWidth),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: SizedBox(
-                        width: prikazano,
-                        child: FittedBox(
-                          fit: BoxFit.fitWidth,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width: sirina,
-                            child: _Stran(
-                              kljuc: _stranKljuc,
-                              podlaga: (velikost) =>
-                                  podlagaStrani(BesediloZRisanjem.stran, velikost, enotaX: enota, enotaY: enota),
-                              sloj: (velikost) => slojStrani(
-                                BesediloZRisanjem.stran,
-                                velikost,
-                                enotaX: enota,
-                                enotaY: enota,
-                                zOznakami: false,
-                              ),
-                              // Prostor pod kratkim besedilom za opombe.
-                              child: Container(
-                                constraints: const BoxConstraints(minHeight: enota),
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (var i = 0; i < vrstice.length; i++)
-                                      KeyedSubtree(
-                                        key: i < _kljuci.length ? _kljuci[i] : null,
-                                        child: switch (poVrsticah[i]) {
-                                          final oznake? => Stack(
-                                            clipBehavior: Clip.none,
-                                            children: [
-                                              Positioned.fill(
-                                                child: CustomPaint(
-                                                  painter: _OznakeVrstice(oznake, zAkordi: _zAkordi(i)),
+                  padding: EdgeInsets.only(bottom: risem ? 160 : (cela && _povecava == 1 ? 0 : 88)),
+                  child: SingleChildScrollView(
+                    controller: _vodoravno,
+                    scrollDirection: Axis.horizontal,
+                    physics: premikanje,
+                    child: SizedBox(
+                      width: math.max(prikazano, omejitve.maxWidth),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: prikazano,
+                          child: FittedBox(
+                            fit: BoxFit.fitWidth,
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                              width: enota,
+                              child: _Stran(
+                                kljuc: _stranKljuc,
+                                podlaga: (velikost) =>
+                                    podlagaStrani(BesediloZRisanjem.stran, velikost, enotaX: enota, enotaY: enota),
+                                sloj: (velikost) => slojStrani(
+                                  BesediloZRisanjem.stran,
+                                  velikost,
+                                  enotaX: enota,
+                                  enotaY: enota,
+                                  zOznakami: false,
+                                ),
+                                // Malo prostora pod besedilom za opombe.
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      for (var i = 0; i < vrstice.length; i++)
+                                        KeyedSubtree(
+                                          key: i < _kljuci.length ? _kljuci[i] : null,
+                                          child: switch (poVrsticah[i]) {
+                                            final oznake? => Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                Positioned.fill(
+                                                  child: CustomPaint(
+                                                    painter: _OznakeVrstice(
+                                                      oznake,
+                                                      zAkordi: _zAkordi(i),
+                                                      pisava: widget.pisava,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                              vrstice[i],
-                                            ],
-                                          ),
-                                          null => vrstice[i],
-                                        },
-                                      ),
-                                  ],
+                                                vrstice[i],
+                                              ],
+                                            ),
+                                            null => vrstice[i],
+                                          },
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -329,8 +384,60 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
             },
           ),
         ),
+        if (_seNadaljuje && !risem)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 12,
+            child: Center(child: PuscicaNaprej(onTap: _naprej)),
+          ),
         ...kontrole(context),
       ],
+    );
+  }
+}
+
+/// Utripajoča puščica navzdol: besedila še ni konec. Dotik pomakne za en zaslon naprej.
+class PuscicaNaprej extends StatefulWidget {
+  const PuscicaNaprej({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<PuscicaNaprej> createState() => _PuscicaNaprejState();
+}
+
+class _PuscicaNaprejState extends State<PuscicaNaprej> with SingleTickerProviderStateMixin {
+  late final _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))
+    ..repeat(reverse: true, count: 6);
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final barve = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, child) =>
+          Transform.translate(offset: Offset(0, 6 * Curves.easeInOut.transform(_anim.value)), child: child),
+      child: Material(
+        key: const ValueKey('puscica-naprej'),
+        color: barve.primary.withValues(alpha: 0.85),
+        shape: const CircleBorder(),
+        elevation: 3,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: widget.onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(Icons.keyboard_double_arrow_down, color: barve.onPrimary, size: 30),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -359,16 +466,17 @@ class _Stran extends StatelessWidget {
 
 /// Oznake ene vrstice besedila: delež širine vrstice, pri vrstici z akordi le pas besedila.
 class _OznakeVrstice extends CustomPainter {
-  _OznakeVrstice(this.oznake, {required this.zAkordi});
+  _OznakeVrstice(this.oznake, {required this.zAkordi, required this.pisava});
 
   final List<Oznaka> oznake;
   final bool zAkordi;
+  final double pisava;
 
   @override
   void paint(Canvas canvas, Size size) {
     final r = Offset.zero & size;
-    final pas = zAkordi && !_BesediloZRisanjemState._prelomljena(size.height)
-        ? Rect.fromLTRB(r.left, r.bottom - BesediloZRisanjem.osnovnaPisava * 1.3, r.right, r.bottom)
+    final pas = zAkordi && !_BesediloZRisanjemState._prelomljena(size.height, pisava)
+        ? Rect.fromLTRB(r.left, r.bottom - pisava * 1.3, r.right, r.bottom)
         : r;
     final v = pas.inflate(2);
     for (final o in oznake) {

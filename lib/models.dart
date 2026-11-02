@@ -31,6 +31,7 @@ class Pesem {
     this.midiZaUvod = '',
     this.klicaji = 0,
     this.ocena = 0,
+    this.pisava = 22,
   });
 
   /// [klicaji] je število klicajev pesmi (list Klicaji).
@@ -55,6 +56,7 @@ class Pesem {
     midiZaUvod: besedilo(r['MIDI za uvod']),
     klicaji: klicaji,
     ocena: (int.tryParse(besedilo(r['Ocena'])) ?? 0).clamp(0, 5),
+    pisava: (double.tryParse(besedilo(r['Pisava']).replaceAll(',', '.')) ?? 22).clamp(12, 64).toDouble(),
   );
 
   final String id;
@@ -86,6 +88,9 @@ class Pesem {
 
   /// Ocena 1 do 5 (0 = brez).
   final int ocena;
+
+  /// Velikost pisave besedila na strani (skupna vsem, nastavi jo urednik).
+  final double pisava;
 
   /// Arhivirana pesem ni vidna v mapah in iskalnikih (samo v arhivu).
   bool get vArhivu => status == StatusPesmi.arhiv;

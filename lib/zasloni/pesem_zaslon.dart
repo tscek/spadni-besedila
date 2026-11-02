@@ -87,7 +87,8 @@ class PesemZaslon extends StatefulWidget {
 }
 
 class _PesemZaslonState extends State<PesemZaslon> {
-  double get _pisava => _novaPisava ?? Nastavitve.aplikacija.pisavaZa(widget.pesem.id);
+  /// Pisava besedila je lastnost pesmi (enaka na vseh napravah); spreminja jo urednik.
+  double get _pisava => _novaPisava ?? _pesem.pisava;
 
   /// Povečava besedila ali PDF-ja, ki še ni shranjena (ikona za shranjevanje v orodni vrstici).
   double? _novaPisava;
@@ -111,14 +112,27 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   Future<void> _shraniZoom() async {
     final n = Nastavitve.aplikacija;
-    if (_novaPisava case final v?) await n.nastaviPisavoPesmi(widget.pesem.id, v);
+    final messenger = ScaffoldMessenger.of(context);
+    if (_novaPisava case final v?) {
+      final api = apiZaUrejanje(context, widget.prijava, baza: widget.baza);
+      if (api == null) return;
+      try {
+        await widget.baza.shraniPesem(api, {'ID': _pesem.id, 'Naslov': _pesem.naslov, 'Pisava': v});
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+        return;
+      }
+    }
     if (_novaPdf case (final z,)) await n.nastaviPovecavoPdf(widget.pesem.id, z);
     if (!mounted) return;
+    final pisava = _novaPisava != null;
     setState(() {
       _novaPisava = null;
       _novaPdf = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Povečava je shranjena za to pesem.')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(pisava ? 'Pisava pesmi je shranjena za vse.' : 'Povečava je shranjena za to pesem.')),
+    );
   }
 
   bool _prikaziBesedilo = true;
@@ -221,7 +235,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     });
   }
 
-  /// Gumba in ščip spremenita pisavo samo te pesmi.
+  /// Gumba spremenita pisavo te pesmi za vse (samo urednik; shrani se z ikono za shranjevanje).
   void _spremeniPisavo(double d) => setState(() => _novaPisava = (_pisava + d).clamp(12, 64).toDouble());
 
   /// Vse o pesmi na enem zaslonu; [zavihek] izbere, kaj se odpre najprej.
@@ -632,7 +646,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
           Orodje.bluetooth => [BluetoothIkona(baza: widget.baza)],
           Orodje.midi => [const MidiLucki()],
           Orodje.runda => [RundaGumb(baza: widget.baza)],
-          Orodje.pisava when besedilo => [
+          Orodje.pisava when besedilo && !Config.prekoVodje && widget.baza.smeUrejatiPesem(_pesem) => [
             IconButton(
               tooltip: 'Manjša pisava',
               icon: const Icon(Icons.text_decrease),
@@ -947,7 +961,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         actions: [
           if (_neshranjenZoom)
             IconButton(
-              tooltip: 'Shrani povečavo za to pesem',
+              tooltip: _novaPisava != null ? 'Shrani pisavo pesmi za vse' : 'Shrani povečavo za to pesem',
               icon: const Icon(Icons.save_outlined),
               onPressed: _shraniZoom,
             ),
@@ -981,17 +995,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
       return BesediloZRisanjem(
         key: _vsebinaKljuc,
         vsebina: _besedila.first.vsebina,
-        povecava: _pisava / BesediloZRisanjem.osnovnaPisava,
+        pisava: _pisava,
         pesem: widget.pesem.id,
         risbe: widget.baza.risbe,
         risanje: _risanje,
         knjiznica: widget.baza.midi,
-        prelom: Nastavitve.aplikacija.prelom,
         klicaji: _klicaji,
         risbeSkupne: widget.baza.risbeSkupne,
         smeSkupno: _smeSkupno,
         posnetki: _posnetki,
-        obPovecavi: (v) => setState(() => _novaPisava = v * BesediloZRisanjem.osnovnaPisava),
       );
     }
     if (_pdfji.isNotEmpty) {

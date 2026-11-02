@@ -17,6 +17,7 @@ import 'package:spadni_besedila/risbe.dart' hide Orodje;
 import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
+import 'package:spadni_besedila/zasloni/besedilo_risanje.dart';
 import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/naslednje.dart';
 import 'package:spadni_besedila/zasloni/oznake.dart' show kontrastnaBarva;
@@ -328,34 +329,52 @@ void main() {
     expect((await naslov(220)).maxLines, 2);
   });
 
-  testWidgets('povečava se shrani šele z ikono za shranjevanje', (tester) async {
+  testWidgets('pisava pesmi je skupna; gumbe zanjo ima samo urednik', (tester) async {
     late Baza baza;
     await tester.runAsync(() async => baza = (await _baza()).$1);
-    final n = Nastavitve.aplikacija;
-    await n.nastaviOrodje(Orodje.pisava, Mesto.zgoraj);
-    Future<void> odpri() async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PesemZaslon(key: UniqueKey(), pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+    expect(Pesem.izVrstice({'ID': 'x', 'Pisava': '26'}).pisava, 26);
+    expect(Pesem.izVrstice({'ID': 'x'}).pisava, 22);
+    await Nastavitve.aplikacija.nastaviOrodje(Orodje.pisava, Mesto.zgoraj);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(pesem: baza.pesem('a')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(baza.smeUrejati, isFalse);
+    expect(find.byTooltip('Večja pisava'), findsNothing);
+  });
+
+  testWidgets('dolgo besedilo: puščica spodaj, dotik pomakne naprej; kratko gre celo na zaslon', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    tester.view.physicalSize = const Size(400, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Widget besedilo(String vsebina) => MaterialApp(
+      home: Scaffold(
+        body: BesediloZRisanjem(
+          key: ValueKey(vsebina.length),
+          vsebina: vsebina,
+          pesem: 'a',
+          risbe: baza.risbe,
+          risanje: ValueNotifier(false),
+          knjiznica: baza.midi,
         ),
-      );
-      await tester.pumpAndSettle();
-    }
-
-    await odpri();
-    expect(find.byTooltip('Shrani povečavo za to pesem'), findsNothing);
-    await tester.tap(find.byTooltip('Večja pisava'));
+      ),
+    );
+    await tester.pumpWidget(besedilo(List.generate(60, (i) => 'Vrstica številka $i').join('\n')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('puscica-naprej')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('puscica-naprej')));
     await tester.pumpAndSettle();
-    expect(n.pisavePesmi, isEmpty); // še ni shranjeno
-    await tester.tap(find.byTooltip('Shrani povečavo za to pesem'));
-    await tester.pumpAndSettle();
-    expect(n.pisavaZa('a'), n.pisava + 2);
-    expect(find.byTooltip('Shrani povečavo za to pesem'), findsNothing);
+    final pomik = tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView).first).controller!;
+    expect(pomik.offset, greaterThan(400));
 
-    // Brez shranjevanja se ob ponovnem odprtju vrne shranjena povečava.
-    await tester.tap(find.byTooltip('Večja pisava'));
-    await odpri();
-    expect(n.pisavaZa('a'), n.pisava + 2);
+    await tester.pumpWidget(besedilo('Kratka pesem\nDve vrstici'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('puscica-naprej')), findsNothing);
   });
 
   testWidgets('pesem: pridržanje vklopi risanje, trojni dotik postavi klicaj', (tester) async {

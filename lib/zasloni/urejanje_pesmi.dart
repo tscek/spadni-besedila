@@ -124,7 +124,8 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
   ];
 
   late final Map<String, TextEditingController> _vnosi = {
-    for (final stolpec in [..._polja.map((p) => p.$1), ..._poljaMidi.map((p) => p.$1)])
+    // Pisava (skupna vsem) se nastavi v predogledu.
+    for (final stolpec in [..._polja.map((p) => p.$1), ..._poljaMidi.map((p) => p.$1), 'Pisava'])
       stolpec: TextEditingController(text: _zacetna(stolpec))..addListener(_spremenjenaPesem),
   };
 
@@ -356,10 +357,18 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
                 _podatki(context),
                 _urejanjeBesedila(context),
                 ListenableBuilder(
-                  listenable: _vsebina,
+                  listenable: Listenable.merge([_vsebina, _vnosi['Pisava']!]),
                   builder: (context, _) => _vsebina.text.trim().isEmpty
                       ? const Center(child: Text('Pesem še nima besedila.'))
-                      : PredogledBesedila(vsebina: _vsebina.text, pesem: widget.pesem?.id ?? '', baza: widget.baza),
+                      : PredogledBesedila(
+                          vsebina: _vsebina.text,
+                          pesem: widget.pesem?.id ?? '',
+                          baza: widget.baza,
+                          pisava: (double.tryParse(_vnosi['Pisava']!.text.replaceAll(',', '.')) ?? 22)
+                              .clamp(12, 64)
+                              .toDouble(),
+                          obPisavi: (v) => _vnosi['Pisava']!.text = v.round().toString(),
+                        ),
                 ),
                 _pdfji(context),
                 _midi(context),

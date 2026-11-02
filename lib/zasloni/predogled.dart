@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../baza.dart';
-import '../nastavitve.dart';
 import 'besedilo_risanje.dart';
 
 /// Naprava za predogled besedila: velikost zaslona v logičnih točkah (pokončno).
@@ -18,13 +17,24 @@ enum NapravaPredogleda {
 }
 
 /// Višina zgornje in spodnje vrstice zaslona pesmi (približno), ki ju predogled odšteje.
-const _vrstice = 44.0 + 48.0;
+const _vrstice = 56.0 + 48.0;
 
-/// Predogled besedila, kot ga pokaže zaslon pesmi (pisava pesmi, prelom), na izbrani napravi.
+/// Predogled besedila, kot ga pokaže zaslon pesmi, na izbrani napravi (vrstice so povsod enake).
 class PredogledBesedila extends StatefulWidget {
-  const PredogledBesedila({super.key, required this.vsebina, required this.pesem, required this.baza});
+  const PredogledBesedila({
+    super.key,
+    required this.vsebina,
+    required this.pesem,
+    required this.baza,
+    required this.pisava,
+    this.obPisavi,
+  });
 
   final String vsebina;
+
+  /// Pisava pesmi na strani; [obPisavi] jo spremeni (urednik).
+  final double pisava;
+  final ValueChanged<double>? obPisavi;
   final String pesem;
   final Baza baza;
 
@@ -45,16 +55,15 @@ class _PredogledBesedilaState extends State<PredogledBesedila> {
 
   @override
   Widget build(BuildContext context) {
-    final n = Nastavitve.aplikacija;
     final besedilo = BesediloZRisanjem(
+      key: ValueKey('predogled-${widget.pisava}-${_naprava.name}-$_lezece'),
       vsebina: widget.vsebina,
-      povecava: n.pisavaZa(widget.pesem) / BesediloZRisanjem.osnovnaPisava,
+      pisava: widget.pisava,
       pesem: widget.pesem,
       risbe: widget.baza.risbe,
       risbeSkupne: widget.baza.risbeSkupne,
       risanje: _risanje,
       knjiznica: widget.baza.midi,
-      prelom: n.prelom,
     );
     var velikost = _naprava.velikost;
     if (velikost != null && _lezece != (velikost.width > velikost.height)) velikost = velikost.flipped;
@@ -78,6 +87,20 @@ class _PredogledBesedilaState extends State<PredogledBesedila> {
                     _lezece = _naprava == NapravaPredogleda.racunalnik;
                   }),
                 ),
+                if (widget.obPisavi case final obPisavi?) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Manjša pisava',
+                    icon: const Icon(Icons.text_decrease),
+                    onPressed: widget.pisava > 12 ? () => obPisavi(widget.pisava - 1) : null,
+                  ),
+                  Text('${widget.pisava.round()}', key: const ValueKey('pisava-pesmi')),
+                  IconButton(
+                    tooltip: 'Večja pisava',
+                    icon: const Icon(Icons.text_increase),
+                    onPressed: widget.pisava < 64 ? () => obPisavi(widget.pisava + 1) : null,
+                  ),
+                ],
                 if (_naprava.velikost != null)
                   IconButton(
                     tooltip: _lezece ? 'Pokončno' : 'Ležeče',
@@ -90,8 +113,7 @@ class _PredogledBesedilaState extends State<PredogledBesedila> {
         ),
         if (velikost != null)
           Text(
-            '${velikost.width.round()} × ${velikost.height.round()} točk, pisava ${n.pisavaZa(widget.pesem).round()}'
-            '${n.prelom ? ', s prelomom' : ''}',
+            '${velikost.width.round()} × ${velikost.height.round()} točk, pisava pesmi ${widget.pisava.round()}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         Expanded(
