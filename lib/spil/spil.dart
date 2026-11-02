@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../baza.dart';
 import '../config.dart';
+import '../odigrane.dart';
 import '../runda.dart';
 import '../snemanje.dart';
 import 'streznik.dart';
@@ -133,6 +134,7 @@ class Spil extends ChangeNotifier {
         if (n > sledilcev && _streznik != null) {
           _objaviRundo();
           _objaviSnemanje();
+          _objaviOdigrane();
         }
         sledilcev = n;
         notifyListeners();
@@ -151,6 +153,9 @@ class Spil extends ChangeNotifier {
         ..addListener(_objaviSnemanje)
         ..snemalcu = (u) => _streznik?.poslji(jsonEncode({'vrsta': 'snemanjeUkaz', ...u}));
       _objaviSnemanje();
+      // Odigrane pesmi so skupne vsem na špilu.
+      Odigrane.aplikacija.addListener(_objaviOdigrane);
+      _objaviOdigrane();
       // Klicaji: vsak nov ali izbrisan gre takoj vsem.
       _bazaVodje = baza;
       _zadnjiKlicaji = null;
@@ -265,6 +270,8 @@ class Spil extends ChangeNotifier {
         _nastaviNaslednje([]);
       case 'runda':
         Runda.aplikacija.izvedi(u);
+      case 'odigrane':
+        Odigrane.aplikacija.izvedi(u);
       // Snemanje vodi samo administrator (iPad prek vodje ukaza ne more poslati, glej streznik_io).
       case 'snemanje' when u['admin'] == true:
         SnemanjeSpila.aplikacija.izvedi(u);
@@ -296,6 +303,8 @@ class Spil extends ChangeNotifier {
   void _objaviRundo() => _streznik?.poslji(jsonEncode(Runda.aplikacija.vJson()));
 
   void _objaviSnemanje() => _streznik?.poslji(jsonEncode(SnemanjeSpila.aplikacija.vJson()));
+
+  void _objaviOdigrane() => _streznik?.poslji(jsonEncode(Odigrane.aplikacija.vJson()));
 
   /// Sledilec, ki snema: stanje pošlje vodji, ta ga pošlje vsem.
   void _snemamKotSledilec() {
@@ -383,6 +392,9 @@ class Spil extends ChangeNotifier {
         napaka = null;
         // Gumba runde in pavze gresta vodji, ta pa časovnik pošlje vsem.
         Runda.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'runda', ...u});
+        // Odigrane: najprej svoje oznake vodji, nato vsaka nova; seznam pride od vodje.
+        Odigrane.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'odigrane', ...u});
+        _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'odigrane', ...Odigrane.aplikacija.zaZdruzitev()});
         SnemanjeSpila.aplikacija.vodji = (u) =>
             _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'snemanje', 'admin': baza?.jeAdministrator ?? false, ...u});
         // Klicaj iz aplikacije gre tudi vodji (iPad ga vodji pošlje sam prek /api).
@@ -400,6 +412,8 @@ class Spil extends ChangeNotifier {
             notifyListeners();
           } else if (j['vrsta'] == 'runda') {
             Runda.aplikacija.prevzemi(j);
+          } else if (j['vrsta'] == 'odigrane') {
+            Odigrane.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'snemanje') {
             SnemanjeSpila.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'snemanjeUkaz') {
@@ -427,6 +441,7 @@ class Spil extends ChangeNotifier {
   void _prekinjeno(WebSocketChannel? kanal) {
     if (kanal != null && kanal != _kanal) return;
     Runda.aplikacija.vodji = null;
+    Odigrane.aplikacija.vodji = null;
     SnemanjeSpila.aplikacija
       ..vodji = null
       ..removeListener(_snemamKotSledilec)
@@ -445,6 +460,7 @@ class Spil extends ChangeNotifier {
 
   void _ustaviSledenje() {
     Runda.aplikacija.vodji = null;
+    Odigrane.aplikacija.vodji = null;
     SnemanjeSpila.aplikacija
       ..vodji = null
       ..removeListener(_snemamKotSledilec)
@@ -467,6 +483,7 @@ class Spil extends ChangeNotifier {
     _ustaviSledenje();
     _naslovVodje = null;
     Runda.aplikacija.removeListener(_objaviRundo);
+    Odigrane.aplikacija.removeListener(_objaviOdigrane);
     SnemanjeSpila.aplikacija
       ..removeListener(_objaviSnemanje)
       ..snemalcu = null;

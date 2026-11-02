@@ -329,4 +329,7 @@ Future<String?> lokalniNaslov() async {
 /// Kar sme neprijavljen sledilec (brskalnik prek vodje) poslati po WebSocketu:
 /// predlog pesmi (na konec čakalne vrste) in klicaj.
 bool dovoljenoNeprijavljenemu(Map<String, dynamic> j) =>
-    j['vrsta'] == 'ukaz' && ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) || j['ukaz'] == 'klicaj');
+    j['vrsta'] == 'ukaz' &&
+    ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) ||
+        j['ukaz'] == 'klicaj' ||
+        (j['ukaz'] == 'odigrane' && j['akcija'] != 'ponastavi'));
