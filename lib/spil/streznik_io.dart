@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 
 import '../baza.dart';
 import '../config.dart';
-import '../midi/midi.dart';
 import 'streznik.dart';
 
 StreznikVodje? ustvariStreznik() => StreznikIo();
@@ -116,6 +115,8 @@ class StreznikIo implements StreznikVodje {
   Future<void> _obdelaj(HttpRequest z, Baza baza) async {
     final pot = z.uri.path;
     if (pot == '/ws' && WebSocketTransformer.isUpgradeRequest(z)) {
+      // Brskalnik (iPad prek vodje, brez prijave) pošlje glavo Origin, aplikacija ne.
+      final brskalnik = z.headers.value('origin') != null;
       final ws = await WebSocketTransformer.upgrade(z);
       ws.pingInterval = const Duration(seconds: 5);
       _odjemalci.add(ws);
@@ -127,7 +128,7 @@ class StreznikIo implements StreznikVodje {
         (m) {
           try {
             final j = jsonDecode(m as String);
-            if (j is Map<String, dynamic>) _obSporocilu?.call(j);
+            if (j is Map<String, dynamic> && (!brskalnik || dovoljenoNeprijavljenemu(j))) _obSporocilu?.call(j);
           } catch (_) {}
         },
         onDone: () {
@@ -190,20 +191,13 @@ class StreznikIo implements StreznikVodje {
     }
   }
 
-  /// iPad pošlje risbo, ki jo je član naredil na špilu; vodja jo shrani in kasneje pošlje na Drive.
-  /// Klicaj vodja shrani zase in ga pošlje naprej. Ostale zapise (dnevnik) s špila zaenkrat ignoriramo.
+  /// iPad prek vodje sme poslati le klicaj: vodja ga shrani zase, pošlje vsem in na strežnik.
   Future<String> _apiPost(String telo, Baza baza) async {
     final Object? j;
     try {
       j = jsonDecode(telo);
     } on FormatException {
       return jsonEncode({'napaka': 'Napačna zahteva'});
-    }
-    if (j is Map && j['akcija'] == 'posljiMidi') {
-      final midi = Midi.aplikacija;
-      if (!midi.vklopljen) return jsonEncode({'vklopljen': false});
-      final brez = await midi.izIpada((j['ukazi'] as List?) ?? const [], baza.midi);
-      return jsonEncode({'vklopljen': true, 'brezNaprave': brez});
     }
     if (j is Map && j['akcija'] == 'klicaj' && j['klicaj'] is Map) {
       // Klicaj s špila: vodja ga shrani (z imenom člana z iPada) in pošlje na strežnik, ko ima internet.
@@ -216,13 +210,8 @@ class StreznikIo implements StreznikVodje {
       await baza.shraniKlicaj(baza.risbeClanov.api, vrstica);
       return jsonEncode({'vrstica': vrstica});
     }
-    if (j is Map && j['akcija'] == 'risba') {
-      final clan = j['clan']?.toString() ?? '';
-      final pesem = j['pesem']?.toString() ?? '';
-      if (clan.isEmpty || pesem.isEmpty) return jsonEncode({'napaka': 'Izberi, kdo si'});
-      await baza.risbeClanov.shrani(clan, pesem, j['vsebina']?.toString() ?? '');
-    }
-    return jsonEncode({'shranjeno': true});
+    // Risbe, MIDI in ostalo so za neprijavljene (iPad prek vodje) zaklenjeni.
+    return jsonEncode({'napaka': 'Prek vodje lahko dodajaš samo klicaje.'});
   }
 
   static Future<Map<String, Uint8List>> _naloziSplet() async {
@@ -321,3 +310,8 @@ Future<String?> lokalniNaslov() async {
   }
   return null;
 }
+
+/// Kar sme neprijavljen sledilec (brskalnik prek vodje) poslati po WebSocketu:
+/// predlog pesmi (na konec čakalne vrste) in klicaj.
+bool dovoljenoNeprijavljenemu(Map<String, dynamic> j) =>
+    j['vrsta'] == 'ukaz' && ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) || j['ukaz'] == 'klicaj');

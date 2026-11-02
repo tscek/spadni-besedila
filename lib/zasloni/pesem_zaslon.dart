@@ -399,6 +399,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
       // Pridržanje na klicaju odpre podatke o njem, drugje vklopi risanje.
       if (_stran?.klicajPri(kje) case final k?) {
         _oknoKlicaja(k);
+      } else if (Config.samoKlicaji) {
+        // Neprijavljen sledilec zapiske samo vidi; klicaj doda s trojnim dotikom.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Prek vodje so zapiski samo za branje. Klicaj dodaš s trojnim dotikom.')),
+        );
       } else {
         _risanje.value = true;
       }

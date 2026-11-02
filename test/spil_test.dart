@@ -15,6 +15,7 @@ import 'package:spadni_besedila/config.dart';
 import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
+import 'package:spadni_besedila/spil/streznik_io.dart' show dovoljenoNeprijavljenemu;
 import 'package:spadni_besedila/spil/streznik.dart';
 
 Future<Baza> _baza() async {
@@ -101,7 +102,7 @@ void main() {
     // E-naslovi članov ne gredo na iPade.
     expect((podatki['tabele']['Člani'] as List).single, {'ID': 'A', 'Ime': 'Nina', 'Aktiven': true});
 
-    // iPad pošlje risbo člana A; vodja jo shrani in vrne ob naslednjem branju.
+    // iPad (neprijavljen) zapiskov ne sme spreminjati: vodja risbo zavrne.
     final z = await odjemalec.postUrl(Uri.parse('http://127.0.0.1:${Config.vrataVodje}/api'));
     z.write(
       jsonEncode({
@@ -113,9 +114,9 @@ void main() {
       }),
     );
     final o = await z.close();
-    expect(await utf8.decoder.bind(o).join(), contains('shranjeno'));
+    expect(await utf8.decoder.bind(o).join(), contains('samo klicaje'));
     final (_, risbe) = await get('/api?akcija=risbe&clan=A&zeton=');
-    expect((jsonDecode(risbe) as Map)['a']['vsebina'], contains('2026-10-29'));
+    expect(jsonDecode(risbe), isEmpty);
     final (_, tujeRisbe) = await get('/api?akcija=risbe&zeton=');
     expect(jsonDecode(tujeRisbe), isEmpty);
 
@@ -130,7 +131,7 @@ void main() {
     expect(sledilec.vloga, VlogaSpila.sledilec); // se poskuša znova povezati
   });
 
-  test('iPad pošlje MIDI vodji, ta ga pošlje na svoje naprave', () async {
+  test('iPad prek vodje ne sme pošiljati MIDI; po WebSocketu sme le predlagati pesem in klicaj', () async {
     final baza = await _baza();
     final vodja = Spil();
     addTearDown(vodja.ustavi);
@@ -139,18 +140,23 @@ void main() {
     final midi = Midi(prenos);
     Midi.aplikacija = midi;
     await midi.osveziNaprave();
+    midi.vklopljen = true;
 
     final ipad = Api(() async => '', url: 'http://127.0.0.1:${Config.vrataVodje}/api');
-    final ukazi = [
-      {'zapis': 'CC 9 12 127', 'ime': 'Delay ON', 'izhod': 'Privzeti'},
-    ];
-    // Vodja brez vklopljenega MIDI to pove.
-    await expectLater(ipad.posljiMidi(ukazi), throwsA(isA<ApiNapaka>()));
+    await expectLater(
+      ipad.posljiMidi([
+        {'zapis': 'CC 9 12 127', 'ime': 'Delay ON', 'izhod': 'Privzeti'},
+      ]),
+      throwsA(isA<ApiNapaka>()),
+    );
+    expect(prenos.poslano, isEmpty);
 
-    midi.vklopljen = true;
-    expect(await ipad.posljiMidi(ukazi), 0);
-    expect(prenos.poslano, ['x 184 12 127']);
-    expect(midi.dnevnik.single.opis, startsWith('Delay ON: CC'));
+    expect(dovoljenoNeprijavljenemu({'vrsta': 'ukaz', 'ukaz': 'dodaj', 'pesem': 'a'}), isTrue);
+    expect(dovoljenoNeprijavljenemu({'vrsta': 'ukaz', 'ukaz': 'dodaj', 'pesem': 'a', 'naPrvo': true}), isFalse);
+    expect(dovoljenoNeprijavljenemu({'vrsta': 'ukaz', 'ukaz': 'klicaj', 'klicaj': {}}), isTrue);
+    for (final u in ['odstrani', 'pocisti', 'nastavi', 'runda', 'prikazi']) {
+      expect(dovoljenoNeprijavljenemu({'vrsta': 'ukaz', 'ukaz': u}), isFalse, reason: u);
+    }
   });
 
   test('seznamček naslednjih: vsi dodajajo in vidijo, odprta pesem gre s seznamčka', () async {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../baza.dart';
+import '../config.dart';
 import '../midi/midi.dart';
 import '../nastavitve.dart';
 import '../runda.dart';
@@ -200,12 +201,11 @@ class RundaGumb extends StatelessWidget {
       builder: (context, _) {
         final n = Nastavitve.aplikacija;
         final pavza = runda.pavza;
+        // Neprijavljen sledilec časovnik samo vidi.
+        final odpri = Config.samoKlicaji ? null : () => oknoRunde(context, baza);
         if (pavza == null) {
-          return IconButton(
-            tooltip: 'Runda / pavza',
-            icon: const Icon(Icons.timer_outlined),
-            onPressed: () => oknoRunde(context, baza),
-          );
+          if (Config.samoKlicaji) return const SizedBox.shrink();
+          return IconButton(tooltip: 'Runda / pavza', icon: const Icon(Icons.timer_outlined), onPressed: odpri);
         }
         final barva = Color(pavza ? n.pavza.barva : n.igranje.barva);
         return Padding(
@@ -215,7 +215,7 @@ class RundaGumb extends StatelessWidget {
             shape: const StadiumBorder(),
             child: InkWell(
               customBorder: const StadiumBorder(),
-              onTap: () => oknoRunde(context, baza),
+              onTap: odpri,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Row(

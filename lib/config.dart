@@ -26,6 +26,10 @@ class Config {
   /// Takrat podatke daje vodja, Google prijava pa ni potrebna.
   static bool get prekoVodje => kIsWeb && Uri.base.port == vrataVodje;
 
+  /// Neprijavljen sledilec (iPad prek vodje): sme le gledati, dodajati klicaje in predlagati pesmi
+  /// (na konec čakalne vrste). Risanje, čakalna vrsta, časovnik, MIDI in snemanje so zaklenjeni.
+  static bool get samoKlicaji => prekoVodje;
+
   /// Spletna različica; s `?pesem=ID` se odpre neposredno pesem.
   static const spletniNaslov = 'https://spadni-besedila.web.app/';
 

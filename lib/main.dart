@@ -23,20 +23,15 @@ Future<void> main() async {
   final prijava = Prijava();
   final baza = Baza();
   final posodobitev = Posodobitev();
-  final spil = Spil();
+  final spil = Spil()..baza = baza;
   await baza.nalozi();
   await Nastavitve.aplikacija.nalozi();
   await Odigrane.aplikacija.nalozi();
   await Predloge.aplikacija.nalozi();
   await Runda.aplikacija.nalozi();
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
-  if (Config.prekoVodje) {
-    // iPad na špilu nima MIDI: gumbi in preizkusi gredo vodji, ki jih pošlje na svoje naprave.
-    Midi.aplikacija.posiljajPrekoVodje(
-      (ukazi) => apiNaSpilu(null).posljiMidi([
-        for (final u in ukazi) {'zapis': u.ukaz.zapis, 'ime': u.ukaz.ime, 'izhod': u.izhod},
-      ]),
-    );
+  if (Config.samoKlicaji) {
+    // iPad prek vodje MIDI nima in ga tudi ne sme pošiljati vodji (zaklenjeno za neprijavljene).
   } else {
     // MIDI naprave, če je MIDI na tej napravi vklopljen (Nastavitve → MIDI).
     Midi.aplikacija.nalozi().ignore();

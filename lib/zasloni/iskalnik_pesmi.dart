@@ -181,17 +181,29 @@ class HitriFiltri extends StatelessWidget {
     final poVrsti = vrste.length > 1;
     final poHarmoniki = harmonike.length > 1;
     if (!poVrsti && !poHarmoniki && spredaj.isEmpty) return const SizedBox.shrink();
-    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob) => Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: FilterChip(
-        visualDensity: VisualDensity.compact,
-        avatar: barva == null ? null : CircleAvatar(backgroundColor: barva, radius: 6),
-        label: Text(ime),
-        selected: izbran,
-        showCheckmark: false,
-        onSelected: (_) => ob(),
-      ),
-    );
+    // Skupine gumbov izmenično svetle in temne, da se vidi, kje se začne naslednja.
+    final barve = Theme.of(context).colorScheme;
+    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob, {required int skupina}) {
+      final temna = skupina.isOdd;
+      final crke = izbran ? barve.onPrimary : (temna ? barve.onInverseSurface : barve.onSurface);
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: FilterChip(
+          key: ValueKey('filter-$skupina-$ime'),
+          visualDensity: VisualDensity.compact,
+          avatar: barva == null ? null : CircleAvatar(backgroundColor: barva, radius: 6),
+          label: Text(ime, style: TextStyle(color: crke)),
+          selected: izbran,
+          showCheckmark: false,
+          backgroundColor: temna ? barve.inverseSurface : barve.surfaceContainerLowest,
+          selectedColor: barve.primary,
+          side: BorderSide(color: temna ? barve.inverseSurface : barve.outlineVariant),
+          onSelected: (_) => ob(),
+        ),
+      );
+    }
+
+    final skupinaHarmonik = poVrsti ? 1 : 0;
     return SizedBox(
       height: 44,
       child: ListView(
@@ -200,14 +212,20 @@ class HitriFiltri extends StatelessWidget {
         children: [
           ...spredaj,
           if (vse && (poVrsti || poHarmoniki))
-            cip('Vse', null, vrsta.isEmpty && harmonika.isEmpty, () => spremeni('', '')),
+            cip('Vse', null, vrsta.isEmpty && harmonika.isEmpty, () => spremeni('', ''), skupina: 0),
           if (poVrsti)
             for (final v in vrste)
-              cip(v, barvaVrste(baza, v), vrsta == v, () => spremeni(vrsta == v ? '' : v, harmonika)),
-          if (poVrsti && poHarmoniki) const VerticalDivider(width: 12),
+              cip(v, barvaVrste(baza, v), vrsta == v, () => spremeni(vrsta == v ? '' : v, harmonika), skupina: 0),
+          if (poVrsti && poHarmoniki) const SizedBox(width: 8),
           if (poHarmoniki)
             for (final h in harmonike)
-              cip(h, barvaHarmonike(baza, h), harmonika == h, () => spremeni(vrsta, harmonika == h ? '' : h)),
+              cip(
+                h,
+                barvaHarmonike(baza, h),
+                harmonika == h,
+                () => spremeni(vrsta, harmonika == h ? '' : h),
+                skupina: skupinaHarmonik,
+              ),
         ],
       ),
     );

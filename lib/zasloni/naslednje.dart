@@ -343,11 +343,13 @@ Future<void> pokaziNaslednje(BuildContext context, Spil spil, Baza baza, void Fu
                         Navigator.pop(context);
                         odpri(p);
                       },
-                      trailing: IconButton(
-                        tooltip: 'Odstrani',
-                        icon: const Icon(Icons.close),
-                        onPressed: () => spil.odstraniNaslednjo(i),
-                      ),
+                      trailing: Config.samoKlicaji
+                          ? null
+                          : IconButton(
+                              tooltip: 'Odstrani',
+                              icon: const Icon(Icons.close),
+                              onPressed: () => spil.odstraniNaslednjo(i),
+                            ),
                     ),
               ],
             );

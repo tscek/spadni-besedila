@@ -68,6 +68,11 @@ class Spil extends ChangeNotifier {
   final Stream<NajdenVodja> Function() _isciVodjo;
 
   VlogaSpila vloga = VlogaSpila.nic;
+
+  /// Lokalna kopija baze (klicaji gredo sproti med vodjo in sledilci).
+  Baza? baza;
+  Baza? _bazaVodje;
+  String? _zadnjiKlicaji;
   StanjeSpila? stanje;
 
   /// Seznamček naslednjih pesmi; hrani ga vodja, sledilci dobijo kopijo (brez špila je samo na tej napravi).
@@ -137,6 +142,11 @@ class Spil extends ChangeNotifier {
       // Časovnik runde in pavze je skupen: vodja ga pošilja ob vsaki spremembi.
       Runda.aplikacija.addListener(_objaviRundo);
       _objaviRundo();
+      // Klicaji: vsak nov ali izbrisan gre takoj vsem.
+      _bazaVodje = baza;
+      _zadnjiKlicaji = null;
+      baza.addListener(_objaviKlicaje);
+      _objaviKlicaje();
     } catch (e) {
       napaka = 'Strežnika ni bilo mogoče zagnati: $e';
     }
@@ -184,6 +194,7 @@ class Spil extends ChangeNotifier {
 
   /// Sledilec s pravico: vsem (tudi vodji) pokaže to pesem.
   void zamenjajVsem(StanjeSpila s) {
+    if (Config.samoKlicaji) return;
     if (vloga == VlogaSpila.sledilec) {
       _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.vJson()});
     } else {
@@ -195,6 +206,11 @@ class Spil extends ChangeNotifier {
   Naslednja? prvaNaslednja({bool naKonec = true}) => naslednje.where((n) => naKonec || !n.naKonec).firstOrNull;
 
   void _spremeni(Map<String, dynamic> ukaz) {
+    // Neprijavljen sledilec sme pesem le predlagati (na konec čakalne vrste).
+    if (Config.samoKlicaji) {
+      if (ukaz['ukaz'] != 'dodaj') return;
+      ukaz = {...ukaz}..remove('naPrvo');
+    }
     if (vloga == VlogaSpila.sledilec) {
       _posljiVodji({'vrsta': 'ukaz', ...ukaz});
     } else {
@@ -240,6 +256,14 @@ class Spil extends ChangeNotifier {
         _nastaviNaslednje([]);
       case 'runda':
         Runda.aplikacija.izvedi(u);
+      case 'klicaj' when u['klicaj'] is Map && _bazaVodje != null:
+        final k = (u['klicaj'] as Map).cast<String, dynamic>();
+        final b = _bazaVodje!;
+        if (u['izbrisi'] == true) {
+          b.izbrisiKlicaj(b.risbeClanov.api, k['ID']?.toString() ?? '');
+        } else {
+          b.shraniKlicaj(b.risbeClanov.api, k);
+        }
       case 'nastavi' when u['pesmi'] is List:
         _nastaviNaslednje([
           for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
@@ -255,6 +279,15 @@ class Spil extends ChangeNotifier {
   }
 
   void _objaviRundo() => _streznik?.poslji(jsonEncode(Runda.aplikacija.vJson()));
+
+  void _objaviKlicaje() {
+    final b = _bazaVodje;
+    if (b == null || _streznik == null) return;
+    final s = jsonEncode({'vrsta': 'klicaji', 'klicaji': b.vrsticeKlicajev});
+    if (s == _zadnjiKlicaji) return;
+    _zadnjiKlicaji = s;
+    _streznik?.poslji(s);
+  }
 
   void _objaviNaslednje() => _streznik?.poslji(
     jsonEncode({
@@ -323,6 +356,11 @@ class Spil extends ChangeNotifier {
         napaka = null;
         // Gumba runde in pavze gresta vodji, ta pa časovnik pošlje vsem.
         Runda.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'runda', ...u});
+        // Klicaj iz aplikacije gre tudi vodji (iPad ga vodji pošlje sam prek /api).
+        if (!Config.prekoVodje) {
+          baza?.obKlicaju = (v, izbrisi) =>
+              _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'klicaj', 'klicaj': v, if (izbrisi) 'izbrisi': true});
+        }
         notifyListeners();
       }, onError: (Object _) => _prekinjeno(kanal));
       _poslusam = kanal.stream.listen(
@@ -333,6 +371,10 @@ class Spil extends ChangeNotifier {
             notifyListeners();
           } else if (j['vrsta'] == 'runda') {
             Runda.aplikacija.prevzemi(j);
+          } else if (j['vrsta'] == 'klicaji' && j['klicaji'] is List) {
+            baza?.prevzemiKlicaje(
+              (j['klicaji'] as List).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList(),
+            );
           } else if (j['vrsta'] == 'naslednje') {
             naslednje = List.unmodifiable([
               for (final n in (j['seznam'] as List?) ?? const [])
@@ -352,6 +394,7 @@ class Spil extends ChangeNotifier {
   void _prekinjeno(WebSocketChannel? kanal) {
     if (kanal != null && kanal != _kanal) return;
     Runda.aplikacija.vodji = null;
+    baza?.obKlicaju = null;
     if (povezan) {
       povezan = false;
       prekinjeno = true;
@@ -365,6 +408,7 @@ class Spil extends ChangeNotifier {
 
   void _ustaviSledenje() {
     Runda.aplikacija.vodji = null;
+    baza?.obKlicaju = null;
     _ponovnaPovezava?.cancel();
     _poslusam?.cancel();
     _kanal?.sink.close();
@@ -382,6 +426,8 @@ class Spil extends ChangeNotifier {
     _ustaviSledenje();
     _naslovVodje = null;
     Runda.aplikacija.removeListener(_objaviRundo);
+    _bazaVodje?.removeListener(_objaviKlicaje);
+    _bazaVodje = null;
     await _streznik?.ustavi();
     _streznik = null;
     vloga = VlogaSpila.nic;

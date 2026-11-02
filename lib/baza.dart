@@ -530,8 +530,42 @@ class Baza extends ChangeNotifier {
     return k;
   }
 
+  /// Sledilec na špilu: klicaj gre tudi vodji, ta pa ga takoj pokaže vsem.
+  void Function(Zapis vrstica, bool izbrisi)? obKlicaju;
+
+  /// Vrstice klicajev, kot so v lokalni kopiji (vodja jih pošilja sledilcem).
+  List<Zapis> get vrsticeKlicajev =>
+      (((_podatki['tabele'] as Map?)?['Klicaji'] as List?) ?? const []).cast<Map<String, dynamic>>();
+
+  /// Sledilec: klicaji od vodje. Lastni klicaji, ki še niso na strežniku, ostanejo.
+  Future<void> prevzemiKlicaje(List<Zapis> vrstice) async {
+    final cakajo = [
+      for (final n in neposlano)
+        if (n['akcija'] == 'klicaj')
+          (izbrisi: n['izbrisi'] == true, vrstica: (n['podatki'] as Map).cast<String, dynamic>()),
+    ];
+    final izbrisani = {
+      for (final c in cakajo)
+        if (c.izbrisi) besedilo(c.vrstica['ID']),
+    };
+    final ids = {for (final v in vrstice) besedilo(v['ID'])};
+    final nove = [
+      for (final v in vrstice)
+        if (!izbrisani.contains(besedilo(v['ID']))) v,
+      for (final c in cakajo)
+        if (!c.izbrisi && !ids.contains(besedilo(c.vrstica['ID']))) c.vrstica,
+    ];
+    final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? (_podatki['tabele'] = <String, dynamic>{});
+    if (jsonEncode(tabele['Klicaji']) == jsonEncode(nove)) return;
+    tabele['Klicaji'] = nove;
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    _uporabi(_podatki);
+    notifyListeners();
+  }
+
   /// Shrani klicaj (tudi tistega, ki ga vodji pošlje iPad).
   Future<void> shraniKlicaj(Api? api, Zapis vrstica) async {
+    obKlicaju?.call(vrstica, false);
     neposlano.add({'akcija': 'klicaj', 'podatki': vrstica});
     await _shraniNeposlano();
     await _zamenjajVrstico('Klicaji', vrstica);
@@ -540,6 +574,7 @@ class Baza extends ChangeNotifier {
 
   Future<void> izbrisiKlicaj(Api? api, String id) async {
     final vrstica = _vrstica('Klicaji', id) ?? {'ID': id};
+    obKlicaju?.call(vrstica, true);
     // Klicaj, ki še ni bil poslan, se samo umakne.
     final prej = neposlano.indexWhere(
       (n) => n['akcija'] == 'klicaj' && n['izbrisi'] != true && besedilo((n['podatki'] as Map)['ID']) == id,

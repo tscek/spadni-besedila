@@ -173,7 +173,7 @@ void main() {
     final streznik = _Streznik();
     final vodja = Spil(streznik: () => streznik);
     await vodja.zacniVoditi(baza);
-    expect(streznik.poslano.last, {'vrsta': 'runda', 'pavza': null, 'tece': 0});
+    expect(streznik.poslano.lastWhere((m) => m['vrsta'] == 'runda'), {'vrsta': 'runda', 'pavza': null, 'tece': 0});
     await Runda.aplikacija.zacni(true);
     expect(streznik.poslano.last, {'vrsta': 'runda', 'pavza': true, 'tece': 0});
     // Sledilec pritisne ŠPILEJ: ukaz pride do vodje.
@@ -197,6 +197,31 @@ void main() {
     await sledilec.zacni(true);
     expect(vodji.single, {'akcija': 'zacni', 'pavza': true});
     expect(sledilec.pavza, isFalse); // počaka na vodjo
+  });
+
+  test('klicaj na špilu: vodja ga takoj pošlje vsem, sledilec ga prevzame in obdrži svojega neposlanega', () async {
+    final baza = (await _baza()).$1;
+    final streznik = _Streznik();
+    final vodja = Spil(streznik: () => streznik);
+    await vodja.zacniVoditi(baza);
+    // Sledilec doda klicaj: pride kot ukaz, vodja ga shrani in pošlje seznam vsem.
+    streznik.odSledilca!({
+      'vrsta': 'ukaz',
+      'ukaz': 'klicaj',
+      'klicaj': {'ID': 'k1', 'Pesem': 'a', 'Stran': 0, 'X': 0.5, 'Y': 0.1, 'Član': 'c2'},
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(baza.klicaji['a']!.single.id, 'k1');
+    final zadnji = streznik.poslano.lastWhere((m) => m['vrsta'] == 'klicaji');
+    expect((zadnji['klicaji'] as List).map((k) => (k as Map)['ID']), ['k1']);
+
+    // Sledilec (druga naprava) ima svoj neposlan klicaj; ob seznamu od vodje ostane.
+    final sledilec = Baza(shramba: ShrambaIdb(newIdbFactoryMemory()));
+    await sledilec.dodajKlicaj(null, 'a', 0, 0.2, 0.2);
+    await sledilec.prevzemiKlicaje((zadnji['klicaji'] as List).cast<Map<String, dynamic>>());
+    expect(sledilec.klicaji['a']!.map((k) => k.id), containsAll(['k1']));
+    expect(sledilec.klicaji['a']!.length, 2);
+    await vodja.ustavi();
   });
 
   testWidgets('playlista postane čakalna vrsta, pesem se odpre kot vsaka druga', (tester) async {
