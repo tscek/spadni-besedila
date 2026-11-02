@@ -440,6 +440,24 @@ class Baza extends ChangeNotifier {
 
   /// Shrani pesem na strežnik in v lokalno kopijo. Vrne shranjeno pesem.
   /// Brez interneta se sprememba obstoječe pesmi shrani na napravo in pošlje pozneje ([neposlano]).
+  /// Kopija pesmi v drugi mapi (z besedili, PDF-ji in skupnimi risbami); potrebuje internet.
+  Future<Pesem> kopirajPesem(Api api, String pesem, String mapa) async {
+    if (_cakaInternet) await posljiNeposlano(api);
+    final odg = await api.kopirajPesem(pesem, mapa);
+    final vrstica = (odg['pesem'] as Map).cast<String, dynamic>();
+    for (final b in (odg['besedila'] as List? ?? const [])) {
+      await _zamenjajVrstico('Besedila', (b as Map).cast<String, dynamic>());
+    }
+    for (final d in (odg['pdf'] as List? ?? const [])) {
+      await _zamenjajVrstico('PDF', (d as Map).cast<String, dynamic>());
+    }
+    await _zamenjajVrstico('Pesmi', vrstica);
+    try {
+      await risbeSkupne.sinhroniziraj(api);
+    } catch (_) {}
+    return Pesem.izVrstice(vrstica);
+  }
+
   Future<Pesem> shraniPesem(Api api, Zapis podatki) async {
     final Map<String, dynamic> odg;
     try {

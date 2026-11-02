@@ -186,13 +186,24 @@ enum PoljePesmi {
 
 /// Mapa pesmi (list Mape), npr. Narodno-zabavne ali Vaje zabavne.
 class Mapa {
-  Mapa({required this.id, required this.ime, this.vrstniRed = 0, this.pavza = ''});
+  Mapa({
+    required this.id,
+    required this.ime,
+    this.vrstniRed = 0,
+    this.pavza = '',
+    this.opis = '',
+    this.barva = '',
+    this.ikona = '',
+  });
 
   factory Mapa.izVrstice(Zapis r) => Mapa(
     id: besedilo(r['ID']),
     ime: besedilo(r['Ime']),
     vrstniRed: int.tryParse(besedilo(r['Vrstni red'])) ?? 0,
     pavza: besedilo(r['Pavza']),
+    opis: besedilo(r['Opis']),
+    barva: besedilo(r['Barva']),
+    ikona: besedilo(r['Ikona']),
   );
 
   final String id;
@@ -201,7 +212,35 @@ class Mapa {
 
   /// ID pesmi, ki se odpre z izbiro »Pavza« v iskalniku.
   final String pavza;
+  final String opis;
+
+  /// Barva kot #RRGGBB (prazno: barva teme).
+  final String barva;
+
+  /// Ime ikone (glej ikoneMap v zaslonu map).
+  final String ikona;
+
+  /// Barva kot 0xAARRGGBB ali null, če ni nastavljena.
+  int? get argb {
+    final h = barva.replaceFirst('#', '');
+    final v = int.tryParse(h, radix: 16);
+    return v == null || h.length != 6 ? null : 0xFF000000 | v;
+  }
+
+  Zapis vVrstico() => {
+    if (id.isNotEmpty) 'ID': id,
+    'Ime': ime,
+    'Vrstni red': vrstniRed,
+    'Pavza': pavza,
+    'Opis': opis,
+    'Barva': barva,
+    'Ikona': ikona,
+  };
 }
+
+/// Barva 0xAARRGGBB kot #RRGGBB (null: prazno).
+String hexBarva(int? argb) =>
+    argb == null ? '' : '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 /// Klicaj na mestu v besedilu (stran 0) ali na strani PDF-ja; x in y sta relativna kot pri risbah.
 class KlicajPesmi {

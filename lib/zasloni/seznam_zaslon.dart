@@ -10,6 +10,7 @@ import '../odigrane.dart';
 import '../posodobitev.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'mape.dart';
 import 'midi_zaslon.dart';
 import 'iskalnik_pesmi.dart';
 import 'naslednje.dart';
@@ -245,19 +246,49 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   /// Začetni zaslon: izbira mape.
   Widget _mape(BuildContext context, Baza baza) {
     final tema = Theme.of(context);
-    Widget mapa(IconData ikona, String ime, int stevilo, VoidCallback odpri) => Card(
+    Widget mapa(
+      IconData ikona,
+      String ime,
+      int stevilo,
+      VoidCallback odpri, {
+      Color? barva,
+      String opis = '',
+      VoidCallback? uredi,
+    }) => Card(
       child: ListTile(
-        leading: Icon(ikona, color: tema.colorScheme.primary),
+        leading: Icon(ikona, color: barva ?? tema.colorScheme.primary, size: 28),
         title: Text(ime, style: tema.textTheme.titleMedium),
-        trailing: Text('$stevilo'),
+        subtitle: opis.isEmpty ? null : Text(opis),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('$stevilo'),
+            if (uredi != null)
+              IconButton(tooltip: 'Uredi mapo', onPressed: uredi, icon: const Icon(Icons.edit_outlined)),
+          ],
+        ),
         onTap: odpri,
+        onLongPress: uredi,
       ),
     );
+    void uredi(Mapa? m) {
+      final api = apiZaUrejanje(context, widget.prijava, baza: baza);
+      if (api != null) urediMapo(context, baza, api, mapa: m);
+    }
+
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         for (final m in baza.mape)
-          mapa(Icons.folder_outlined, m.ime, baza.pesmiMape(m.id).length, () => _odpriMapo(m.id)),
+          mapa(
+            ikonaMape(m),
+            m.ime,
+            baza.pesmiMape(m.id).length,
+            () => _odpriMapo(m.id),
+            barva: m.argb == null ? null : Color(m.argb!),
+            opis: m.opis,
+            uredi: baza.smeUrejati ? () => uredi(m) : null,
+          ),
         mapa(Icons.library_music_outlined, 'Vse', baza.pesmiMape(null).length, () => _odpriMapo(null)),
         if (baza.pesmiSKlicaji.isNotEmpty)
           Card(
@@ -270,6 +301,19 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           ),
         if (baza.arhiv.isNotEmpty)
           mapa(Icons.archive_outlined, 'Arhiv', baza.arhiv.length, () => _odpriMapo(null, arhiv: true)),
+        if (baza.smeUrejati)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('nova-mapa'),
+                onPressed: () => uredi(null),
+                icon: const Icon(Icons.create_new_folder_outlined),
+                label: const Text('Nova mapa'),
+              ),
+            ),
+          ),
       ],
     );
   }

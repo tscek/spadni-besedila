@@ -130,7 +130,7 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
-            _IzbiraBarve(
+            IzbiraBarve(
               naslov: 'Barva vrstice z naslovom',
               barva: n.barvaZgoraj,
               izberi: (b) => n.nastaviBarvoVrstice(zgoraj: true, barva: b),
@@ -197,7 +197,7 @@ class NastavitveZaslon extends StatelessWidget {
                   items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
                 ),
               ),
-            _IzbiraBarve(
+            IzbiraBarve(
               naslov: 'Barva spodnje vrstice',
               barva: n.barvaSpodaj,
               izberi: (b) => n.nastaviBarvoVrstice(zgoraj: false, barva: b),
@@ -408,8 +408,8 @@ Future<void> _posljiPogled(BuildContext context, Api api) async {
 }
 
 /// Barva ozadja vrstice: privzeta (tema) ali ena od ponujenih.
-class _IzbiraBarve extends StatelessWidget {
-  const _IzbiraBarve({required this.naslov, required this.barva, required this.izberi});
+class IzbiraBarve extends StatelessWidget {
+  const IzbiraBarve({super.key, required this.naslov, required this.barva, required this.izberi});
 
   final String naslov;
   final int? barva;
@@ -503,7 +503,7 @@ Future<Oblacek?> _urediOblacek(BuildContext context, Oblacek zacetni) => showDia
                   selected: {o.levo},
                   onSelectionChanged: (v) => nastavi(() => o = o.kopija(levo: v.first)),
                 ),
-                _IzbiraBarve(
+                IzbiraBarve(
                   naslov: 'Barva oblačka',
                   barva: o.barva,
                   izberi: (b) => nastavi(() => o = o.kopija(barva: () => b)),

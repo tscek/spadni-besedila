@@ -78,6 +78,12 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
                 onTap: () => Navigator.pop(context, 'mapa'),
               ),
               ListTile(
+                leading: const Icon(Icons.file_copy_outlined),
+                title: const Text('Kopiraj v mapo'),
+                subtitle: const Text('Samostojna kopija z besedili, PDF-ji in skupnimi risbami'),
+                onTap: () => Navigator.pop(context, 'kopija'),
+              ),
+              ListTile(
                 leading: Icon(p.vArhivu ? Icons.unarchive_outlined : Icons.archive_outlined),
                 title: Text(p.vArhivu ? 'Vrni iz arhiva' : 'Arhiviraj'),
                 subtitle: Text(
@@ -130,11 +136,12 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
       await vCakalnoVrsto(context, spil, baza, p, naPrvo: izbira == 'prvo');
     case 'playlista':
       await _naPlaylisto(context, baza, prijava, p);
-    case 'mapa':
+    case 'mapa' || 'kopija':
+      final kopija = izbira == 'kopija';
       final mapa = await showDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
-          title: const Text('Premakni v mapo'),
+          title: Text(kopija ? 'Kopiraj v mapo' : 'Premakni v mapo'),
           children: [
             for (final m in baza.mape)
               SimpleDialogOption(
@@ -144,8 +151,30 @@ Future<void> meniPesmi(BuildContext context, Spil spil, Baza baza, Prijava prija
           ],
         ),
       );
-      if (mapa == null || mapa == p.mapa || !context.mounted) return;
-      await _shrani(context, baza, prijava, p, {'Mapa': mapa}, 'Premaknjeno v ${baza.mapa(mapa)?.ime ?? mapa}');
+      if (mapa == null || (!kopija && mapa == p.mapa) || !context.mounted) return;
+      final ime = baza.mapa(mapa)?.ime ?? mapa;
+      if (!kopija) {
+        await _shrani(context, baza, prijava, p, {'Mapa': mapa}, 'Premaknjeno v $ime');
+        return;
+      }
+      final messenger = ScaffoldMessenger.of(context);
+      final api = apiZaUrejanje(context, prijava, baza: baza);
+      if (api == null) return;
+      messenger.showSnackBar(SnackBar(content: Text('Kopiram ${p.naslov} v $ime …')));
+      try {
+        await baza.kopirajPesem(api, p.id, mapa);
+        messenger.showSnackBar(SnackBar(content: Text('Kopija je v mapi $ime: ${p.naslov}')));
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              e.toString().contains('Neznana akcija')
+                  ? 'Za kopiranje je potrebna nova različica skripte.'
+                  : 'Kopiranje ni uspelo (potreben je internet): $e',
+            ),
+          ),
+        );
+      }
     case 'arhiv':
       final status = p.vArhivu ? StatusPesmi.narejen : StatusPesmi.arhiv;
       await _shrani(context, baza, prijava, p, {
