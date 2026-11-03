@@ -151,6 +151,7 @@ class GumbNaStrani {
     this.oblika = OblikaGumba.zaobljen,
     this.predloga = '',
     this.velikost = 1,
+    this.nozno = 0,
   });
 
   factory GumbNaStrani.izJson(Map<String, dynamic> j) => GumbNaStrani(
@@ -161,6 +162,7 @@ class GumbNaStrani {
     oblika: OblikaGumba.values.asNameMap()[j['o']] ?? OblikaGumba.zaobljen,
     predloga: j['p'] as String? ?? '',
     velikost: (j['v'] as num?)?.toDouble() ?? 1,
+    nozno: ((j['n'] as num?)?.toInt() ?? 0).clamp(0, 8),
   );
 
   Offset polozaj;
@@ -175,7 +177,10 @@ class GumbNaStrani {
   /// Povečava (1 = običajna velikost).
   double velikost;
 
-  GumbNaStrani kopija({Offset? polozaj, String? predloga, double? velikost}) => GumbNaStrani(
+  /// Gumb nožnega stikala (1–8), ki sproži ta gumb (0 = brez). Ima prednost pred gumbom v spodnji vrstici.
+  int nozno;
+
+  GumbNaStrani kopija({Offset? polozaj, String? predloga, double? velikost, int? nozno}) => GumbNaStrani(
     polozaj: polozaj ?? this.polozaj,
     napis: napis,
     midi: midi,
@@ -183,6 +188,7 @@ class GumbNaStrani {
     oblika: oblika,
     predloga: predloga ?? this.predloga,
     velikost: velikost ?? this.velikost,
+    nozno: nozno ?? this.nozno,
   );
 
   /// Kar se nariše in pošlje: pri shranjenem gumbu napis, ukazi, barva in oblika iz shranjenega.
@@ -195,6 +201,7 @@ class GumbNaStrani {
       oblika: p.oblika,
       predloga: predloga,
       velikost: velikost,
+      nozno: nozno,
     ),
     null => this,
   };
@@ -208,6 +215,7 @@ class GumbNaStrani {
     'o': oblika.name,
     if (predloga.isNotEmpty) 'p': predloga,
     if (velikost != 1) 'v': _zaokrozi(velikost),
+    if (nozno > 0) 'n': nozno,
   };
 }
 

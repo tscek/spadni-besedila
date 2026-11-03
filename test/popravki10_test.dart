@@ -9,7 +9,9 @@ import 'package:spadni_besedila/midi/prenos.dart';
 import 'package:spadni_besedila/midi/takt.dart';
 import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
+import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/tap_tempo.dart';
+import 'package:spadni_besedila/zasloni/pdf_risanje.dart' show NozniGumbi;
 
 class _Prenos implements MidiPrenos {
   final poslano = <String>[];
@@ -105,5 +107,27 @@ void main() {
     final p = Pesem.izVrstice({'ID': 'u', 'MIDI ob odprtju': 'PC 1 1', 'MIDI za uvod': 'CC 9 12 127'});
     expect(k.obOdprtju(p).map((u) => u.ukaz.zapis), ['PC 1 1', 'CC 9 12 127']);
     expect(k.obOdprtju(p, uvod: false).map((u) => u.ukaz.zapis), ['PC 1 1']);
+  });
+
+  test('barve kanalov iz lista MIDI kanali', () {
+    final k = KnjiznicaMidi.izTabel({
+      'MIDI kanali': [
+        {'Kanal': '1', 'Ime': 'Luči', 'Barva': '#C62828'},
+        {'Kanal': '2', 'Ime': 'Miza', 'Barva': ''},
+      ],
+    });
+    expect(k.barveKanalov, {1: 0xFFC62828});
+    expect(k.imeKanala(1), 'Luči');
+  });
+
+  test('gumb na besedilu si zapomni nožno stikalo', () {
+    final g = GumbNaStrani(napis: 'Solo', midi: 'PC 1 5', barva: 0xFF1565C0, nozno: 3);
+    final j = g.vJson();
+    expect(j['n'], 3);
+    expect(GumbNaStrani.izJson(j).nozno, 3);
+    expect(GumbNaStrani(napis: 'x', midi: '', barva: 0).vJson().containsKey('n'), isFalse);
+    expect(g.kopija(velikost: 2).nozno, 3);
+    // Brez odprtega besedila ni gumba, ki bi ga stikalo sprožilo.
+    expect(NozniGumbi.sprozi('ni', 1), isFalse);
   });
 }

@@ -5,7 +5,9 @@ import '../midi/midi.dart';
 import '../midi/prenos.dart';
 import '../midi/takt.dart';
 import '../midi/ukazi.dart';
+import '../models.dart' show hexBarva;
 import '../prijava.dart';
+import 'nastavitve_zaslon.dart' show IzbiraBarve;
 import 'urejanje_pesmi.dart';
 
 /// Barva gumba MIDI po imenu iz baze (prazno: privzeta).
@@ -21,6 +23,36 @@ ButtonStyle? barvaGumba(String barva) {
   };
   if (c == null) return null;
   return FilledButton.styleFrom(backgroundColor: c.shade700, foregroundColor: Colors.white);
+}
+
+/// Barvna pika s številko MIDI kanala (barva kanala iz zavihka Kanali).
+class PikaKanala extends StatelessWidget {
+  const PikaKanala({super.key, required this.kanal, required this.knjiznica, this.velikost = 22});
+
+  final int kanal;
+  final KnjiznicaMidi knjiznica;
+  final double velikost;
+
+  @override
+  Widget build(BuildContext context) {
+    final argb = knjiznica.barveKanalov[kanal];
+    final ozadje = argb == null ? Theme.of(context).colorScheme.surfaceContainerHighest : Color(argb);
+    final crke = ThemeData.estimateBrightnessForColor(ozadje) == Brightness.dark ? Colors.white : Colors.black87;
+    final ime = knjiznica.imeKanala(kanal);
+    return Tooltip(
+      message: ime.isEmpty ? 'Kanal $kanal' : 'Kanal $kanal: $ime',
+      child: Container(
+        width: velikost,
+        height: velikost,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: ozadje, shape: BoxShape.circle),
+        child: Text(
+          '$kanal',
+          style: TextStyle(color: crke, fontSize: velikost * 0.5, fontWeight: FontWeight.bold, height: 1),
+        ),
+      ),
+    );
+  }
 }
 
 /// Pošlje ukaze in javi, če MIDI na tej napravi ni vklopljen ali ni kam poslati.
@@ -142,6 +174,7 @@ class MidiNastavitveZaslon extends StatelessWidget {
               for (final p in midi.dnevnik)
                 ListTile(
                   dense: true,
+                  leading: p.kanal == 0 ? null : PikaKanala(kanal: p.kanal, knjiznica: baza.midi),
                   title: Text(p.opis),
                   subtitle: Text(
                     '${_cas(p.cas)} · ${p.izhod} → ${p.naprave.isEmpty ? 'ni naprave' : p.naprave.join(', ')}',
@@ -301,6 +334,7 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                 _seznam([
                   for (final u in k.ukazi)
                     ListTile(
+                      leading: PikaKanala(kanal: u.kanal, knjiznica: k, velikost: 30),
                       title: Text(u.ime),
                       subtitle: Text(
                         [u.opis(k.imeKanala(u.kanal)), if (u.izhod.isNotEmpty) 'izhod ${u.izhod}'].join(' · '),
@@ -345,7 +379,7 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                 _seznam([
                   for (var c = 1; c <= 16; c++)
                     ListTile(
-                      leading: CircleAvatar(child: Text('$c')),
+                      leading: PikaKanala(kanal: c, knjiznica: k, velikost: 36),
                       title: Text(k.imeKanala(c).isEmpty ? '—' : k.imeKanala(c)),
                       onTap: () => _urediKanal(context, c),
                     ),
@@ -446,24 +480,37 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
 
   Future<void> _urediKanal(BuildContext context, int kanal) async {
     final vnos = TextEditingController(text: baza.midi.imeKanala(kanal));
-    final ime = await showDialog<String>(
+    int? barva = baza.midi.barveKanalov[kanal];
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Kanal $kanal'),
-        content: TextField(
-          controller: vnos,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Kaj je na tem kanalu (npr. Luči)'),
-          onSubmitted: (v) => Navigator.pop(context, v),
+      builder: (context) => StatefulBuilder(
+        builder: (context, nastavi) => AlertDialog(
+          title: Text('Kanal $kanal'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: vnos,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Kaj je na tem kanalu (npr. Luči)'),
+                  onSubmitted: (_) => Navigator.pop(context, true),
+                ),
+                const SizedBox(height: 8),
+                IzbiraBarve(naslov: 'Barva kanala', barva: barva, izberi: (b) => nastavi(() => barva = b)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Shrani')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
-          TextButton(onPressed: () => Navigator.pop(context, vnos.text), child: const Text('Shrani')),
-        ],
       ),
     );
-    if (ime == null || !context.mounted) return;
-    await _shrani(context, 'MIDI kanali', {'ID': '$kanal', 'Ime': ime.trim()});
+    if (ok != true || !context.mounted) return;
+    await _shrani(context, 'MIDI kanali', {'ID': '$kanal', 'Ime': vnos.text.trim(), 'Barva': hexBarva(barva)});
   }
 }
 
@@ -885,7 +932,7 @@ class _IzbiraMidiState extends State<_IzbiraMidi> {
             ),
             if (neposreden != null)
               ListTile(
-                leading: const Icon(Icons.add),
+                leading: PikaKanala(kanal: neposreden.kanal, knjiznica: k),
                 title: Text(neposreden.zapis),
                 subtitle: Text(neposreden.opis(k.imeKanala(neposreden.kanal))),
                 onTap: () => Navigator.pop(context, neposreden.zapis),
@@ -910,6 +957,10 @@ class _IzbiraMidiState extends State<_IzbiraMidi> {
                   for (final i in imena)
                     ListTile(
                       dense: true,
+                      leading: switch (k.ukaz(i)) {
+                        final u? => PikaKanala(kanal: u.kanal, knjiznica: k),
+                        null => const Icon(Icons.playlist_play, size: 22),
+                      },
                       title: Text(i),
                       subtitle: Text(_opisKoraka(k, i)),
                       onTap: () => Navigator.pop(context, i),
@@ -1082,10 +1133,19 @@ class PoljeMidi extends StatelessWidget {
               for (final u in ukazi)
                 Padding(
                   padding: const EdgeInsets.only(left: 12, top: 4),
-                  child: Text(
-                    '${u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: '}${u.ukaz.opis(knjiznica.imeKanala(u.ukaz.kanal))}'
-                    '${u.izhod == privzetiIzhod ? '' : ' → ${u.izhod}'}',
-                    style: tema.textTheme.bodySmall,
+                  child: Row(
+                    children: [
+                      PikaKanala(kanal: u.ukaz.kanal, knjiznica: knjiznica, velikost: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '${u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: '}'
+                          '${u.ukaz.opis(knjiznica.imeKanala(u.ukaz.kanal))}'
+                          '${u.izhod == privzetiIzhod ? '' : ' → ${u.izhod}'}',
+                          style: tema.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],

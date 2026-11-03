@@ -17,8 +17,11 @@ const nePosiljaj = '-';
 const vsePovezane = '';
 
 class Poslano {
-  Poslano(this.cas, this.opis, this.izhod, this.naprave);
+  Poslano(this.cas, this.opis, this.izhod, this.naprave, [this.kanal = 0]);
   final DateTime cas;
+
+  /// MIDI kanal ukaza (za barvno piko).
+  final int kanal;
   final String opis;
   final String izhod;
 
@@ -415,7 +418,13 @@ class Midi extends ChangeNotifier {
     final ime = u.ukaz.ime.isEmpty ? '' : '${u.ukaz.ime}: ';
     dnevnik.insert(
       0,
-      Poslano(DateTime.now(), '$ime${u.ukaz.opis(knjiznica?.imeKanala(u.ukaz.kanal) ?? '')}', u.izhod, naprave),
+      Poslano(
+        DateTime.now(),
+        '$ime${u.ukaz.opis(knjiznica?.imeKanala(u.ukaz.kanal) ?? '')}',
+        u.izhod,
+        naprave,
+        u.ukaz.kanal,
+      ),
     );
     if (dnevnik.length > 50) dnevnik.removeRange(50, dnevnik.length);
     _vMonitor(ZapisMonitorja(DateTime.now(), false, dnevnik.first.opis, naprave));

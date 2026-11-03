@@ -241,7 +241,13 @@ String berljivZapis(String zapis) => [
 
 /// Vsi ukazi, makri in imena kanalov zasedbe.
 class KnjiznicaMidi {
-  KnjiznicaMidi({this.ukazi = const [], this.makri = const [], this.kanali = const {}, this.gumbi = const []});
+  KnjiznicaMidi({
+    this.ukazi = const [],
+    this.makri = const [],
+    this.kanali = const {},
+    this.gumbi = const [],
+    this.barveKanalov = const {},
+  });
 
   factory KnjiznicaMidi.izTabel(Map<String, dynamic> tabele) {
     List<Zapis> t(String ime) => ((tabele[ime] as List?) ?? []).cast<Map<String, dynamic>>();
@@ -260,6 +266,9 @@ class KnjiznicaMidi {
           if (int.tryParse(besedilo(r['Kanal'])) case final k? when besedilo(r['Ime']).isNotEmpty)
             k: besedilo(r['Ime']),
       },
+      barveKanalov: {
+        for (final r in t('MIDI kanali')) ?int.tryParse(besedilo(r['Kanal'])): ?argbIz(besedilo(r['Barva'])),
+      },
       gumbi: [
         for (final r in t('MIDI gumbi'))
           if (besedilo(r['Ime']).isNotEmpty) MidiGumb.izVrstice(r),
@@ -271,6 +280,9 @@ class KnjiznicaMidi {
   final List<Makro> makri;
   final Map<int, String> kanali;
   final List<MidiGumb> gumbi;
+
+  /// Barva kanala (0xAARRGGBB), če je nastavljena.
+  final Map<int, int> barveKanalov;
 
   /// Gumbi pri pesmi: najprej splošni, nato gumbi te pesmi.
   List<MidiGumb> gumbiZa(String pesem) => [

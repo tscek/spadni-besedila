@@ -245,6 +245,13 @@ class Mapa {
   };
 }
 
+/// Barva #RRGGBB kot 0xAARRGGBB (null: ni barve).
+int? argbIz(String barva) {
+  final h = barva.trim().replaceFirst('#', '');
+  final v = int.tryParse(h, radix: 16);
+  return v == null || h.length != 6 ? null : 0xFF000000 | v;
+}
+
 /// Barva 0xAARRGGBB kot #RRGGBB (null: prazno).
 String hexBarva(int? argb) =>
     argb == null ? '' : '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';

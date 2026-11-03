@@ -341,6 +341,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   /// Nožno stikalo: gumbi pesmi, uvod, iskalnik in premikanje po seznamu.
   bool _dejanje(DejanjeMidi d) {
     if (d.gumb > 0) {
+      // Gumb na besedilu ali PDF-ju s to številko ima prednost pred gumbom v spodnji vrstici.
+      if (NozniGumbi.sprozi(widget.pesem.id, d.gumb)) return true;
       final gumbi = _gumbi;
       if (d.gumb <= gumbi.length) _pritisni(gumbi[d.gumb - 1]);
       return true;

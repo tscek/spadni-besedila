@@ -181,6 +181,19 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 
 /// Risanje, markiranje, opombe in gumbi na eni ali več straneh (PDF ali besedilo). Koordinate so relativne:
 /// x glede na širino strani, y glede na [enotaY] (višino strani pri PDF-ju, širino pri besedilu).
+/// Odprti prikazi besedila in PDF-ja: nožno stikalo (Gumb 1–8) sproži gumb na besedilu, ki ima to številko.
+class NozniGumbi {
+  static final _prikazi = <(String, bool Function(int))>[];
+
+  /// Sproži gumb [n] na besedilu ali PDF-ju pesmi [pesem]; vrne false, če takega gumba ni.
+  static bool sprozi(String pesem, int n) {
+    for (final (p, f) in _prikazi.reversed.toList()) {
+      if (p == pesem && f(n)) return true;
+    }
+    return false;
+  }
+}
+
 mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   Risbe get risbe;
 
@@ -283,9 +296,30 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   Risba get risba => _osebna;
 
+  late final (String, bool Function(int)) _nozni = (pesem, _sproziNozni);
+
+  /// Nožno stikalo: pošlje ukaze gumba z isto številko (najprej na prvi strani).
+  bool _sproziNozni(int n) {
+    final strani = {for (final r in _obe) ...r.gumbi.keys}.toList()..sort();
+    for (final stran in strani) {
+      if (!mojaStran(stran)) continue;
+      for (final r in _obe) {
+        for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[]) {
+          final p = g.prikaz;
+          if (p.nozno == n) {
+            Midi.aplikacija.poslji(knjiznica.razsiri(p.midi), knjiznica: knjiznica);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    NozniGumbi._prikazi.add(_nozni);
     risanje.addListener(_spremembaRisanja);
     risbe.nalozi(pesem).then((r) {
       if (mounted) setState(() => _osebna = r);
@@ -310,6 +344,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   @override
   void dispose() {
+    NozniGumbi._prikazi.remove(_nozni);
     risanje.removeListener(_spremembaRisanja);
     super.dispose();
   }
@@ -901,7 +936,7 @@ class GumbVOpombah extends StatelessWidget {
         color: barva.computeLuminance() > 0.5 ? Colors.black : Colors.white,
       ),
     );
-    return Material(
+    final material = Material(
       color: barva,
       shape: oblika,
       elevation: 3,
@@ -918,6 +953,36 @@ class GumbVOpombah extends StatelessWidget {
                 child: besedilo,
               ),
       ),
+    );
+    if (gumb.nozno == 0) return material;
+    // Številka gumba nožnega stikala v kotu.
+    final pika = (velikost * 1.1).clamp(14.0, 40.0);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        material,
+        Positioned(
+          right: -pika * 0.35,
+          top: -pika * 0.35,
+          child: IgnorePointer(
+            child: Container(
+              key: ValueKey('nozno-${gumb.nozno}'),
+              width: pika,
+              height: pika,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              child: Text(
+                '${gumb.nozno}',
+                style: TextStyle(color: Colors.white, fontSize: pika * 0.6, fontWeight: FontWeight.bold, height: 1),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1054,6 +1119,7 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
   var barva = zacetni?.barva ?? barveGumbov[4].toARGB32();
   var oblika = zacetni?.oblika ?? OblikaGumba.zaobljen;
   var velikost = obstojeci?.velikost ?? 1.0;
+  var nozno = obstojeci?.nozno ?? 0;
   var shrani = false;
   String? izShranjenih;
   final nacin = await showDialog<_Shranjevanje?>(
@@ -1130,6 +1196,20 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
                 onSelectionChanged: (o) => nastavi(() => oblika = o.first),
               ),
               _drsnikVelikosti(velikost, (v) => nastavi(() => velikost = v)),
+              DropdownButtonFormField<int>(
+                key: const ValueKey('gumb-nozno'),
+                initialValue: nozno,
+                decoration: const InputDecoration(
+                  labelText: 'Nožno stikalo',
+                  helperText: 'Gumb stikala sproži ta gumb namesto gumba v spodnji vrstici.',
+                  helperMaxLines: 2,
+                ),
+                items: [
+                  const DropdownMenuItem(value: 0, child: Text('brez')),
+                  for (var i = 1; i <= 8; i++) DropdownMenuItem(value: i, child: Text('Gumb $i')),
+                ],
+                onChanged: (v) => nastavi(() => nozno = v ?? 0),
+              ),
               if (!shranjen)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
@@ -1165,6 +1245,7 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
     barva: barva,
     oblika: oblika,
     velikost: velikost,
+    nozno: nozno,
     predloga: nacin == _Shranjevanje.povsod ? obstojeci!.predloga : '',
   );
   napis.dispose();
@@ -1177,7 +1258,7 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
     case _Shranjevanje.shranjen:
       // Napis in ukazi pridejo iz shranjenega (GumbNaStrani.prikaz).
       final s = predloge.gumb(izShranjenih!)!;
-      return (gumb: s.kopija(predloga: izShranjenih, velikost: velikost));
+      return (gumb: s.kopija(predloga: izShranjenih, velikost: velikost, nozno: nozno));
     case _Shranjevanje.povsod:
       await predloge.shraniGumb(g);
     case _Shranjevanje.tu when shrani:
