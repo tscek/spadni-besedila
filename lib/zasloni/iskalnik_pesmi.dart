@@ -249,6 +249,7 @@ class IskalnikPesmi extends StatefulWidget {
     this.trenutna,
     this.pavza,
     this.playlista,
+    this.vVrsti = const {},
   });
 
   final Baza baza;
@@ -261,6 +262,9 @@ class IskalnikPesmi extends StatefulWidget {
 
   /// Pesmi playliste (po ID): označene z ikono in številko spredaj.
   final Map<String, MestoVPlaylisti>? playlista;
+
+  /// Pesmi v čakalni vrsti (ID → mesto od 1): obarvane, da jih ne izbereš še enkrat.
+  final Map<String, int> vVrsti;
 
   static const visinaVrstice = 60.0;
   static const visinaOdigrane = 40.0;
@@ -295,7 +299,13 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
               p.id != pavza?.id &&
               (_vrsta.isEmpty || p.vrsta == _vrsta) &&
               (_harmonika.isEmpty || p.harmonika == _harmonika) &&
-              p.ustreza(_iskanje.text),
+              p.ustreza(_iskanje.text) &&
+              // Igrane se ob listanju skrijejo (nastavitev); z vpisano besedo se najdejo.
+              !(n.skrijIgrane &&
+                  _iskanje.text.trim().isEmpty &&
+                  _odigrana(p) &&
+                  !widget.vVrsti.containsKey(p.id) &&
+                  !(widget.playlista?.containsKey(p.id) ?? false)),
         )
         .toList();
     // Razvrščanje je stabilno, zato pesmi playliste z enako vrednostjo ostanejo na vrhu.
@@ -318,7 +328,10 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
       );
     }
     final barva = odigrana ? tema.disabledColor : tema.colorScheme.primary;
+    final vrsta = widget.vVrsti[p.id];
     return ListTile(
+      key: vrsta == null ? null : ValueKey('v-vrsti-${p.id}'),
+      tileColor: vrsta == null ? null : tema.colorScheme.tertiaryContainer.withValues(alpha: 0.6),
       dense: odigrana,
       visualDensity: odigrana ? VisualDensity.compact : null,
       selected: izbrana,
@@ -347,7 +360,18 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
       subtitle: odigrana || deli.isEmpty
           ? null
           : Text.rich(TextSpan(children: deli), maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Nastavitve.aplikacija.poljaIskalnika.contains(PoljePesmi.ocena) && p.ocena > 0 && !odigrana
+      trailing: vrsta != null
+          ? Tooltip(
+              message: 'V čakalni vrsti, $vrsta. mesto',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.playlist_add_check, size: 18, color: tema.colorScheme.tertiary),
+                  Text('$vrsta', style: tema.textTheme.labelMedium?.copyWith(color: tema.colorScheme.tertiary)),
+                ],
+              ),
+            )
+          : Nastavitve.aplikacija.poljaIskalnika.contains(PoljePesmi.ocena) && p.ocena > 0 && !odigrana
           ? Zvezdice(ocena: p.ocena, velikost: 12)
           : null,
       onTap: () => widget.odpri(p),

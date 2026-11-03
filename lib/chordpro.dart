@@ -104,3 +104,65 @@ String akordiNadBesedilom(String vsebina) {
   }
   return out.join('\n');
 }
+
+/// Krepko besedilo je zapisano kot **besedilo** (znotraj vrstice; ob izbiri čez več vrstic vsaka posebej).
+const oznakaKrepko = '**';
+
+/// Besedilo brez oznak za krepko (za iskanje in primerjavo vrstic).
+String brezKrepkega(String s) => s.replaceAll(oznakaKrepko, '');
+
+/// Deli besedila z vedenjem, ali so krepki; [krepko] je stanje na začetku (nadaljevanje iz prejšnjega kosa
+/// iste vrstice). Vrne dele in stanje na koncu.
+(List<(String, bool)>, bool) deliKrepko(String s, {bool krepko = false}) {
+  final deli = <(String, bool)>[];
+  var k = krepko;
+  final kosi = s.split(oznakaKrepko);
+  for (var i = 0; i < kosi.length; i++) {
+    if (i > 0) k = !k;
+    if (kosi[i].isNotEmpty) deli.add((kosi[i], k));
+  }
+  return (deli, k);
+}
+
+/// Izbira [od]–[do] v besedilu postane krepka ali (če je že vsa krepka) ni več krepka.
+/// Vsaka vrstica izbire dobi svoje oznake. Vrne novo besedilo in novo izbiro.
+(String, (int, int)) preklopiKrepko(String besedilo, int od, int doo) {
+  var izbrano = besedilo.substring(od, doo);
+  var zacetek = od;
+  var konec = doo;
+  // Že krepko: oznake okoli izbire ali na njenih robovih se odstranijo.
+  final okoli =
+      zacetek >= 2 &&
+      konec + 2 <= besedilo.length &&
+      besedilo.substring(zacetek - 2, zacetek) == oznakaKrepko &&
+      besedilo.substring(konec, konec + 2) == oznakaKrepko;
+  if (okoli) {
+    final novo = besedilo.substring(0, zacetek - 2) + izbrano + besedilo.substring(konec + 2);
+    return (novo, (zacetek - 2, konec - 2));
+  }
+  if (izbrano.length >= 4 && izbrano.startsWith(oznakaKrepko) && izbrano.endsWith(oznakaKrepko)) {
+    final notri = izbrano.substring(2, izbrano.length - 2);
+    return (besedilo.substring(0, zacetek) + notri + besedilo.substring(konec), (zacetek, zacetek + notri.length));
+  }
+  // Presledki na robovih ostanejo zunaj oznak.
+  while (izbrano.isNotEmpty && izbrano[0].trim().isEmpty) {
+    izbrano = izbrano.substring(1);
+    zacetek++;
+  }
+  while (izbrano.isNotEmpty && izbrano[izbrano.length - 1].trim().isEmpty) {
+    izbrano = izbrano.substring(0, izbrano.length - 1);
+    konec--;
+  }
+  if (izbrano.isEmpty) return (besedilo, (od, doo));
+  final ovito = izbrano
+      .split('\n')
+      .map((v) {
+        final t = v.trim();
+        if (t.isEmpty) return v;
+        final i = v.indexOf(t);
+        return '${v.substring(0, i)}$oznakaKrepko$t$oznakaKrepko${v.substring(i + t.length)}';
+      })
+      .join('\n');
+  final novo = besedilo.substring(0, zacetek) + ovito + besedilo.substring(konec);
+  return (novo, (zacetek, zacetek + ovito.length));
+}

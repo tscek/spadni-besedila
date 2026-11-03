@@ -61,6 +61,13 @@ class NastavitveZaslon extends StatelessWidget {
               onChanged: n.nastaviAkorde,
             ),
             SwitchListTile(
+              key: const ValueKey('skrij-igrane'),
+              title: const Text('V iskalniku skrij igrane pesmi'),
+              subtitle: const Text('Ob listanju jih ni; ko vpišeš besedo, jih iskalnik najde.'),
+              value: n.skrijIgrane,
+              onChanged: n.nastaviSkrijIgrane,
+            ),
+            SwitchListTile(
               title: const Text('Najprej PDF'),
               subtitle: const Text('Pri pesmi z besedilom in PDF-jem se najprej pokaže PDF'),
               value: n.pdfNajprej,

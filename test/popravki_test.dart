@@ -532,14 +532,22 @@ void main() {
     final iskalnik = find.byType(IskalnikPesmi);
     expect(find.descendant(of: iskalnik, matching: find.byIcon(Icons.pause)), findsOneWidget);
     expect(find.descendant(of: iskalnik, matching: find.text('0 PAVZA')), findsNothing);
-    // Odigrana pesem ima samo naslov (brez podatkov pod njim).
-    expect(find.descendant(of: iskalnik, matching: find.text('B')), findsNothing);
+    // Igrana pesem je ob listanju skrita (privzeta nastavitev); z vpisano besedo se najde, samo z naslovom.
+    expect(find.descendant(of: iskalnik, matching: find.text('AVSENIK')), findsNothing);
     expect(find.descendant(of: iskalnik, matching: find.text('Valček')), findsWidgets);
+    await tester.enterText(find.descendant(of: iskalnik, matching: find.byType(TextField)), 'avs');
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: iskalnik, matching: find.text('AVSENIK')), findsOneWidget);
+    expect(find.descendant(of: iskalnik, matching: find.text('B')), findsNothing);
+    await tester.enterText(find.descendant(of: iskalnik, matching: find.byType(TextField)), '');
+    await Nastavitve.aplikacija.nastaviSkrijIgrane(false);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.descendant(of: iskalnik, matching: find.widgetWithText(FilterChip, 'Polka')));
     await tester.pumpAndSettle();
     expect(find.descendant(of: iskalnik, matching: find.text('AVSENIK')), findsOneWidget);
     expect(find.descendant(of: iskalnik, matching: find.text('BELO OBLEKO')), findsNothing);
+    await Nastavitve.aplikacija.nastaviSkrijIgrane(true);
 
     // Dotik mimo iskalnika ga zapre; ob ponovnem odprtju filtrov ni več.
     await tester.tapAt(const Offset(20, 200));

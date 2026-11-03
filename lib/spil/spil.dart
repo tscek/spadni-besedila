@@ -184,6 +184,9 @@ class Spil extends ChangeNotifier {
   /// Pesmi, ki jih je ta naprava pokazala (za nazaj s podrsajem ali nožnim stikalom).
   final List<String> _zgodovina = [];
 
+  /// Ali je kam nazaj (vsaj ena prej pokazana pesem).
+  bool get imaNazaj => _zgodovina.length >= 2;
+
   /// Prejšnja pokazana pesem; trenutna gre nazaj na začetek čakalne vrste, da je spet naslednja.
   String? nazaj() {
     if (_zgodovina.length < 2) return null;

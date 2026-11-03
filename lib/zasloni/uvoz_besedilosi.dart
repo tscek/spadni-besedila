@@ -6,7 +6,7 @@ import '../besedilo_si.dart';
 enum PrevzemBs { besedilo, naslov, izvajalec, avtorBesedila, avtorGlasbe }
 
 /// Iskanje na besedilo.si, izbira zadetka in predogled. Vrne pesem in izbrane podatke ali null.
-/// [obstojece]: trenutne vrednosti pri pesmi (prazne se privzeto prevzamejo, polne le, če jih obkljukaš).
+/// [obstojece]: trenutne vrednosti pri pesmi (vse je privzeto obkljukano; pri polnih piše, da jih zamenja).
 Future<(PesemBs, Set<PrevzemBs>)?> uvozZBesediloSi(
   BuildContext context, {
   required BesediloSi vir,
@@ -151,7 +151,7 @@ class _PredogledState extends State<_Predogled> {
           setState(() {
             _p = p;
             for (final k in PrevzemBs.values) {
-              if (_vrednost(k).isNotEmpty && (widget.obstojece[k] ?? '').trim().isEmpty) _izbrano.add(k);
+              if (_vrednost(k).isNotEmpty) _izbrano.add(k);
             }
           });
         })

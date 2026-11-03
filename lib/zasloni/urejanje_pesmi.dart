@@ -341,6 +341,18 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     messenger.showSnackBar(const SnackBar(content: Text('Prevzeto z besedilo.si. Preglej in pritisni Shrani.')));
   }
 
+  /// Označeno besedilo postane krepko (**…**) ali ni več krepko; brez izbire vstavi par zvezdic.
+  void _krepko() {
+    final v = _vsebina.value;
+    final sel = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
+    if (sel.isCollapsed) return _vstavi('****', nazaj: 2);
+    final (besedilo, izbira) = cp.preklopiKrepko(v.text, sel.start, sel.end);
+    _vsebina.value = TextEditingValue(
+      text: besedilo,
+      selection: TextSelection(baseOffset: izbira.$1, extentOffset: izbira.$2),
+    );
+  }
+
   void _pretvori() {
     final novo = cp.akordiNadBesedilom(_vsebina.text);
     if (novo == _vsebina.text.replaceAll('\r\n', '\n')) {
@@ -657,6 +669,12 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
                 tooltip: 'Vstavi akord [ ]',
                 icon: const Icon(Icons.music_note),
                 onPressed: () => _vstavi('[]', nazaj: 1),
+              ),
+              IconButton(
+                key: const ValueKey('krepko'),
+                tooltip: 'Krepko: označi besedilo in pritisni',
+                icon: const Icon(Icons.format_bold),
+                onPressed: _krepko,
               ),
               IconButton(
                 tooltip: 'Vstavi oznako (npr. Refren)',

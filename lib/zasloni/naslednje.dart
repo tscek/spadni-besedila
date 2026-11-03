@@ -246,6 +246,12 @@ Future<void> _naPlaylisto(BuildContext context, Baza baza, Prijava prijava, Pese
 /// Iskalnik v pesmi: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto).
 Future<void> vCakalnoVrsto(BuildContext context, Spil spil, Baza baza, Pesem p, {bool naPrvo = false}) async {
   final messenger = ScaffoldMessenger.of(context);
+  // Pesem, ki je že v vrsti, se z dotikom ne doda še enkrat (s pridržanjem pa gre na prvo mesto).
+  final i = spil.naslednje.indexWhere((n) => n.pesem == p.id);
+  if (i >= 0 && !naPrvo) {
+    messenger.showSnackBar(SnackBar(content: Text('${p.naslov} je že v čakalni vrsti (${i + 1}. mesto).')));
+    return;
+  }
   spil.dodajNaslednjo(
     Naslednja(pesem: p.id, kdo: await kdoSem(baza)),
     naPrvo: naPrvo,

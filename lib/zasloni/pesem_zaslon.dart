@@ -384,12 +384,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
       _odpri(widget.baza.pesem(izbrana.pesem)!, smer: 1);
       return true;
     }
-    // Nazaj po pokazanih pesmih (čakalna vrsta); pri seznamu brez čakalne vrste nazaj po seznamu.
+    // Nazaj po pokazanih pesmih (tudi ko je čakalna vrsta že prazna); trenutna gre spet na začetek vrste.
     final spil = widget.spil;
-    if (d == DejanjeMidi.prejsnja &&
-        spil != null &&
-        widget.odpri == null &&
-        (widget.seznam == null || spil.naslednje.isNotEmpty)) {
+    if (d == DejanjeMidi.prejsnja && spil != null && widget.odpri == null && spil.imaNazaj) {
       final p = widget.baza.pesem(spil.nazaj() ?? '');
       if (p != null) _odpri(p, smer: -1);
       return true;
@@ -638,6 +635,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
                         if (_seNaVrsti(e.key)) e.key: e.value,
                     },
               pavza: _pavza,
+              vVrsti: {for (final (i, n) in (widget.spil?.naslednje ?? const <Naslednja>[]).indexed) n.pesem: i + 1},
               trenutna: widget.pesem,
               odpri: _izIskalnika,
               pridrzi: (p) => _izIskalnika(p, naPrvo: true),
@@ -1087,6 +1085,29 @@ class BesediloPogled extends StatelessWidget {
   final String vsebina;
   final double velikost;
 
+  /// Kosi vrstice in ali je kos na začetku krepek (krepko se lahko začne v enem kosu in konča v drugem).
+  static List<(cp.Kos, bool)> _krepkoPoKosih(List<cp.Kos> kosi) {
+    final out = <(cp.Kos, bool)>[];
+    var k = false;
+    for (final kos in kosi) {
+      out.add((kos, k));
+      k = cp.deliKrepko(kos.besedilo, krepko: k).$2;
+    }
+    return out;
+  }
+
+  /// Besedilo z deli **krepko** kot krepkim slogom.
+  static TextSpan _krepkiDeli(String s, TextStyle slog, bool krepko) => TextSpan(
+    style: slog,
+    children: [
+      for (final (t, k) in cp.deliKrepko(s, krepko: krepko).$1)
+        TextSpan(
+          text: t,
+          style: k ? const TextStyle(fontWeight: FontWeight.bold) : null,
+        ),
+    ],
+  );
+
   /// Vrstice besedila z akordi nad zlogi (za seznam ali za stran z risbami).
   static List<Widget> vrstice(BuildContext context, String vsebina, double velikost) {
     final barve = Theme.of(context).colorScheme;
@@ -1107,19 +1128,19 @@ class BesediloPogled extends StatelessWidget {
                 ? Wrap(
                     crossAxisAlignment: WrapCrossAlignment.end,
                     children: [
-                      for (final k in v.kosi)
+                      for (final (k, krepkoNaZacetku) in _krepkoPoKosih(v.kosi))
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Presledek za akordom, da se sosednja akorda ne zlepita.
                             Text(k.akord.isEmpty ? ' ' : '${k.akord} ', style: akord),
-                            Text(k.besedilo, style: besedilo),
+                            Text.rich(_krepkiDeli(k.besedilo, besedilo, krepkoNaZacetku)),
                           ],
                         ),
                     ],
                   )
-                : Text(v.kosi.map((k) => k.besedilo).join(), style: besedilo),
+                : Text.rich(_krepkiDeli(v.kosi.map((k) => k.besedilo).join(), besedilo, false)),
         },
     ];
   }

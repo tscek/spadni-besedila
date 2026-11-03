@@ -138,6 +138,7 @@ class Nastavitve extends ChangeNotifier {
   static const _pisava = 'velikost_pisave';
   static const _pdfNajprej = 'pdf_najprej';
   static const _akordi = 'akordi';
+  static const _skrijIgrane = 'skrij_igrane';
   static const _svetla = 'svetla_tema';
   static const _sledenje = 'samodejno_sledenje';
   static const _zaslon = 'zaslon_prizgan';
@@ -202,6 +203,9 @@ class Nastavitve extends ChangeNotifier {
 
   /// Akordi nad besedilom (pevci jih lahko skrijejo).
   bool akordi = true;
+
+  /// Iskalnik ob listanju ne kaže že igranih pesmi; z vpisano besedo jih najde.
+  bool skrijIgrane = true;
   bool svetlaTema = false;
 
   /// Sledilec: pesem, ki jo izbere vodja, se odpre sama.
@@ -271,6 +275,7 @@ class Nastavitve extends ChangeNotifier {
     pisava = p.getDouble(_pisava) ?? d.pisava;
     pdfNajprej = p.getBool(_pdfNajprej) ?? d.pdfNajprej;
     akordi = p.getBool(_akordi) ?? d.akordi;
+    skrijIgrane = p.getBool(_skrijIgrane) ?? d.skrijIgrane;
     svetlaTema = p.getBool(_svetla) ?? d.svetlaTema;
     samodejnoSledenje = p.getBool(_sledenje) ?? d.samodejnoSledenje;
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
@@ -460,6 +465,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviAkorde(bool v) {
     akordi = v;
     return _shrani((p) => p.setBool(_akordi, v));
+  }
+
+  Future<void> nastaviSkrijIgrane(bool v) {
+    skrijIgrane = v;
+    return _shrani((p) => p.setBool(_skrijIgrane, v));
   }
 
   Future<void> nastaviSvetloTemo(bool v) {

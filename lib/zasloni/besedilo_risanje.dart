@@ -150,7 +150,7 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   }
 
   /// Besedilo vrstice brez akordov (za iskanje vrstice oznake, ko se besedilo spremeni).
-  static String _besedilo(cp.Vrstica v) => (v.komentar + v.kosi.map((k) => k.besedilo).join()).trim();
+  static String _besedilo(cp.Vrstica v) => cp.brezKrepkega(v.komentar + v.kosi.map((k) => k.besedilo).join()).trim();
 
   /// Ali je vrstica z akordi nad besedilom (oznaka pokrije le besedilo, ne akordov).
   bool _zAkordi(int i) =>
