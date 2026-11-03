@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
+import '../midi/xy.dart';
 import 'drsnik.dart';
 import 'midi_zaslon.dart' show preizkusiMidi;
 
@@ -51,10 +52,20 @@ class XyPad extends StatefulWidget {
 class _XyPadState extends State<XyPad> {
   Offset _v = const Offset(0.5, 0.5);
   bool _premaknjen = false;
+
+  /// Izbrana skupina osi; zapomni se do zaprtja aplikacije.
+  static int _skupina = 0;
+
+  SkupinaXy? get _izbrana {
+    final s = Midi.aplikacija.xy.skupine;
+    return s.isEmpty ? null : s[_skupina.clamp(0, s.length - 1)];
+  }
+
   late final _posiljalec = PosiljalecVrednosti(() {
-    final n = Midi.aplikacija.xy;
+    final s = _izbrana;
     final k = widget.knjiznica;
-    return [?ukazDrsnika(k, n.x, (_v.dx * 127).round()), ?ukazDrsnika(k, n.y, ((1 - _v.dy) * 127).round())];
+    if (s == null) return const <PoslaniUkaz>[];
+    return [?ukazDrsnika(k, s.x, (_v.dx * 127).round()), ?ukazDrsnika(k, s.y, ((1 - _v.dy) * 127).round())];
   }, widget.knjiznica);
 
   @override
@@ -79,7 +90,7 @@ class _XyPadState extends State<XyPad> {
     if (!n.nastavljen) {
       return const Padding(
         padding: EdgeInsets.all(20),
-        child: Text('XY pad še ni nastavljen. Nastavi ga v Nastavitve MIDI (osi X in Y ter gumbi).'),
+        child: Text('XY pad še ni nastavljen. Nastavi ga v Nastavitve MIDI (skupine osi X in Y ter gumbi).'),
       );
     }
     return Padding(
@@ -106,7 +117,7 @@ class _XyPadState extends State<XyPad> {
                 ],
               ),
             ),
-          if (n.x.isNotEmpty || n.y.isNotEmpty)
+          if (_izbrana != null)
             GestureDetector(
               key: const ValueKey('xy-ploskev'),
               onPanDown: (d) => _nastavi(d.localPosition, stranica),
@@ -118,12 +129,36 @@ class _XyPadState extends State<XyPad> {
               ),
             ),
           const SizedBox(height: 6),
-          Text(
-            _premaknjen
-                ? 'X ${(_v.dx * 127).round()} · Y ${((1 - _v.dy) * 127).round()}'
-                : [if (n.x.isNotEmpty) 'X: ${n.x}', if (n.y.isNotEmpty) 'Y: ${n.y}'].join(' · '),
-            style: tema.textTheme.bodySmall,
-          ),
+          if (_izbrana case final s?)
+            Text(
+              _premaknjen
+                  ? 'X ${(_v.dx * 127).round()} · Y ${((1 - _v.dy) * 127).round()}'
+                  : [if (s.x.isNotEmpty) 'X: ${s.x}', if (s.y.isNotEmpty) 'Y: ${s.y}'].join(' · '),
+              style: tema.textTheme.bodySmall,
+            ),
+          if (n.skupine.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (var i = 0; i < n.skupine.length; i++)
+                    ChoiceChip(
+                      key: ValueKey('xy-skupina-$i'),
+                      label: Text(n.skupine[i].ime),
+                      selected: i == _skupina.clamp(0, n.skupine.length - 1),
+                      // Nova skupina začne na sredini in ne pošlje nič, dokler pada ne premakneš.
+                      onSelected: (_) => setState(() {
+                        _skupina = i;
+                        _v = const Offset(0.5, 0.5);
+                        _premaknjen = false;
+                      }),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );

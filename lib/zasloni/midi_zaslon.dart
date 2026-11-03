@@ -193,53 +193,43 @@ class MidiNastavitveZaslon extends StatelessWidget {
   static String _cas(DateTime t) =>
       '${t.hour}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
-  /// XY pad v orodni vrstici: CC za osi in do 4 gumbi.
+  /// XY pad v orodni vrstici: skupine osi (gumbi pod padom) in do 4 gumbi nad padom.
   List<Widget> _xy(BuildContext context, Midi midi) {
     final n = midi.xy;
-    final k = baza.midi;
-    Future<void> os(bool x) async {
-      final i = await izberiMidi(context, k);
-      if (i == null) return;
-      if (ukazDrsnika(k, i, 0) == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Os potrebuje CC ukaz (vrednost določa pad).')));
-        }
-        return;
-      }
-      await midi.nastaviXy(x ? n.kopija(x: i) : n.kopija(y: i));
-    }
-
-    Widget vrsticaOsi(String naslov, String zapis, bool x) => ListTile(
-      title: Text(naslov),
-      subtitle: Text(zapis.isEmpty ? 'ni izbrano' : zapis),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextButton(onPressed: () => os(x), child: const Text('Izberi')),
-          if (zapis.isNotEmpty)
-            IconButton(
-              tooltip: 'Odstrani',
-              icon: const Icon(Icons.close),
-              onPressed: () => midi.nastaviXy(x ? n.kopija(x: '') : n.kopija(y: '')),
-            ),
-        ],
-      ),
-    );
-
     return [
       const Divider(),
       ListTile(
         title: Text('XY pad', style: Theme.of(context).textTheme.titleMedium),
         subtitle: const Text(
-          'Gumb XY pad v orodni vrstici odpre pad. Osi pošiljata CC, vrednost določa položaj prsta. '
-          'Mesto gumba izbereš v Nastavitve > Orodni vrstici pri pesmi.',
+          'Gumb XY pad v orodni vrstici odpre pad. Skupina ima CC za vodoravno (X) in navpično (Y) os; '
+          'skupine izbiraš z gumbi pod padom. Mesto gumba izbereš v Nastavitve > Orodni vrstici pri pesmi.',
         ),
       ),
-      vrsticaOsi('Vodoravno (X)', n.x, true),
-      vrsticaOsi('Navpično (Y)', n.y, false),
+      for (var i = 0; i < n.skupine.length; i++)
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.control_camera),
+          title: Text(n.skupine[i].ime),
+          subtitle: Text(
+            'X: ${n.skupine[i].x.isEmpty ? '—' : n.skupine[i].x} · Y: ${n.skupine[i].y.isEmpty ? '—' : n.skupine[i].y}',
+          ),
+          onTap: () => _urediSkupinoXy(context, midi, i),
+          trailing: IconButton(
+            tooltip: 'Odstrani',
+            icon: const Icon(Icons.close),
+            onPressed: () => midi.nastaviXy(n.kopija(skupine: [...n.skupine]..removeAt(i))),
+          ),
+        ),
+      if (n.skupine.length < NastavitveXy.najvecSkupin)
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.add),
+          title: const Text('Dodaj skupino (X in Y)'),
+          onTap: () => _urediSkupinoXy(context, midi, null),
+        ),
       for (var i = 0; i < n.gumbi.length; i++)
         ListTile(
+          dense: true,
           leading: const Icon(Icons.smart_button_outlined),
           title: Text(n.gumbi[i].napis),
           subtitle: Text(n.gumbi[i].ukazi),
@@ -252,11 +242,89 @@ class MidiNastavitveZaslon extends StatelessWidget {
         ),
       if (n.gumbi.length < NastavitveXy.najvecGumbov)
         ListTile(
+          dense: true,
           leading: const Icon(Icons.add),
           title: const Text('Dodaj gumb nad padom'),
           onTap: () => _urediGumbXy(context, midi, null),
         ),
     ];
+  }
+
+  Future<void> _urediSkupinoXy(BuildContext context, Midi midi, int? i) async {
+    final n = midi.xy;
+    final k = baza.midi;
+    final zacetna = i == null ? null : n.skupine[i];
+    final ime = TextEditingController(text: zacetna?.ime ?? '');
+    var x = zacetna?.x ?? '';
+    var y = zacetna?.y ?? '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, nastavi) {
+          Widget os(String naslov, String zapis, void Function(String) spremeni) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(naslov),
+            subtitle: Text(
+              zapis.isEmpty ? 'ni izbrano' : '$zapis · ${ukazDrsnika(k, zapis, 0)?.ukaz.zapis ?? 'ni CC'}',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () async {
+                    final izbran = await izberiMidi(context, k);
+                    if (izbran == null) return;
+                    if (ukazDrsnika(k, izbran, 0) == null) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(content: Text('Os potrebuje CC ukaz (vrednost določa pad).')));
+                      }
+                      return;
+                    }
+                    nastavi(() => spremeni(izbran));
+                  },
+                  child: const Text('Izberi'),
+                ),
+                if (zapis.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Odstrani',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => nastavi(() => spremeni('')),
+                  ),
+              ],
+            ),
+          );
+          return AlertDialog(
+            title: Text(i == null ? 'Nova skupina XY' : 'Skupina XY'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: ime,
+                    autofocus: i == null,
+                    decoration: const InputDecoration(labelText: 'Ime (gumb pod padom, npr. Efekt)'),
+                  ),
+                  const SizedBox(height: 8),
+                  os('Vodoravno (X)', x, (v) => x = v),
+                  os('Navpično (Y)', y, (v) => y = v),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Shrani')),
+            ],
+          );
+        },
+      ),
+    );
+    if (ok != true) return;
+    final s = SkupinaXy(ime.text.trim().isEmpty ? 'Skupina ${(i ?? n.skupine.length) + 1}' : ime.text.trim(), x, y);
+    final skupine = [...n.skupine];
+    i == null ? skupine.add(s) : skupine[i] = s;
+    await midi.nastaviXy(n.kopija(skupine: skupine));
   }
 
   Future<void> _urediGumbXy(BuildContext context, Midi midi, int? i) async {
@@ -437,15 +505,17 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
             body: TabBarView(
               children: [
                 _seznam([
-                  for (final u in k.ukazi)
-                    ListTile(
-                      leading: PikaKanala(kanal: u.kanal, knjiznica: k, velikost: 30),
-                      title: Text(u.ime),
-                      subtitle: Text(
-                        [u.opis(k.imeKanala(u.kanal)), if (u.izhod.isNotEmpty) 'izhod ${u.izhod}'].join(' · '),
-                      ),
-                      trailing: _gumbPoslji(context, k, u.ime),
-                      onTap: () => _urediUkaz(context, u),
+                  // Ukazi po kanalih: glava kanala z barvno piko, pod njo gost seznam ukazov.
+                  for (final kanal in {for (final u in k.ukazi) u.kanal}.toList()..sort())
+                    ExpansionTile(
+                      key: PageStorageKey('kanal-$kanal'),
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      leading: PikaKanala(kanal: kanal, knjiznica: k, velikost: 28),
+                      title: Text(k.imeKanala(kanal).isEmpty ? 'Kanal $kanal' : 'Kanal $kanal · ${k.imeKanala(kanal)}'),
+                      trailing: Text('${k.ukazi.where((u) => u.kanal == kanal).length}'),
+                      childrenPadding: const EdgeInsets.only(left: 16),
+                      children: [for (final u in k.ukazi.where((u) => u.kanal == kanal)) _vrsticaUkaza(context, k, u)],
                     ),
                 ], 'Ni še ukazov.'),
                 _seznam([
@@ -462,9 +532,14 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                       ),
                   for (final m in k.makri)
                     ListTile(
-                      title: Text(m.ime),
-                      subtitle: Text([m.koraki.join(' · '), if (m.izhod.isNotEmpty) 'izhod ${m.izhod}'].join('\n')),
-                      isThreeLine: m.izhod.isNotEmpty,
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -4),
+                      title: Text(m.ime, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        [m.koraki.join(' · '), if (m.izhod.isNotEmpty) '→ ${m.izhod}'].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       trailing: _gumbPoslji(context, k, m.ime),
                       onTap: () => _urediMakro(context, m),
                     ),
@@ -475,8 +550,10 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                     ...k.gumbi.where((g) => g.pesem.isNotEmpty),
                   ])
                     ListTile(
-                      title: Text(g.ime),
-                      subtitle: Text('${_pesemGumba(g)} · ${g.ukazi}'),
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -4),
+                      title: Text(g.ime, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${_pesemGumba(g)} · ${g.ukazi}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       trailing: _gumbPoslji(context, k, g.ukazi),
                       onTap: () => _urediGumb(context, g),
                     ),
@@ -484,7 +561,9 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
                 _seznam([
                   for (var c = 1; c <= 16; c++)
                     ListTile(
-                      leading: PikaKanala(kanal: c, knjiznica: k, velikost: 36),
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      leading: PikaKanala(kanal: c, knjiznica: k, velikost: 28),
                       title: Text(k.imeKanala(c).isEmpty ? '—' : k.imeKanala(c)),
                       onTap: () => _urediKanal(context, c),
                     ),
@@ -507,6 +586,29 @@ class MidiKnjiznicaZaslon extends StatelessWidget {
       ),
     );
   }
+
+  /// Ena vrstica ukaza: ime, kratek zapis (npr. CC 7 = 100) in izhod.
+  Widget _vrsticaUkaza(BuildContext context, KnjiznicaMidi k, MidiUkaz u) => ListTile(
+    dense: true,
+    visualDensity: const VisualDensity(vertical: -4),
+    contentPadding: const EdgeInsets.only(left: 12, right: 4),
+    title: Text(u.ime, maxLines: 1, overflow: TextOverflow.ellipsis),
+    subtitle: Text(
+      [
+        switch (u.vrsta) {
+          VrstaUkaza.pc => 'PC ${u.stevilka}',
+          VrstaUkaza.cc => 'CC ${u.stevilka} = ${u.vrednost}',
+          VrstaUkaza.nota => 'Nota ${u.stevilka} (${u.vrednost})',
+        },
+        if (u.izhod.isNotEmpty) '→ ${u.izhod}',
+        if (u.skupina.isNotEmpty) u.skupina,
+      ].join(' · '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+    trailing: _gumbPoslji(context, k, u.ime),
+    onTap: () => _urediUkaz(context, u),
+  );
 
   Widget _seznam(List<Widget> vrstice, String prazno) => vrstice.isEmpty
       ? Center(child: Text(prazno))

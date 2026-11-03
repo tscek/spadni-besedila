@@ -175,10 +175,17 @@ void main() {
     final (m, prenos) = await t.runAsync(midi) ?? (throw StateError(''));
     Midi.aplikacija = m;
     await t.runAsync(
-      () => m.nastaviXy(const NastavitveXy(x: 'CC 2 20', y: 'CC 2 21', gumbi: [GumbXy('Efekt', 'PC 2 4')])),
+      () => m.nastaviXy(
+        const NastavitveXy(
+          skupine: [SkupinaXy('Efekt', 'CC 2 20', 'CC 2 21'), SkupinaXy('Mešalka', 'CC 3 7', '')],
+          gumbi: [GumbXy('Efekt', 'PC 2 4')],
+        ),
+      ),
     );
     final j = NastavitveXy.izJson(m.xy.vJson());
-    expect((j.x, j.y, j.gumbi.single.napis), ('CC 2 20', 'CC 2 21', 'Efekt'));
+    expect((j.skupine.first.x, j.skupine.last.ime, j.gumbi.single.napis), ('CC 2 20', 'Mešalka', 'Efekt'));
+    // Star zapis z enim parom osi postane ena skupina.
+    expect(NastavitveXy.izJson({'x': 'CC 1 1', 'y': ''}).skupine.single.x, 'CC 1 1');
     await t.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -198,8 +205,16 @@ void main() {
     await t.pump(const Duration(milliseconds: 50));
     expect(prenos.poslano.take(2), ['177 20 64', '177 21 64']);
     expect(prenos.poslano.skip(prenos.poslano.length - 2), ['177 20 127', '177 21 127']);
-    await t.tap(find.text('Efekt'));
+    await t.tap(find.widgetWithText(FilledButton, 'Efekt'));
     await t.pump(const Duration(milliseconds: 50));
     expect(prenos.poslano.last, '193 4');
+    // Druga skupina: pad pošilja samo CC 3 7.
+    await t.tap(find.byKey(const ValueKey('xy-skupina-1')));
+    await t.pump();
+    final g2 = await t.startGesture(p + const Offset(0.1, 144));
+    await t.pump(const Duration(milliseconds: 50));
+    await g2.up();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(prenos.poslano.last, '178 7 0');
   });
 }

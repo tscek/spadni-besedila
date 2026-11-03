@@ -205,8 +205,13 @@ void main() {
         home: MidiKnjiznicaZaslon(baza: baza, prijava: Prijava()),
       ),
     );
+    // Ukazi so po kanalih; kanal se razpre s tapom.
+    expect(find.text('Kanal 9 · MixingStation'), findsOneWidget);
+    expect(find.text('Delay ON'), findsNothing);
+    await tester.tap(find.text('Kanal 9 · MixingStation'));
+    await tester.pumpAndSettle();
     expect(find.text('Delay ON'), findsOneWidget);
-    expect(find.text('CC · kanal 9 (MixingStation) · kontroler 12 = 127'), findsOneWidget);
+    expect(find.text('CC 12 = 127'), findsOneWidget);
     await tester.tap(find.text('Makri'));
     await tester.pumpAndSettle();
     expect(find.text('Pavza'), findsOneWidget);
