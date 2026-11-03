@@ -8,6 +8,7 @@ import '../chordpro.dart' as cp;
 import '../midi/ukazi.dart';
 import '../models.dart';
 import '../prijava.dart';
+import '../tap_tempo.dart';
 import 'midi_zaslon.dart';
 import 'oznake.dart';
 import 'predogled.dart';
@@ -98,6 +99,7 @@ class UrejanjePesmiZaslon extends StatefulWidget {
 enum _Vnos { besedilo, stevilo, predlogi, tonaliteta, harmonika, status, mapa, ocena, trajanje }
 
 class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUrejanje {
+  final _tapTempo = TapTempo();
   // Stolpec v listu Pesmi in način vnosa. Koda se novi pesmi dodeli sama.
   static const _polja = [
     ('Naslov', _Vnos.besedilo),
@@ -483,6 +485,17 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
         decoration: okvir.copyWith(
           hintText: vnos == _Vnos.trajanje ? 'npr. 3:45' : null,
           errorText: vnos == _Vnos.trajanje ? _napakaTrajanja() : null,
+          suffixIcon: stolpec == 'Tempo (BPM)'
+              ? IconButton(
+                  key: const ValueKey('tap-tempo'),
+                  tooltip: 'Tap tempo: tapkaj v ritmu',
+                  icon: const Icon(Icons.touch_app_outlined),
+                  onPressed: () {
+                    final bpm = _tapTempo.udari();
+                    if (bpm != null && bpm >= 20 && bpm <= 400) c.text = '$bpm';
+                  },
+                )
+              : null,
         ),
       ),
     };

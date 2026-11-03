@@ -182,7 +182,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
-      Midi.aplikacija.odprta(_pesem, widget.baza.midi);
+      Midi.aplikacija.odprta(_pesem, widget.baza.midi, uvod: Nastavitve.aplikacija.uvodi);
     });
     final minute = Nastavitve.aplikacija.minuteOdigrane;
     if (minute > 0) {
@@ -528,8 +528,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   Widget? _vrsticaGumbov(BuildContext context) {
     final gumbi = _gumbi;
-    final uvod = _pesem.midiZaUvod.isNotEmpty;
-    if ((gumbi.isEmpty && !uvod) || !Midi.aplikacija.vklopljen) return null;
+    if (gumbi.isEmpty || !Midi.aplikacija.vklopljen) return null;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: SizedBox(
@@ -538,15 +537,6 @@ class _PesemZaslonState extends State<PesemZaslon> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           children: [
-            if (uvod)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilledButton.icon(
-                  onPressed: _uvod,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Uvod'),
-                ),
-              ),
             for (var i = 0; i < gumbi.length; i++)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -683,6 +673,18 @@ class _PesemZaslonState extends State<PesemZaslon> {
             ),
           ],
           Orodje.ura => [const Ura()],
+          Orodje.uvodi when Midi.aplikacija.vklopljen => [
+            IconButton(
+              key: const ValueKey('uvodi'),
+              tooltip: Nastavitve.aplikacija.uvodi
+                  ? 'Uvodi vklopljeni: MIDI za uvod gre ob odprtju pesmi'
+                  : 'Uvodi izklopljeni',
+              isSelected: Nastavitve.aplikacija.uvodi,
+              icon: const Icon(Icons.music_off_outlined),
+              selectedIcon: const Icon(Icons.queue_music),
+              onPressed: () => Nastavitve.aplikacija.nastaviUvode(!Nastavitve.aplikacija.uvodi),
+            ),
+          ],
           _ => const <Widget>[],
         },
     ];

@@ -345,9 +345,11 @@ class KnjiznicaMidi {
 
   /// Ukazi ob odprtju pesmi: najprej splošni makro, nato ukaz pesmi (MIDI ob odprtju), uvod (MIDI za uvod)
   /// in makro ob odprtju.
-  List<PoslaniUkaz> obOdprtju(Pesem p) => razsiri(
+  /// Brez [uvod] (gumb Uvodi izklopljen) gre vse razen MIDI za uvod.
+  List<PoslaniUkaz> obOdprtju(Pesem p, {bool uvod = true}) => razsiri(
     '${makro(makroOdprtja)?.ime ?? ''}; '
-    '${besedilo(p.vrstica['MIDI ob odprtju'])}; ${p.midiZaUvod}; ${besedilo(p.vrstica['Makro ob odprtju'])}',
+    '${besedilo(p.vrstica['MIDI ob odprtju'])}; ${uvod ? p.midiZaUvod : ''}; '
+    '${besedilo(p.vrstica['Makro ob odprtju'])}',
   );
 
   /// Ukazi ob zaprtju pesmi: najprej makro pesmi, nato splošni makro.

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
 import 'prenos.dart';
+import 'takt.dart';
 import 'ukazi.dart';
 
 /// Izhod, ki ga ta naprava ne pošilja nikamor.
@@ -52,12 +53,17 @@ class Midi extends ChangeNotifier {
   static const _kljucNaprav = 'midi_naprave';
   static const _kljucVhoda = 'midi_vhod';
   static const _kljucOdprtja = 'midi_ob_odprtju';
+  static const _kljucTakta = 'midi_takt';
 
   bool vklopljen = false;
 
   /// Ukazi ob odprtju in zaprtju pesmi (pesmi in splošna makra) s te naprave; privzeto izklopljeno,
   /// da jih ne pošilja vsaka naprava, ampak le tista, ki upravlja MIDI.
   bool obOdprtju = false;
+
+  /// MIDI clock ali ukaz na dobo v tempu pesmi (pošilja ga naprava, ki pošilja ukaze ob odprtju).
+  NastavitveTakta takt = const NastavitveTakta();
+  Timer? _taktUra;
 
   /// iPad na špilu: ukazi gredo vodji, ki jih pošlje na svoje naprave (vrne število ukazov brez naprave).
   Future<int> Function(List<PoslaniUkaz>)? prekoVodje;
@@ -122,6 +128,11 @@ class Midi extends ChangeNotifier {
     vklopljen = p.getBool(_kljucVklopa) ?? false;
     obOdprtju = p.getBool(_kljucOdprtja) ?? false;
     try {
+      takt = NastavitveTakta.izJson((jsonDecode(p.getString(_kljucTakta) ?? '{}') as Map).cast<String, dynamic>());
+    } catch (_) {
+      takt = const NastavitveTakta();
+    }
+    try {
       izhodi = (jsonDecode(p.getString(_kljucIzhodov) ?? '{}') as Map).cast<String, String>();
     } catch (_) {
       izhodi = {};
@@ -148,6 +159,69 @@ class Midi extends ChangeNotifier {
     obOdprtju = da;
     notifyListeners();
     (await SharedPreferences.getInstance()).setBool(_kljucOdprtja, da);
+  }
+
+  Future<void> nastaviTakt(NastavitveTakta t) async {
+    takt = t;
+    notifyListeners();
+    try {
+      (await SharedPreferences.getInstance()).setString(_kljucTakta, jsonEncode(t.vJson()));
+    } catch (_) {}
+  }
+
+  bool get taktTece => _taktUra != null;
+
+  /// Začne pošiljati takt v tempu pesmi (če je vklopljen in ima pesem tempo).
+  void zacniTakt(Pesem p, KnjiznicaMidi k, {@visibleForTesting DateTime Function()? ura}) {
+    ustaviTakt();
+    final t = takt;
+    final bpm = tempoPesmi(p);
+    if (t.nacin == NacinTakta.izklop || bpm == null || !vklopljen || prekoVodje != null) return;
+    final ukazi = t.nacin == NacinTakta.ukaz ? k.razsiri(t.ukaz) : const <PoslaniUkaz>[];
+    if (t.nacin == NacinTakta.ukaz && ukazi.isEmpty) return;
+    final razmik = t.razmik(bpm);
+    final vseh = t.sporocil();
+    final zdaj = ura ?? DateTime.now;
+    final zacetek = zdaj();
+    var poslanih = 0;
+    void korak() {
+      final pretekel = zdaj().difference(zacetek).inMicroseconds;
+      final na = (pretekel / razmik).floor();
+      // Zamujena sporočila (npr. zaspala aplikacija) preskoči, da ne pridejo v kupu.
+      if (na > poslanih + 1) poslanih = na;
+      while (poslanih <= na) {
+        if (t.nacin == NacinTakta.clock) {
+          posljiSurovo(const [0xF8], t.izhod.isEmpty ? privzetiIzhod : t.izhod);
+        } else {
+          for (final u in ukazi) {
+            posljiSurovo(u.ukaz.bajti, u.izhod, konec: u.ukaz.bajtiKonca);
+          }
+          aktivnostIzhoda.value++;
+        }
+        poslanih++;
+        if (vseh != null && poslanih >= vseh) {
+          ustaviTakt();
+          return;
+        }
+      }
+    }
+
+    korak();
+    if (vseh != null && poslanih >= vseh) return;
+    _taktUra = Timer.periodic(Duration(milliseconds: t.nacin == NacinTakta.clock ? 2 : 5), (_) => korak());
+  }
+
+  void ustaviTakt() {
+    _taktUra?.cancel();
+    _taktUra = null;
+  }
+
+  /// Pošlje bajte na naprave izhoda brez zapisa v dnevnik (takt).
+  void posljiSurovo(List<int> bajti, String izhod, {List<int>? konec}) {
+    for (final n in napraveZa(izhod)) {
+      _prenos.poslji(Uint8List.fromList(bajti), n.id);
+      if (konec != null) Timer(const Duration(milliseconds: 50), () => _prenos.poslji(Uint8List.fromList(konec), n.id));
+    }
   }
 
   Future<void> nastaviIzhod(String izhod, String naprava) async {
@@ -356,15 +430,18 @@ class Midi extends ChangeNotifier {
   ], knjiznica: knjiznica);
 
   /// Ob odprtju pesmi: najprej ukazi ob zaprtju prejšnje (če še ni zaprta), nato ukazi nove pesmi.
-  Future<void> odprta(Pesem p, KnjiznicaMidi k) async {
+  /// [uvod]: ali gre zraven tudi MIDI za uvod (gumb Uvodi v orodni vrstici).
+  Future<void> odprta(Pesem p, KnjiznicaMidi k, {bool uvod = true}) async {
     if (_odprta?.id == p.id || prekoVodje != null) return;
     final prejsnja = _odprta;
     final prejsnjaKnjiznica = _knjiznicaOdprte;
     _odprta = p;
     _knjiznicaOdprte = k;
     if (!obOdprtju) return;
+    ustaviTakt();
     if (prejsnja != null) await poslji(prejsnjaKnjiznica!.obZaprtju(prejsnja), knjiznica: prejsnjaKnjiznica);
-    await poslji(k.obOdprtju(p), knjiznica: k);
+    await poslji(k.obOdprtju(p, uvod: uvod), knjiznica: k);
+    if (_odprta?.id == p.id) zacniTakt(p, k);
   }
 
   /// Ob zaprtju pesmi; če je medtem že odprta druga, so ukazi ob zaprtju že poslani.
@@ -373,11 +450,13 @@ class Midi extends ChangeNotifier {
     final k = _knjiznicaOdprte!;
     _odprta = null;
     _knjiznicaOdprte = null;
+    ustaviTakt();
     if (obOdprtju) await poslji(k.obZaprtju(p), knjiznica: k);
   }
 
   @override
   void dispose() {
+    ustaviTakt();
     _spremembe?.cancel();
     _vhodNarocnina?.cancel();
     super.dispose();

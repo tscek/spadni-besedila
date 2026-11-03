@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../baza.dart';
 import '../midi/midi.dart';
 import '../midi/prenos.dart';
+import '../midi/takt.dart';
 import '../midi/ukazi.dart';
 import '../prijava.dart';
 import 'urejanje_pesmi.dart';
@@ -94,6 +95,7 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   value: midi.obOdprtju,
                   onChanged: midi.nastaviObOdprtju,
                 ),
+              if (midi.vklopljen && midi.prekoVodje == null && midi.obOdprtju) ..._takt(context, midi),
               if (midi.napaka case final n?)
                 ListTile(
                   leading: Icon(Icons.error_outline, color: tema.colorScheme.error),
@@ -154,6 +156,74 @@ class MidiNastavitveZaslon extends StatelessWidget {
 
   static String _cas(DateTime t) =>
       '${t.hour}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+
+  /// MIDI clock ali ukaz na dobo v tempu pesmi.
+  List<Widget> _takt(BuildContext context, Midi midi) {
+    final t = midi.takt;
+    final k = baza.midi;
+    return [
+      const Divider(),
+      ListTile(
+        title: Text('Takt v tempu pesmi', style: Theme.of(context).textTheme.titleMedium),
+        subtitle: const Text('Ob odprtju pesmi v njenem tempu (Tempo (BPM)). Pesem brez tempa ne pošlje nič.'),
+        trailing: DropdownButton<NacinTakta>(
+          key: const ValueKey('takt-nacin'),
+          value: t.nacin,
+          items: [for (final n in NacinTakta.values) DropdownMenuItem(value: n, child: Text(n.ime))],
+          onChanged: (v) => midi.nastaviTakt(t.kopija(nacin: v)),
+        ),
+      ),
+      if (t.nacin == NacinTakta.ukaz) ...[
+        ListTile(
+          title: const Text('Ukaz na dobo'),
+          subtitle: Text(t.ukaz.isEmpty ? 'ni izbran' : t.ukaz),
+          trailing: TextButton(
+            onPressed: () async {
+              final i = await izberiMidi(context, k);
+              if (i != null) await midi.nastaviTakt(t.kopija(ukaz: i));
+            },
+            child: const Text('Izberi'),
+          ),
+        ),
+        ListTile(
+          title: const Text('Pogostost'),
+          trailing: DropdownButton<int>(
+            value: t.delitelj,
+            items: [
+              for (final d in [1, 2, 3, 4])
+                DropdownMenuItem(value: d, child: Text(d == 1 ? 'vsaka doba' : 'vsaka $d. doba')),
+            ],
+            onChanged: (v) => midi.nastaviTakt(t.kopija(delitelj: v)),
+          ),
+        ),
+      ],
+      if (t.nacin == NacinTakta.clock)
+        ListTile(
+          title: const Text('Izhod za clock'),
+          trailing: DropdownButton<String>(
+            value: k.izhodi.contains(t.izhod) ? t.izhod : privzetiIzhod,
+            items: [for (final i in k.izhodi) DropdownMenuItem(value: i, child: Text(i))],
+            onChanged: (v) => midi.nastaviTakt(t.kopija(izhod: v == privzetiIzhod ? '' : v)),
+          ),
+        ),
+      if (t.nacin != NacinTakta.izklop)
+        ListTile(
+          title: const Text('Trajanje'),
+          subtitle: Text(
+            t.vesCas ? 'Teče, dokler je pesem odprta.' : 'Ob odprtju pesmi ${t.udarcev} udarcev, nato utihne.',
+          ),
+          trailing: DropdownButton<int>(
+            key: const ValueKey('takt-trajanje'),
+            value: t.udarcev,
+            items: [
+              for (final n in {2, 4, 8, 16, t.udarcev, 0})
+                DropdownMenuItem(value: n, child: Text(n == 0 ? 'ves čas' : '$n udarcev')),
+            ],
+            onChanged: (v) => midi.nastaviTakt(t.kopija(udarcev: v)),
+          ),
+        ),
+    ];
+  }
 
   Widget _naprava(Midi midi, NapravaMidi n) => SwitchListTile(
     secondary: Icon(n.vrsta == 'Bluetooth' ? Icons.bluetooth : Icons.usb),
