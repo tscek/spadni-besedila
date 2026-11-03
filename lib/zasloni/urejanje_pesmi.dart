@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../besedilo_si.dart';
 import '../baza.dart';
 import '../chordpro.dart' as cp;
 import '../midi/ukazi.dart';
@@ -13,6 +14,7 @@ import 'midi_zaslon.dart';
 import 'oznake.dart';
 import 'predogled.dart';
 import 'prijava_zaslon.dart';
+import 'uvoz_besedilosi.dart';
 
 /// Prijava: na Androidu sistemsko okno, v brskalniku zaslon z Googlovim gumbom.
 Future<void> odpriPrijavo(NavigatorState navigator, Prijava prijava) async {
@@ -305,6 +307,40 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     );
   }
 
+  /// Besedilo in podatki pesmi z besedilo.si; prevzeto se shrani z gumbom Shrani.
+  Future<void> _uvozZBesediloSi(BuildContext zavihki) async {
+    final tabs = DefaultTabController.of(zavihki);
+    final messenger = ScaffoldMessenger.of(context);
+    String v(String s) => _vnosi[s]!.text;
+    final r = await uvozZBesediloSi(
+      context,
+      vir: BesediloSi(api: widget.api),
+      iskanje: v('Naslov'),
+      obstojece: {
+        PrevzemBs.besedilo: _vsebina.text,
+        PrevzemBs.naslov: v('Naslov'),
+        PrevzemBs.izvajalec: v('Izvajalec'),
+        PrevzemBs.avtorBesedila: v('Avtor besedila'),
+        PrevzemBs.avtorGlasbe: v('Avtor glasbe'),
+      },
+    );
+    if (r == null || !mounted) return;
+    final (p, kaj) = r;
+    setState(() {
+      if (kaj.contains(PrevzemBs.naslov)) _vnosi['Naslov']!.text = p.naslov.toUpperCase();
+      if (kaj.contains(PrevzemBs.izvajalec)) _vnosi['Izvajalec']!.text = p.izvajalec;
+      if (kaj.contains(PrevzemBs.avtorBesedila)) _vnosi['Avtor besedila']!.text = p.avtorBesedila;
+      if (kaj.contains(PrevzemBs.avtorGlasbe)) _vnosi['Avtor glasbe']!.text = p.avtorGlasbe;
+      if (kaj.contains(PrevzemBs.besedilo) && p.besedilo != null) {
+        _vsebina.text = p.besedilo!;
+        _izbrisiBesedilo = false;
+        if (_opombeBesedila.text.trim().isEmpty) _opombeBesedila.text = 'Vir: ${p.povezava}';
+      }
+    });
+    if (kaj.contains(PrevzemBs.besedilo)) tabs.animateTo(UrejanjePesmiZaslon.zavihekBesedila);
+    messenger.showSnackBar(const SnackBar(content: Text('Prevzeto z besedilo.si. Preglej in pritisni Shrani.')));
+  }
+
   void _pretvori() {
     final novo = cp.akordiNadBesedilom(_vsebina.text);
     if (novo == _vsebina.text.replaceAll('\r\n', '\n')) {
@@ -332,6 +368,12 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
             appBar: AppBar(
               title: Text(widget.pesem == null ? 'Nova pesem' : widget.pesem!.naslov),
               actions: [
+                IconButton(
+                  key: const ValueKey('besedilosi'),
+                  tooltip: 'Uvozi z besedilo.si (besedilo, izvajalec, avtorji)',
+                  icon: const Icon(Icons.travel_explore),
+                  onPressed: () => _uvozZBesediloSi(context),
+                ),
                 _shranjujem
                     ? const Padding(
                         padding: EdgeInsets.all(16),

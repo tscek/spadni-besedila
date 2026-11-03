@@ -139,6 +139,9 @@ class Api {
   /// Sličice članov (stolpec Slika v Nastopih): {ID: {slika, base64}}.
   Future<Map<String, dynamic>> slikeClanov() => _get({'akcija': 'slikeClanov'});
 
+  /// Stran z besedilo.si prek skripte (spletna različica je zaradi CORS ne more brati sama): {status, telo}.
+  Future<Map<String, dynamic>> besedilosi(String url) => _get({'akcija': 'besedilosi', 'url': url});
+
   /// Nov naslov posnetka (svojega; administrator vseh).
   Future<Map<String, dynamic>> preimenujPosnetek(String id, String ime) =>
       _post({'akcija': 'posnetekIme', 'id': id, 'ime': ime});
