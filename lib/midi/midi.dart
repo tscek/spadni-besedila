@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 import 'prenos.dart';
 import 'takt.dart';
+import 'xy.dart';
 import 'ukazi.dart';
 
 /// Izhod, ki ga ta naprava ne pošilja nikamor.
@@ -57,6 +58,7 @@ class Midi extends ChangeNotifier {
   static const _kljucVhoda = 'midi_vhod';
   static const _kljucOdprtja = 'midi_ob_odprtju';
   static const _kljucTakta = 'midi_takt';
+  static const _kljucXy = 'midi_xy';
 
   bool vklopljen = false;
 
@@ -67,6 +69,9 @@ class Midi extends ChangeNotifier {
   /// MIDI clock ali ukaz na dobo v tempu pesmi (pošilja ga naprava, ki pošilja ukaze ob odprtju).
   NastavitveTakta takt = const NastavitveTakta();
   Timer? _taktUra;
+
+  /// XY pad v orodni vrstici (en, skupen za vse pesmi).
+  NastavitveXy xy = const NastavitveXy();
 
   /// iPad na špilu: ukazi gredo vodji, ki jih pošlje na svoje naprave (vrne število ukazov brez naprave).
   Future<int> Function(List<PoslaniUkaz>)? prekoVodje;
@@ -136,6 +141,11 @@ class Midi extends ChangeNotifier {
       takt = const NastavitveTakta();
     }
     try {
+      xy = NastavitveXy.izJson((jsonDecode(p.getString(_kljucXy) ?? '{}') as Map).cast<String, dynamic>());
+    } catch (_) {
+      xy = const NastavitveXy();
+    }
+    try {
       izhodi = (jsonDecode(p.getString(_kljucIzhodov) ?? '{}') as Map).cast<String, String>();
     } catch (_) {
       izhodi = {};
@@ -169,6 +179,14 @@ class Midi extends ChangeNotifier {
     notifyListeners();
     try {
       (await SharedPreferences.getInstance()).setString(_kljucTakta, jsonEncode(t.vJson()));
+    } catch (_) {}
+  }
+
+  Future<void> nastaviXy(NastavitveXy n) async {
+    xy = n;
+    notifyListeners();
+    try {
+      (await SharedPreferences.getInstance()).setString(_kljucXy, jsonEncode(n.vJson()));
     } catch (_) {}
   }
 

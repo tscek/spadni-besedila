@@ -9,11 +9,13 @@ import 'package:spadni_besedila/midi/midi.dart';
 import 'package:spadni_besedila/midi/prenos.dart';
 import 'package:spadni_besedila/midi/takt.dart';
 import 'package:spadni_besedila/midi/ukazi.dart';
+import 'package:spadni_besedila/midi/xy.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/tap_tempo.dart';
 import 'package:spadni_besedila/zasloni/drsnik.dart';
 import 'package:spadni_besedila/zasloni/pdf_risanje.dart' show NozniGumbi;
+import 'package:spadni_besedila/zasloni/xy_pad.dart';
 
 class _Prenos implements MidiPrenos {
   final poslano = <String>[];
@@ -167,5 +169,37 @@ void main() {
     await t.pump(const Duration(milliseconds: 50));
     expect(prenos.poslano.first, '176 7 64');
     expect(prenos.poslano.last, '176 7 127');
+  });
+
+  testWidgets('XY pad: gumbi nad padom, osi pošiljata CC po položaju', (t) async {
+    final (m, prenos) = await t.runAsync(midi) ?? (throw StateError(''));
+    Midi.aplikacija = m;
+    await t.runAsync(
+      () => m.nastaviXy(const NastavitveXy(x: 'CC 2 20', y: 'CC 2 21', gumbi: [GumbXy('Efekt', 'PC 2 4')])),
+    );
+    final j = NastavitveXy.izJson(m.xy.vJson());
+    expect((j.x, j.y, j.gumbi.single.napis), ('CC 2 20', 'CC 2 21', 'Efekt'));
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(width: 320, child: XyPad(knjiznica: KnjiznicaMidi())),
+          ),
+        ),
+      ),
+    );
+    expect(prenos.poslano, isEmpty);
+    final p = t.getTopLeft(find.byKey(const ValueKey('xy-ploskev')));
+    final g = await t.startGesture(p + const Offset(144, 144));
+    await t.pump(const Duration(milliseconds: 50));
+    await g.moveTo(p + const Offset(287.9, 0.1));
+    await t.pump(const Duration(milliseconds: 50));
+    await g.up();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(prenos.poslano.take(2), ['177 20 64', '177 21 64']);
+    expect(prenos.poslano.skip(prenos.poslano.length - 2), ['177 20 127', '177 21 127']);
+    await t.tap(find.text('Efekt'));
+    await t.pump(const Duration(milliseconds: 50));
+    expect(prenos.poslano.last, '193 4');
   });
 }

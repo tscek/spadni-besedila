@@ -5,8 +5,10 @@ import '../midi/midi.dart';
 import '../midi/prenos.dart';
 import '../midi/takt.dart';
 import '../midi/ukazi.dart';
+import '../midi/xy.dart';
 import '../models.dart' show hexBarva;
 import '../prijava.dart';
+import 'drsnik.dart' show ukazDrsnika;
 import 'nastavitve_zaslon.dart' show IzbiraBarve;
 import 'urejanje_pesmi.dart';
 
@@ -128,6 +130,7 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   onChanged: midi.nastaviObOdprtju,
                 ),
               if (midi.vklopljen && midi.prekoVodje == null && midi.obOdprtju) ..._takt(context, midi),
+              if (midi.vklopljen) ..._xy(context, midi),
               if (midi.napaka case final n?)
                 ListTile(
                   leading: Icon(Icons.error_outline, color: tema.colorScheme.error),
@@ -189,6 +192,108 @@ class MidiNastavitveZaslon extends StatelessWidget {
 
   static String _cas(DateTime t) =>
       '${t.hour}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+
+  /// XY pad v orodni vrstici: CC za osi in do 4 gumbi.
+  List<Widget> _xy(BuildContext context, Midi midi) {
+    final n = midi.xy;
+    final k = baza.midi;
+    Future<void> os(bool x) async {
+      final i = await izberiMidi(context, k);
+      if (i == null) return;
+      if (ukazDrsnika(k, i, 0) == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('Os potrebuje CC ukaz (vrednost določa pad).')));
+        }
+        return;
+      }
+      await midi.nastaviXy(x ? n.kopija(x: i) : n.kopija(y: i));
+    }
+
+    Widget vrsticaOsi(String naslov, String zapis, bool x) => ListTile(
+      title: Text(naslov),
+      subtitle: Text(zapis.isEmpty ? 'ni izbrano' : zapis),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(onPressed: () => os(x), child: const Text('Izberi')),
+          if (zapis.isNotEmpty)
+            IconButton(
+              tooltip: 'Odstrani',
+              icon: const Icon(Icons.close),
+              onPressed: () => midi.nastaviXy(x ? n.kopija(x: '') : n.kopija(y: '')),
+            ),
+        ],
+      ),
+    );
+
+    return [
+      const Divider(),
+      ListTile(
+        title: Text('XY pad', style: Theme.of(context).textTheme.titleMedium),
+        subtitle: const Text(
+          'Gumb XY pad v orodni vrstici odpre pad. Osi pošiljata CC, vrednost določa položaj prsta. '
+          'Mesto gumba izbereš v Nastavitve > Orodni vrstici pri pesmi.',
+        ),
+      ),
+      vrsticaOsi('Vodoravno (X)', n.x, true),
+      vrsticaOsi('Navpično (Y)', n.y, false),
+      for (var i = 0; i < n.gumbi.length; i++)
+        ListTile(
+          leading: const Icon(Icons.smart_button_outlined),
+          title: Text(n.gumbi[i].napis),
+          subtitle: Text(n.gumbi[i].ukazi),
+          onTap: () => _urediGumbXy(context, midi, i),
+          trailing: IconButton(
+            tooltip: 'Odstrani',
+            icon: const Icon(Icons.close),
+            onPressed: () => midi.nastaviXy(n.kopija(gumbi: [...n.gumbi]..removeAt(i))),
+          ),
+        ),
+      if (n.gumbi.length < NastavitveXy.najvecGumbov)
+        ListTile(
+          leading: const Icon(Icons.add),
+          title: const Text('Dodaj gumb nad padom'),
+          onTap: () => _urediGumbXy(context, midi, null),
+        ),
+    ];
+  }
+
+  Future<void> _urediGumbXy(BuildContext context, Midi midi, int? i) async {
+    final n = midi.xy;
+    final napis = TextEditingController(text: i == null ? '' : n.gumbi[i].napis);
+    final ukazi = TextEditingController(text: i == null ? '' : n.gumbi[i].ukazi);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(i == null ? 'Nov gumb nad padom' : 'Gumb nad padom'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: napis,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Napis'),
+              ),
+              const SizedBox(height: 12),
+              PoljeMidi(oznaka: 'MIDI ukazi ali makri', vnos: ukazi, knjiznica: baza.midi),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Shrani')),
+        ],
+      ),
+    );
+    if (ok != true || napis.text.trim().isEmpty) return;
+    final g = GumbXy(napis.text.trim(), ukazi.text.trim());
+    final gumbi = [...n.gumbi];
+    i == null ? gumbi.add(g) : gumbi[i] = g;
+    await midi.nastaviXy(n.kopija(gumbi: gumbi));
+  }
 
   /// MIDI clock ali ukaz na dobo v tempu pesmi.
   List<Widget> _takt(BuildContext context, Midi midi) {

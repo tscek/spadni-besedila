@@ -22,8 +22,9 @@ import 'midi_zaslon.dart';
 import 'naslednje.dart';
 import 'orodja.dart';
 import 'oznake.dart';
-import 'drsnik.dart' show DrsnikVOpombah;
+import 'drsnik.dart' show Vlecenje;
 import 'pdf_risanje.dart';
+import 'xy_pad.dart';
 import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
@@ -413,7 +414,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   void _dol(PointerDownEvent e) {
     // Vlečenje drsnika na besedilu ni pridržanje ne dotik.
-    if (DrsnikVOpombah.kazalci.contains(e.pointer)) return;
+    if (Vlecenje.kazalci.contains(e.pointer)) return;
     _dotiki[e.pointer] = e.position;
     _pridrzanje?.cancel();
     if (_dotiki.length > 1 || _risem || _iskalnik) return;
@@ -678,6 +679,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
             ),
           ],
           Orodje.ura => [const Ura()],
+          Orodje.xyPad when Midi.aplikacija.vklopljen && Midi.aplikacija.xy.nastavljen => [
+            XyPadGumb(knjiznica: widget.baza.midi),
+          ],
           Orodje.uvodi when Midi.aplikacija.vklopljen => [
             IconButton(
               key: const ValueKey('uvodi'),

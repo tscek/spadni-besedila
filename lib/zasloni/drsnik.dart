@@ -27,8 +27,66 @@ PoslaniUkaz? ukazDrsnika(KnjiznicaMidi k, String zapis, int vrednost) {
   return null;
 }
 
-/// Drsnik (fader) na besedilu ali PDF-ju. Začne na sredini in ne pošlje ničesar, dokler ga ne premakneš;
-/// med vlečenjem pošilja CC približno 30-krat na sekundo, ob spustu še končno vrednost.
+/// Pošiljanje vrednosti med vlečenjem (drsnik, XY pad): največ ~30-krat na sekundo (prek vodje 10-krat),
+/// brez zapisa v dnevnik; ob spustu še končna vrednost z zapisom.
+class PosiljalecVrednosti {
+  PosiljalecVrednosti(this.ukazi, this.knjiznica);
+
+  /// Ukazi s trenutnimi vrednostmi.
+  final List<PoslaniUkaz> Function() ukazi;
+  final KnjiznicaMidi knjiznica;
+
+  DateTime _zadnje = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _odlozeno;
+
+  void premik() {
+    final razmik = Duration(milliseconds: Midi.aplikacija.prekoVodje != null ? 100 : 33);
+    final zdaj = DateTime.now();
+    if (zdaj.difference(_zadnje) >= razmik) {
+      _poslji();
+    } else {
+      _odlozeno ??= Timer(razmik - zdaj.difference(_zadnje), _poslji);
+    }
+  }
+
+  void konec() => _poslji(koncno: true);
+
+  void _poslji({bool koncno = false}) {
+    _odlozeno?.cancel();
+    _odlozeno = null;
+    _zadnje = DateTime.now();
+    final midi = Midi.aplikacija;
+    if (!midi.vklopljen) return;
+    final s = ukazi();
+    if (s.isEmpty) return;
+    if (koncno || midi.prekoVodje != null) {
+      midi.poslji(s, knjiznica: knjiznica);
+    } else {
+      for (final u in s) {
+        midi.posljiSurovo(u.ukaz.bajti, u.izhod);
+      }
+      midi.aktivnostIzhoda.value++;
+    }
+  }
+
+  void dispose() => _odlozeno?.cancel();
+}
+
+/// Prsti, ki trenutno vlečejo drsnik: zaslon pesmi zanje ne vklopi risanja in ne šteje dotikov.
+class Vlecenje {
+  static final kazalci = <int>{};
+
+  /// Ovije drsnik, da zaslon pod njim ve za njegove prste.
+  static Widget ovij({required Widget child}) => Listener(
+    onPointerDown: (e) => kazalci.add(e.pointer),
+    // Zaslon pesmi dobi isti dogodek za drsnikom, zato prst odstranimo malo kasneje.
+    onPointerUp: (e) => scheduleMicrotask(() => kazalci.remove(e.pointer)),
+    onPointerCancel: (e) => scheduleMicrotask(() => kazalci.remove(e.pointer)),
+    child: child,
+  );
+}
+
+/// Drsnik (fader) na besedilu ali PDF-ju. Začne na sredini in ne pošlje ničesar, dokler ga ne premakneš.
 class DrsnikVOpombah extends StatefulWidget {
   const DrsnikVOpombah({super.key, required this.gumb, required this.velikost, required this.knjiznica});
 
@@ -38,9 +96,6 @@ class DrsnikVOpombah extends StatefulWidget {
   final double velikost;
   final KnjiznicaMidi knjiznica;
 
-  /// Prsti, ki trenutno vlečejo drsnik: zaslon pesmi zanje ne vklopi risanja in ne šteje dotikov.
-  static final kazalci = <int>{};
-
   @override
   State<DrsnikVOpombah> createState() => _DrsnikVOpombahState();
 }
@@ -48,15 +103,17 @@ class DrsnikVOpombah extends StatefulWidget {
 class _DrsnikVOpombahState extends State<DrsnikVOpombah> {
   double _v = 0.5;
   bool _premaknjen = false;
-  DateTime _zadnje = DateTime.fromMillisecondsSinceEpoch(0);
-  Timer? _odlozeno;
+  late final _posiljalec = PosiljalecVrednosti(
+    () => [?ukazDrsnika(widget.knjiznica, widget.gumb.midi, _vrednost)],
+    widget.knjiznica,
+  );
 
   bool get _pokoncen => widget.gumb.oblika == OblikaGumba.drsnikPokoncen;
   int get _vrednost => (_v * 127).round();
 
   @override
   void dispose() {
-    _odlozeno?.cancel();
+    _posiljalec.dispose();
     super.dispose();
   }
 
@@ -66,31 +123,7 @@ class _DrsnikVOpombahState extends State<DrsnikVOpombah> {
       _v = v.clamp(0.0, 1.0);
       _premaknjen = true;
     });
-    final midi = Midi.aplikacija;
-    // Prek vodje (iPad) redkeje, da omrežje ne zaostaja.
-    final razmik = Duration(milliseconds: midi.prekoVodje != null ? 100 : 33);
-    final zdaj = DateTime.now();
-    if (zdaj.difference(_zadnje) >= razmik) {
-      _poslji();
-    } else {
-      _odlozeno ??= Timer(razmik - zdaj.difference(_zadnje), _poslji);
-    }
-  }
-
-  void _poslji({bool koncno = false}) {
-    _odlozeno?.cancel();
-    _odlozeno = null;
-    _zadnje = DateTime.now();
-    final midi = Midi.aplikacija;
-    if (!midi.vklopljen) return;
-    final u = ukazDrsnika(widget.knjiznica, widget.gumb.midi, _vrednost);
-    if (u == null) return;
-    if (koncno || midi.prekoVodje != null) {
-      midi.poslji([u], knjiznica: widget.knjiznica);
-    } else {
-      midi.posljiSurovo(u.ukaz.bajti, u.izhod);
-      midi.aktivnostIzhoda.value++;
-    }
+    _posiljalec.premik();
   }
 
   @override
@@ -99,17 +132,13 @@ class _DrsnikVOpombahState extends State<DrsnikVOpombah> {
     final debelina = widget.velikost * 2.4;
     final size = _pokoncen ? Size(debelina, dolzina) : Size(dolzina, debelina);
     final barva = Color(widget.gumb.barva);
-    return Listener(
-      onPointerDown: (e) => DrsnikVOpombah.kazalci.add(e.pointer),
-      // Zaslon pesmi dobi isti dogodek za drsnikom, zato prst odstranimo malo kasneje.
-      onPointerUp: (e) => scheduleMicrotask(() => DrsnikVOpombah.kazalci.remove(e.pointer)),
-      onPointerCancel: (e) => scheduleMicrotask(() => DrsnikVOpombah.kazalci.remove(e.pointer)),
+    return Vlecenje.ovij(
       child: GestureDetector(
         key: ValueKey('drsnik-${widget.gumb.napis}'),
         behavior: HitTestBehavior.opaque,
         onPanDown: (d) => _nastavi(d.localPosition, size),
         onPanUpdate: (d) => _nastavi(d.localPosition, size),
-        onPanEnd: (_) => _poslji(koncno: true),
+        onPanEnd: (_) => _posiljalec.konec(),
         child: CustomPaint(
           size: size,
           painter: _DrsnikSlikar(
