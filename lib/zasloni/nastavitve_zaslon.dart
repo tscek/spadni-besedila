@@ -8,6 +8,7 @@ import '../prijava.dart';
 import 'deli_aplikacijo.dart';
 import 'pdf_risanje.dart';
 import 'midi_zaslon.dart';
+import 'tipkovnica_zaslon.dart';
 
 /// Osebne nastavitve na tej napravi.
 class NastavitveZaslon extends StatelessWidget {
@@ -78,6 +79,13 @@ class NastavitveZaslon extends StatelessWidget {
               subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),
               value: n.zaslonPrizgan,
               onChanged: n.nastaviZaslonPrizgan,
+            ),
+            ListTile(
+              key: const ValueKey('nastavitve-tipkovnica'),
+              title: const Text('Tipkovnica'),
+              subtitle: const Text('Bližnjice za tipkovnico in nožno stikalo BT (npr. i = iskalnik)'),
+              trailing: const Icon(Icons.keyboard_outlined),
+              onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const TipkovnicaZaslon())),
             ),
             const ListTile(title: Text('Vloga na špilu'), subtitle: Text('Vodja, sledilec ali sama: gumb Špil')),
             const Divider(),

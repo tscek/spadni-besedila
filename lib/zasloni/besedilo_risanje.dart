@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../midi/ukazi.dart';
 import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
 import '../risbe.dart';
+import '../tipkovnica.dart' show Listanje;
 import 'pdf_risanje.dart';
 import 'pesem_zaslon.dart';
 
@@ -120,8 +122,28 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   @override
   String get opisIzbrisa => 'Izbrišem vse risbe, oznake, opombe in gumbe na besedilu?';
 
+  StreamSubscription<int>? _listanje;
+
+  @override
+  void initState() {
+    super.initState();
+    _listanje = Listanje.tok.listen(_listaj);
+  }
+
+  /// Tipka gor ali dol: premik za tretjino zaslona.
+  void _listaj(int smer) {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true) || !_navpicno.hasClients) return;
+    final p = _navpicno.position;
+    _navpicno.animateTo(
+      (p.pixels + p.viewportDimension / 3 * smer).clamp(p.minScrollExtent, p.maxScrollExtent),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   void dispose() {
+    _listanje?.cancel();
     _navpicno.dispose();
     _vodoravno.dispose();
     super.dispose();

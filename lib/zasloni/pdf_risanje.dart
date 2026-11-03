@@ -11,6 +11,7 @@ import '../midi/ukazi.dart';
 import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
 import '../risbe.dart';
+import '../tipkovnica.dart' show Listanje;
 import 'midi_zaslon.dart';
 import 'oznake.dart';
 
@@ -113,9 +114,26 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
   @override
   bool mojaStran(int stran) => stran > 0;
 
+  StreamSubscription<int>? _listanje;
+
+  @override
+  void dispose() {
+    _listanje?.cancel();
+    super.dispose();
+  }
+
+  /// Tipka gor ali dol: premik za tretjino zaslona.
+  void _listaj(int smer) {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true) || !_kontroler.isReady) return;
+    final dy = _kontroler.visibleRect.height / 3 * smer * _kontroler.currentZoom;
+    final cilj = Matrix4.translationValues(0, -dy, 0)..multiply(_kontroler.value);
+    _kontroler.goTo(_kontroler.makeMatrixInSafeRange(cilj, forceClamp: true));
+  }
+
   @override
   void initState() {
     super.initState();
+    _listanje = Listanje.tok.listen(_listaj);
     Nastavitve.aplikacija.povecavaPdf(widget.pesem).then((zoom) {
       if (!mounted) return;
       setState(

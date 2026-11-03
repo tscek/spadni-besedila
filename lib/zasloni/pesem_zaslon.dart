@@ -10,6 +10,7 @@ import '../chordpro.dart' as cp;
 import '../config.dart';
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
+import '../tipkovnica.dart' show Listanje;
 import '../models.dart';
 import '../nastavitve.dart';
 import '../odigrane.dart';
@@ -364,6 +365,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
     }
     if (d == DejanjeMidi.iskalnik) {
       setState(() => _iskalnik = true);
+      return true;
+    }
+    // Gor in dol premikata besedilo ali PDF (tipkovnica, nožno stikalo).
+    if (d == DejanjeMidi.gor || d == DejanjeMidi.dol) {
+      Listanje.premakni(d == DejanjeMidi.gor ? -1 : 1);
       return true;
     }
     // Izbrana pesem s seznamčka; v setlisti in pri sledenju (odpri je podan) naslednjo vodi zaslon okoli pesmi.

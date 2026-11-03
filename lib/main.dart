@@ -18,6 +18,7 @@ import 'odigrane.dart';
 import 'risbe.dart';
 import 'runda.dart';
 import 'snemanje.dart';
+import 'tipkovnica.dart';
 import 'zasloni/seznam_zaslon.dart';
 import 'zasloni/spil_zaslon.dart';
 
@@ -34,6 +35,8 @@ Future<void> main(List<String> argumenti) async {
   await Odigrane.aplikacija.nalozi();
   await Predloge.aplikacija.nalozi();
   await Runda.aplikacija.nalozi();
+  // Bližnjice tipkovnice (tudi nožno stikalo BT) sprožijo ista dejanja kot nožno stikalo MIDI.
+  await Tipkovnica.aplikacija.nalozi();
   // Snemanje špila: kosi, ki še niso na Drivu, gredo, ko je član prijavljen.
   if (!Config.prekoVodje) {
     SnemanjeSpila.aplikacija
