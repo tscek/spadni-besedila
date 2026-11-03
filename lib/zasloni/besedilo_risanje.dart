@@ -479,15 +479,18 @@ class _OznakeVrstice extends CustomPainter {
         ? Rect.fromLTRB(r.left, r.bottom - pisava * 1.3, r.right, r.bottom)
         : r;
     final v = pas.inflate(2);
+    // Ena plast: prekrite oznake ne potemnijo, novejša prepiše starejšo.
+    canvas.saveLayer(v.inflate(2), Paint()..color = Colors.black.withValues(alpha: 0.55));
     for (final o in oznake) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTRB(v.left + o.od * v.width, v.top, v.left + o.doo * v.width, v.bottom),
           const Radius.circular(3),
         ),
-        Paint()..color = Color(o.barva).withValues(alpha: 0.55),
+        Paint()..color = Color(o.barva).withValues(alpha: 1),
       );
     }
+    canvas.restore();
   }
 
   @override

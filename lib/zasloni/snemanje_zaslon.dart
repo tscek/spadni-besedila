@@ -147,13 +147,16 @@ Future<void> zacniSnemanje(BuildContext context, Baza baza) async {
   // Sledilec v aplikaciji lahko snema sam ali naroči vodji; brez špila snema ta naprava.
   final lahkoTu = !kIsWeb;
   var tuSnema = s.vodji == null;
-  final nastopi = api == null
-      ? Future.value(const <PredlogNastopa>[])
+  // Nastopi so v lokalni bazi (tudi brez interneta); če jih tam ni, vpraša skripto.
+  final lokalni = [for (final n in baza.nastopiOkrog(DateTime.now())) predlogIzNastopa(n)];
+  final nastopi = lokalni.isNotEmpty || api == null
+      ? Future.value(lokalni)
       : api
             .nastopi(DateTime.now())
             .then(
               (o) => [for (final n in (o['nastopi'] as List? ?? const []).whereType<Map>()) predlogIzNastopa(n.cast())],
             )
+            .timeout(const Duration(seconds: 10))
             .catchError((Object _) => const <PredlogNastopa>[]);
   final vhodi = lahkoTu ? s.vhodi() : Future.value(const <VhodZvoka>[]);
   var vhod = lahkoTu ? await s.shranjenVhod() : null;

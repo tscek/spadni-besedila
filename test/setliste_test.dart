@@ -295,7 +295,7 @@ void main() {
     expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
   });
 
-  testWidgets('urejanje setliste: dodaj s kodo in seznam setlist', (tester) async {
+  testWidgets('urejanje setliste: brez vnosa s kodo, seznam setlist', (tester) async {
     late Baza baza;
     late Api api;
     await tester.runAsync(() async => (baza, api, _) = await _baza());
@@ -307,10 +307,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('3 pesmi. Vrstni red spremeniš z vlečenjem.'), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, 'Dodaj s kodo'), '1003');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-    expect(find.text('4 pesmi. Vrstni red spremeniš z vlečenjem.'), findsOneWidget);
+    // Pesmi se dodajajo samo z izbiro (koda se ne prikazuje).
+    expect(find.widgetWithText(TextField, 'Dodaj s kodo'), findsNothing);
+    expect(find.byKey(const ValueKey('dodaj-pesmi')), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(

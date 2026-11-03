@@ -30,7 +30,6 @@ class _Vnos {
 class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with OdprtoUrejanje {
   late final _ime = TextEditingController(text: widget.setlista?.ime ?? '')..addListener(_spremenjeno);
   late final _opombe = TextEditingController(text: widget.setlista?.opombe ?? '')..addListener(_spremenjeno);
-  final _koda = TextEditingController();
   late DateTime? _datum = widget.setlista?.datum;
   late String _skupina =
       widget.setlista?.skupina ?? (widget.baza.urednikSkupine.isNotEmpty ? widget.baza.urednikSkupine.first : '');
@@ -54,7 +53,6 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
   void dispose() {
     _ime.dispose();
     _opombe.dispose();
-    _koda.dispose();
     super.dispose();
   }
 
@@ -62,19 +60,6 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
     _pesmi.add(_Vnos(p));
     _spremembe = true;
   });
-
-  /// Hiter vnos s kodo pesmi (kot v SongBooku): vpiši kodo in pritisni Enter.
-  void _dodajKodo(String koda) {
-    final k = koda.trim();
-    if (k.isEmpty) return;
-    final p = widget.baza.pesmi.where((p) => p.koda == k).firstOrNull;
-    if (p == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pesmi s kodo $k ni.')));
-    } else {
-      _dodaj(p);
-      _koda.clear();
-    }
-  }
 
   Future<void> _izberi() async {
     await showModalBottomSheet<void>(
@@ -264,31 +249,14 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
                   decoration: const InputDecoration(labelText: 'Opombe', border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _koda,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (k) {
-                          _dodajKodo(k);
-                        },
-                        decoration: InputDecoration(
-                          labelText: 'Dodaj s kodo',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                          suffixIcon: IconButton(icon: const Icon(Icons.add), onPressed: () => _dodajKodo(_koda.text)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.tonalIcon(
-                      onPressed: _izberi,
-                      icon: const Icon(Icons.search),
-                      label: const Text('Izberi'),
-                    ),
-                  ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    key: const ValueKey('dodaj-pesmi'),
+                    onPressed: _izberi,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Dodaj pesmi'),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(

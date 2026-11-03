@@ -682,6 +682,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
               if (o.vrstica == null) o,
         ],
         enota: Size(enotaX ?? velikost.width, enotaY ?? velikost.height),
+        temnoOzadje: temnoOzadje,
       ),
     ),
   );
@@ -1278,24 +1279,43 @@ Future<({Opomba? opomba})?> urediOpombo(BuildContext context, Opomba? obstojeca,
   return (opomba: o);
 }
 
+/// Markerji in označeno besedilo so ena plast: znotraj nje se rišejo neprosojno (novejše prepiše starejše),
+/// prosojnost se doda enkrat za vso plast, zato večkratno prekrivanje ne potemni.
+void _plastMarkerjev(Canvas canvas, Size platno, bool temnoOzadje, void Function() risi) {
+  canvas.saveLayer(
+    Offset.zero & platno,
+    Paint()
+      ..color = Colors.black.withValues(alpha: 0.45)
+      ..blendMode = temnoOzadje ? BlendMode.srcOver : BlendMode.multiply,
+  );
+  risi();
+  canvas.restore();
+}
+
+void _risiOznake(Canvas canvas, List<Oznaka> oznake, Size enota) {
+  for (final o in oznake) {
+    final r = o.obmocje;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(r.left * enota.width, r.top * enota.height, r.right * enota.width, r.bottom * enota.height),
+        Radius.circular(enota.width * 0.004),
+      ),
+      Paint()..color = Color(o.barva).withValues(alpha: 1),
+    );
+  }
+}
+
 class _OznakeSlikar extends CustomPainter {
-  _OznakeSlikar({required this.oznake, required this.enota});
+  _OznakeSlikar({required this.oznake, required this.enota, this.temnoOzadje = false});
 
   final List<Oznaka> oznake;
   final Size enota;
+  final bool temnoOzadje;
 
   @override
   void paint(Canvas canvas, Size platno) {
-    for (final o in oznake) {
-      final r = o.obmocje;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTRB(r.left * enota.width, r.top * enota.height, r.right * enota.width, r.bottom * enota.height),
-          Radius.circular(enota.width * 0.004),
-        ),
-        Paint()..color = Color(o.barva).withValues(alpha: 0.55),
-      );
-    }
+    if (oznake.isEmpty) return;
+    _plastMarkerjev(canvas, platno, temnoOzadje, () => _risiOznake(canvas, oznake, enota));
   }
 
   @override
@@ -1322,21 +1342,18 @@ class _RisbaSlikar extends CustomPainter {
   @override
   void paint(Canvas canvas, Size platno) {
     final size = enota;
-    _OznakeSlikar(oznake: oznake, enota: enota).paint(canvas, platno);
-    for (final p in poteze) {
-      final marker = p.orodje == Orodje.marker;
-      final barva = Color(p.barva);
-      final copic = Paint()
-        ..color = marker ? barva.withValues(alpha: 0.4) : barva
-        ..strokeWidth = p.debelina * size.width
-        ..style = PaintingStyle.stroke
-        ..strokeCap = marker ? StrokeCap.square : StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..blendMode = marker && !temnoOzadje ? BlendMode.multiply : BlendMode.srcOver;
+    Paint copic(Poteza p, {bool marker = false}) => Paint()
+      ..color = Color(p.barva).withValues(alpha: 1)
+      ..strokeWidth = p.debelina * size.width
+      ..style = PaintingStyle.stroke
+      ..strokeCap = marker ? StrokeCap.square : StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    void risi(Poteza p, Paint c) {
       final tocke = [for (final t in p.tocke) Offset(t.dx * size.width, t.dy * size.height)];
       if (tocke.length == 1) {
-        canvas.drawPoints(ui.PointMode.points, tocke, copic);
-        continue;
+        canvas.drawPoints(ui.PointMode.points, tocke, c);
+        return;
       }
       // Gladka črta skozi sredine sosednjih točk.
       final pot = Path()..moveTo(tocke.first.dx, tocke.first.dy);
@@ -1345,7 +1362,24 @@ class _RisbaSlikar extends CustomPainter {
         pot.quadraticBezierTo(tocke[i].dx, tocke[i].dy, sredina.dx, sredina.dy);
       }
       pot.lineTo(tocke.last.dx, tocke.last.dy);
-      canvas.drawPath(pot, copic);
+      canvas.drawPath(pot, c);
+    }
+
+    // Markerji v eni plasti (pod pisalom), pisalo ohrani vse poteze.
+    final markerji = [
+      for (final p in poteze)
+        if (p.orodje == Orodje.marker) p,
+    ];
+    if (markerji.isNotEmpty || oznake.isNotEmpty) {
+      _plastMarkerjev(canvas, platno, temnoOzadje, () {
+        _risiOznake(canvas, oznake, size);
+        for (final p in markerji) {
+          risi(p, copic(p, marker: true));
+        }
+      });
+    }
+    for (final p in poteze) {
+      if (p.orodje != Orodje.marker) risi(p, copic(p));
     }
 
     for (final shranjena in opombe) {

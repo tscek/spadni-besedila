@@ -287,7 +287,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             () => _odpriMapo(m.id),
             barva: m.argb == null ? null : Color(m.argb!),
             opis: m.opis,
-            uredi: baza.smeUrejati ? () => uredi(m) : null,
+            uredi: baza.jeAdministrator ? () => uredi(m) : null,
           ),
         mapa(Icons.library_music_outlined, 'Vse', baza.pesmiMape(null).length, () => _odpriMapo(null)),
         if (baza.pesmiSKlicaji.isNotEmpty)
@@ -301,7 +301,8 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           ),
         if (baza.arhiv.isNotEmpty)
           mapa(Icons.archive_outlined, 'Arhiv', baza.arhiv.length, () => _odpriMapo(null, arhiv: true)),
-        if (baza.smeUrejati)
+        // Mape ureja samo administrator.
+        if (baza.jeAdministrator)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Align(

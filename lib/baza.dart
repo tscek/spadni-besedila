@@ -41,6 +41,25 @@ class Baza extends ChangeNotifier {
 
   /// Posneti špili (najnovejši prvi) in igranja po pesmih (najnovejša prva).
   List<Snemanje> snemanja = [];
+
+  /// Nastopi od včeraj do 90 dni naprej (iz Nastopov, samo branje); ostanejo tudi brez interneta.
+  List<Map<String, dynamic>> nastopi = [];
+
+  /// Nastopi na dan [t] in dan prej ali potem (najprej današnji), za naslov snemanja.
+  List<Map<String, dynamic>> nastopiOkrog(DateTime t) {
+    String dan(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final danes = dan(t);
+    final okrog = {dan(t.subtract(const Duration(days: 1))), danes, dan(t.add(const Duration(days: 1)))};
+    return nastopi.where((n) => okrog.contains(besedilo(n['Datum']))).toList()
+      ..sort((a, b) => (besedilo(a['Datum']) == danes ? 0 : 1).compareTo(besedilo(b['Datum']) == danes ? 0 : 1));
+  }
+
+  /// Današnji nastop (prvi), npr. za ohranjevalnik zaslona.
+  Map<String, dynamic>? nastopDanes(DateTime t) {
+    final d = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+    return nastopi.where((n) => besedilo(n['Datum']) == d).firstOrNull;
+  }
+
   Map<String, List<Igranje>> igranja = {};
 
   /// Snemanje, v katerem je bila pesem igrana ob [cas].
@@ -283,6 +302,11 @@ class Baza extends ChangeNotifier {
     for (final l in posnetki.values) {
       l.sort((a, b) => (b.cas ?? DateTime(0)).compareTo(a.cas ?? DateTime(0)));
     }
+    nastopi = [for (final r in t('Nastopi')) Map<String, dynamic>.from(r)]
+      ..sort(
+        (a, b) =>
+            '${besedilo(a['Datum'])} ${besedilo(a['Od'])}'.compareTo('${besedilo(b['Datum'])} ${besedilo(b['Od'])}'),
+      );
     snemanja = t('Snemanja').map(Snemanje.izVrstice).where((s) => s.id.isNotEmpty).toList()
       ..sort((a, b) => (b.zacetek ?? DateTime(0)).compareTo(a.zacetek ?? DateTime(0)));
     igranja = {};

@@ -9,6 +9,7 @@ import 'posodobitev.dart';
 import 'posodobitev_windows_web.dart' if (dart.library.io) 'posodobitev_windows_io.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
+import 'zasloni/ohranjevalnik.dart';
 import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
 import 'midi/midi.dart';
@@ -156,6 +157,8 @@ class SpadniBesedila extends StatelessWidget {
       navigatorKey: navigator,
       title: 'Špadni besedila',
       debugShowCheckedModeBanner: false,
+      // Ob PAVZI ohranjevalnik zaslona z uro in nastopom čez vse zaslone.
+      builder: (context, child) => Ohranjevalnik(baza: baza, child: child ?? const SizedBox.shrink()),
       themeMode: Nastavitve.aplikacija.svetlaTema ? ThemeMode.light : ThemeMode.dark,
       theme: ThemeData(colorSchemeSeed: Colors.amber, brightness: Brightness.light, fontFamily: 'Roboto'),
       darkTheme: ThemeData(colorSchemeSeed: Colors.amber, brightness: Brightness.dark, fontFamily: 'Roboto'),
