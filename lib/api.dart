@@ -33,6 +33,9 @@ class Api {
 
   Future<Map<String, dynamic>> podatki() => _get({'akcija': 'podatki'});
 
+  /// Seja aplikacije (žeton za 30 dni) za Googlov ID žeton ali za še veljavno sejo: {seja, poteka, email}.
+  Future<Map<String, dynamic>> seja() => _get({'akcija': 'seja'});
+
   Future<Uint8List> pdf(String driveId) async {
     final odg = await _get({'akcija': 'pdf', 'id': driveId});
     return base64Decode(odg['base64'] as String);

@@ -12,7 +12,7 @@ import 'config.dart';
 /// Google prijava na računalniku (Windows): odpre brskalnik, Google vrne kodo na lokalni naslov
 /// (http://127.0.0.1:vrata), aplikacija jo zamenja za ID žeton in osvežilni žeton.
 class PrijavaNamizje {
-  static const _scope = 'openid email';
+  static const _scope = 'openid email profile';
 
   static bool get nastavljena => Config.googleDesktopClientId.isNotEmpty;
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api.dart';
 import 'config.dart';
 import 'prijava_namizje_web.dart' if (dart.library.io) 'prijava_namizje.dart';
 
@@ -31,17 +32,37 @@ class Prijava extends ChangeNotifier {
   String? _osvezilni;
   String? _namiznaEmail;
 
+  // Seja aplikacije: skripta po prijavi izda svoj žeton za 30 dni (Googlov ID žeton velja le 1 uro in ga
+  // brskalnik pogosto ne zna obnoviti). Seja se sama podaljša, ko ji ostane manj kot teden.
+  static const _kljucSeje = 'seja';
+  static const _kljucEmailaSeje = 'seja_email';
+  String? _seja;
+  String? _sejaEmail;
+  Future<void>? _obnavljam;
+
+  /// Za preizkuse: Api za dani žeton.
+  @visibleForTesting
+  static Api Function(Future<String> Function() zeton) tovarnaApi = Api.new;
+
+  bool get _sejaVelja => _seja != null && veljaSeja(_seja!, Duration.zero);
+
   bool get nastavljena => _namizje ? PrijavaNamizje.nastavljena : Config.googleServerClientId.isNotEmpty;
 
   /// Ali sme aplikacija klicati strežnik. Na špilu (prek vodje) prijava ni potrebna.
-  bool get prijavljen => racun != null || _namiznaEmail != null || Config.prekoVodje;
+  bool get prijavljen => racun != null || _namiznaEmail != null || _sejaVelja || Config.prekoVodje;
 
   /// E-naslov prijavljenega računa.
-  String? get email => racun?.email ?? _namiznaEmail;
+  String? get email => racun?.email ?? _namiznaEmail ?? (_sejaVelja ? _sejaEmail : null);
 
   Future<void> zacni() => _priprava ??= _zacni();
 
   Future<void> _zacni() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      _seja = p.getString(_kljucSeje);
+      _sejaEmail = p.getString(_kljucEmailaSeje);
+      if (_seja != null) notifyListeners();
+    } catch (_) {}
     if (_namizje) {
       final p = await SharedPreferences.getInstance();
       _osvezilni = p.getString(_kljucOsvezilnega);
@@ -94,6 +115,8 @@ class Prijava extends ChangeNotifier {
   /// Prijava s sistemskim oknom (Android). V brskalniku se uporabi Googlov gumb.
   Future<void> prijavi() async {
     napaka = null;
+    // Nova prijava (morda z drugim računom) dobi novo sejo.
+    await _shraniSejo(null, null);
     if (_namizje) return _prijaviNamizje();
     try {
       await zacni();
@@ -125,6 +148,7 @@ class Prijava extends ChangeNotifier {
   }
 
   Future<void> odjavi() async {
+    await _shraniSejo(null, null);
     if (_namizje) {
       final p = await SharedPreferences.getInstance();
       await p.remove(_kljucOsvezilnega);
@@ -135,15 +159,63 @@ class Prijava extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await _gsi.signOut();
+    try {
+      await _gsi.signOut();
+    } catch (_) {
+      // Prijavljen le s sejo (Google še ni pripravljen).
+    }
     racun = null;
     _idZeton = null;
     notifyListeners();
   }
 
-  /// Veljaven ID žeton za klic na strežnik. Sočasni klici si delijo isto osvežitev.
+  /// Žeton za klic na strežnik: seja aplikacije ali (prvič) Googlov ID žeton, ki se zamenja za sejo.
   Future<String> zeton() async {
     if (Config.prekoVodje) return '';
+    final s = _seja;
+    if (s != null && veljaSeja(s, Duration.zero)) {
+      if (!veljaSeja(s, const Duration(days: 7))) _obnavljam ??= _obnoviSejo(s).whenComplete(() => _obnavljam = null);
+      return s;
+    }
+    final g = await _googleZeton();
+    try {
+      final o = await tovarnaApi(() async => g).seja();
+      final nova = o['seja']?.toString();
+      if (nova != null && nova.startsWith('sb1.')) {
+        await _shraniSejo(nova, o['email']?.toString() ?? email);
+        return nova;
+      }
+    } catch (_) {
+      // Stara skripta seje ne pozna: ostane Googlov žeton.
+    }
+    return g;
+  }
+
+  Future<void> _obnoviSejo(String s) async {
+    try {
+      final o = await tovarnaApi(() async => s).seja();
+      final nova = o['seja']?.toString();
+      if (nova != null && nova.startsWith('sb1.')) await _shraniSejo(nova, o['email']?.toString() ?? _sejaEmail);
+    } catch (_) {}
+  }
+
+  Future<void> _shraniSejo(String? seja, String? email) async {
+    _seja = seja;
+    _sejaEmail = seja == null ? null : email;
+    try {
+      final p = await SharedPreferences.getInstance();
+      if (seja == null) {
+        await p.remove(_kljucSeje);
+        await p.remove(_kljucEmailaSeje);
+      } else {
+        await p.setString(_kljucSeje, seja);
+        if (email != null) await p.setString(_kljucEmailaSeje, email);
+      }
+    } catch (_) {}
+  }
+
+  /// Veljaven Googlov ID žeton. Sočasni klici si delijo isto osvežitev.
+  Future<String> _googleZeton() async {
     final z = _idZeton;
     if (z != null && veljaVsaj(z, const Duration(minutes: 5))) return z;
     if (_namizje) {
@@ -195,6 +267,19 @@ String? poljeZetona(String jwt, String polje) {
     return vsebina[polje]?.toString();
   } catch (_) {
     return null;
+  }
+}
+
+/// Ali seja aplikacije (`sb1.vsebina.podpis`) velja še vsaj [rezerva] (polje x v milisekundah).
+bool veljaSeja(String seja, Duration rezerva) {
+  try {
+    final deli = seja.split('.');
+    if (deli.length != 3 || deli[0] != 'sb1') return false;
+    final v = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(deli[1])))) as Map<String, dynamic>;
+    final poteka = DateTime.fromMillisecondsSinceEpoch((v['x'] as num).toInt());
+    return DateTime.now().add(rezerva).isBefore(poteka);
+  } catch (_) {
+    return false;
   }
 }
 
