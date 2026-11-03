@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
+import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,7 @@ import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/tap_tempo.dart';
+import 'package:spadni_besedila/zasloni/drsnik.dart';
 import 'package:spadni_besedila/zasloni/pdf_risanje.dart' show NozniGumbi;
 
 class _Prenos implements MidiPrenos {
@@ -129,5 +131,41 @@ void main() {
     expect(g.kopija(velikost: 2).nozno, 3);
     // Brez odprtega besedila ni gumba, ki bi ga stikalo sprožilo.
     expect(NozniGumbi.sprozi('ni', 1), isFalse);
+  });
+
+  test('drsnik: CC ukaz iz knjižnice z vrednostjo drsnika', () {
+    final k = KnjiznicaMidi.izTabel({
+      'MIDI ukazi': [
+        {'Ime': 'Nivo glasbe', 'Vrsta': 'CC', 'Kanal': 3, 'Številka': 7, 'Vrednost': 100, 'Izhod': 'Miza'},
+      ],
+    });
+    final u = ukazDrsnika(k, 'Nivo glasbe', 64)!;
+    expect((u.ukaz.zapis, u.izhod), ('CC 3 7 64', 'Miza'));
+    expect(ukazDrsnika(k, 'CC 1 11', 200)!.ukaz.zapis, 'CC 1 11 127');
+    expect(ukazDrsnika(k, 'PC 1 5', 10), isNull);
+  });
+
+  testWidgets('drsnik ne pošlje nič, dokler ga ne premakneš', (t) async {
+    final (m, prenos) = await t.runAsync(midi) ?? (throw StateError(''));
+    Midi.aplikacija = m;
+    final g = GumbNaStrani(napis: 'Glasba', midi: 'CC 1 7', barva: 0xFF1565C0, oblika: OblikaGumba.drsnik);
+    await t.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: DrsnikVOpombah(gumb: g, velikost: 20, knjiznica: KnjiznicaMidi()),
+        ),
+      ),
+    );
+    expect(prenos.poslano, isEmpty);
+    // Drsnik je širok 200: vlečenje do desnega roba pošlje 127.
+    final levo = t.getTopLeft(find.byType(DrsnikVOpombah));
+    final g1 = await t.startGesture(levo + const Offset(100, 24));
+    await t.pump(const Duration(milliseconds: 50));
+    await g1.moveTo(levo + const Offset(199.9, 24));
+    await t.pump(const Duration(milliseconds: 50));
+    await g1.up();
+    await t.pump(const Duration(milliseconds: 50));
+    expect(prenos.poslano.first, '176 7 64');
+    expect(prenos.poslano.last, '176 7 127');
   });
 }

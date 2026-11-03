@@ -135,10 +135,15 @@ class Oznaka {
 enum OblikaGumba {
   zaobljen('Zaobljen'),
   krog('Krog'),
-  kvadrat('Kvadrat');
+  kvadrat('Kvadrat'),
+  drsnik('Drsnik ↔'),
+  drsnikPokoncen('Drsnik ↕');
 
   const OblikaGumba(this.ime);
   final String ime;
+
+  /// Drsnik (fader) pošilja CC z vrednostjo po položaju namesto ukazov ob dotiku.
+  bool get jeDrsnik => this == drsnik || this == drsnikPokoncen;
 }
 
 /// Gumb v opombah, ki ob dotiku pošlje MIDI ukaze ali makre (zapis kot pri pesmi, ločeni s ;).

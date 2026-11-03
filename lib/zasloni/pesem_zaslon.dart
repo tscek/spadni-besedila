@@ -22,6 +22,7 @@ import 'midi_zaslon.dart';
 import 'naslednje.dart';
 import 'orodja.dart';
 import 'oznake.dart';
+import 'drsnik.dart' show DrsnikVOpombah;
 import 'pdf_risanje.dart';
 import 'posnetki.dart';
 import 'prehod.dart';
@@ -411,6 +412,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   // ---------- Pridržanje (risanje) in trojni dotik (klicaj) ----------
 
   void _dol(PointerDownEvent e) {
+    // Vlečenje drsnika na besedilu ni pridržanje ne dotik.
+    if (DrsnikVOpombah.kazalci.contains(e.pointer)) return;
     _dotiki[e.pointer] = e.position;
     _pridrzanje?.cancel();
     if (_dotiki.length > 1 || _risem || _iskalnik) return;

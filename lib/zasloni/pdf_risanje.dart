@@ -12,6 +12,7 @@ import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
 import '../risbe.dart';
 import '../tipkovnica.dart' show Listanje;
+import 'drsnik.dart';
 import 'midi_zaslon.dart';
 import 'oznake.dart';
 
@@ -306,7 +307,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       for (final r in _obe) {
         for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[]) {
           final p = g.prikaz;
-          if (p.nozno == n) {
+          if (p.nozno == n && !p.oblika.jeDrsnik) {
             Midi.aplikacija.poslji(knjiznica.razsiri(p.midi), knjiznica: knjiznica);
             return true;
           }
@@ -482,9 +483,12 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
     for (final g in (_risba.gumbi[stran] ?? const <GumbNaStrani>[]).reversed) {
       final x = g.prikaz;
       final pisava = 0.03 * g.velikost;
-      final (s, v) = x.oblika == OblikaGumba.krog
-          ? (pisava * 3.2, pisava * 3.2)
-          : ((x.napis.length * 0.62 + 1.6) * pisava, 2.4 * pisava);
+      final (s, v) = switch (x.oblika) {
+        OblikaGumba.krog => (pisava * 3.2, pisava * 3.2),
+        OblikaGumba.drsnik => (pisava * 10, pisava * 2.4),
+        OblikaGumba.drsnikPokoncen => (pisava * 2.4, pisava * 10),
+        _ => ((x.napis.length * 0.62 + 1.6) * pisava, 2.4 * pisava),
+      };
       if (Rect.fromLTWH(g.polozaj.dx, g.polozaj.dy, s, v * r).inflate(0.01).contains(p)) return g;
     }
     for (final o in (_risba.opombe[stran] ?? const <Opomba>[]).reversed) {
@@ -771,7 +775,9 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
             top: g.polozaj.dy * enota.height,
             child: IgnorePointer(
               ignoring: risem,
-              child: GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
+              child: g.prikaz.oblika.jeDrsnik
+                  ? DrsnikVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica)
+                  : GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
             ),
           ),
       // Klicaj: točka je pod klicajem, klicaj stoji nad njo.
@@ -925,7 +931,7 @@ class GumbVOpombah extends StatelessWidget {
     final OutlinedBorder oblika = switch (gumb.oblika) {
       OblikaGumba.zaobljen => RoundedRectangleBorder(borderRadius: BorderRadius.circular(velikost * 0.6)),
       OblikaGumba.krog => const CircleBorder(),
-      OblikaGumba.kvadrat => const RoundedRectangleBorder(),
+      OblikaGumba.kvadrat || OblikaGumba.drsnik || OblikaGumba.drsnikPokoncen => const RoundedRectangleBorder(),
     };
     final besedilo = Text(
       gumb.napis,
@@ -1190,26 +1196,39 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
                 ],
               ),
               const SizedBox(height: 12),
-              SegmentedButton<OblikaGumba>(
-                segments: [for (final o in OblikaGumba.values) ButtonSegment(value: o, label: Text(o.ime))],
-                selected: {oblika},
-                onSelectionChanged: (o) => nastavi(() => oblika = o.first),
-              ),
-              _drsnikVelikosti(velikost, (v) => nastavi(() => velikost = v)),
-              DropdownButtonFormField<int>(
-                key: const ValueKey('gumb-nozno'),
-                initialValue: nozno,
-                decoration: const InputDecoration(
-                  labelText: 'Nožno stikalo',
-                  helperText: 'Gumb stikala sproži ta gumb namesto gumba v spodnji vrstici.',
-                  helperMaxLines: 2,
-                ),
-                items: [
-                  const DropdownMenuItem(value: 0, child: Text('brez')),
-                  for (var i = 1; i <= 8; i++) DropdownMenuItem(value: i, child: Text('Gumb $i')),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final o in OblikaGumba.values)
+                    ChoiceChip(label: Text(o.ime), selected: oblika == o, onSelected: (_) => nastavi(() => oblika = o)),
                 ],
-                onChanged: (v) => nastavi(() => nozno = v ?? 0),
               ),
+              if (oblika.jeDrsnik)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Drsnik pošilja CC: v MIDI ukazih izberi CC ukaz (npr. Nivo glasbe), vrednost določa drsnik. '
+                    'Začne na sredini in ne pošlje nič, dokler ga ne premakneš.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              _drsnikVelikosti(velikost, (v) => nastavi(() => velikost = v)),
+              if (!oblika.jeDrsnik)
+                DropdownButtonFormField<int>(
+                  key: const ValueKey('gumb-nozno'),
+                  initialValue: nozno,
+                  decoration: const InputDecoration(
+                    labelText: 'Nožno stikalo',
+                    helperText: 'Gumb stikala sproži ta gumb namesto gumba v spodnji vrstici.',
+                    helperMaxLines: 2,
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 0, child: Text('brez')),
+                    for (var i = 1; i <= 8; i++) DropdownMenuItem(value: i, child: Text('Gumb $i')),
+                  ],
+                  onChanged: (v) => nastavi(() => nozno = v ?? 0),
+                ),
               if (!shranjen)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
