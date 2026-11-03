@@ -12,6 +12,7 @@ import '../prijava.dart';
 import '../spil/spil.dart';
 import 'mape.dart';
 import 'midi_zaslon.dart';
+import 'hitro_urejanje.dart';
 import 'iskalnik_pesmi.dart';
 import 'naslednje.dart';
 import 'nastavitve_zaslon.dart';
@@ -408,6 +409,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                   ),
                 );
               }
+              if (v == 'hitro') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => HitroUrejanjeZaslon(baza: baza, prijava: widget.prijava, spil: widget.spil),
+                  ),
+                );
+              }
               if (v == 'midi') {
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza)));
               }
@@ -443,6 +451,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               const PopupMenuItem(value: 'nastavitve', child: Text('Nastavitve')),
               const PopupMenuItem(value: 'midi', child: Text('Nastavitve MIDI')),
               const PopupMenuItem(value: 'midiKnjiznica', child: Text('MIDI ukazi in makri')),
+              if (baza.jeAdministrator) const PopupMenuItem(value: 'hitro', child: Text('Hitro urejanje (bulk edit)')),
             ],
           ),
         ],

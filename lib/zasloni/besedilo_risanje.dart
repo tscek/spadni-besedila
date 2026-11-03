@@ -29,6 +29,7 @@ class BesediloZRisanjem extends StatefulWidget {
     this.klicaji = const [],
     this.risbeSkupne,
     this.smeSkupno = false,
+    this.zacniSkupno = false,
     this.posnetki,
   });
 
@@ -57,6 +58,9 @@ class BesediloZRisanjem extends StatefulWidget {
   /// Skupne risbe pesmi (npr. pobarvani refreni) in ali jih član sme risati.
   final Risbe? risbeSkupne;
   final bool smeSkupno;
+
+  /// Risanje začne na skupni plasti (hitro urejanje: oznake za vse).
+  final bool zacniSkupno;
 
   /// Odpre posnetke pesmi (osebno ali skupno, kot je izbrano pri zapiskih).
   final void Function(bool skupno)? posnetki;
@@ -94,6 +98,9 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   bool get smeSkupno => widget.smeSkupno;
+
+  @override
+  bool get zacniSkupno => widget.zacniSkupno;
 
   @override
   void Function(bool skupno)? get posnetki => widget.posnetki;

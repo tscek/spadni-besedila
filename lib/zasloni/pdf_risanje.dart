@@ -32,12 +32,16 @@ class PdfZRisanjem extends StatefulWidget {
     this.obPovecavi,
     this.risbeSkupne,
     this.smeSkupno = false,
+    this.zacniSkupno = false,
     this.posnetki,
   });
 
   /// Skupne risbe pesmi in ali jih član sme risati.
   final Risbe? risbeSkupne;
   final bool smeSkupno;
+
+  /// Risanje začne na skupni plasti (hitro urejanje: oznake za vse).
+  final bool zacniSkupno;
 
   /// Odpre posnetke pesmi (osebno ali skupno, kot je izbrano pri zapiskih).
   final void Function(bool skupno)? posnetki;
@@ -95,6 +99,9 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
 
   @override
   bool get smeSkupno => widget.smeSkupno;
+
+  @override
+  bool get zacniSkupno => widget.zacniSkupno;
 
   @override
   void Function(bool skupno)? get posnetki => widget.posnetki;
@@ -203,6 +210,9 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   /// Ali sme član risati skupne risbe (urejevalec pesmi).
   bool get smeSkupno => false;
+
+  /// Risanje začne na skupni plasti (če sme).
+  bool get zacniSkupno => false;
 
   /// Gumb za zvočne posnetke pesmi v orodjarni (dobi, ali je izbrano skupno).
   void Function(bool skupno)? get posnetki => null;
@@ -321,6 +331,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
   void initState() {
     super.initState();
     NozniGumbi._prikazi.add(_nozni);
+    _skupno = zacniSkupno && smeSkupno && risbeSkupne != null;
     risanje.addListener(_spremembaRisanja);
     risbe.nalozi(pesem).then((r) {
       if (mounted) setState(() => _osebna = r);

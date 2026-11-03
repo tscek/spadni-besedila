@@ -528,6 +528,29 @@ class Baza extends ChangeNotifier {
     return Pesem.izVrstice(vrstica);
   }
 
+  /// Hitro urejanje: shrani spremembe več pesmi (vsaka ima ID in spremenjena polja).
+  /// Če skripta še ne pozna akcije »pesmi« ali ni interneta, gre vsaka pesem posebej (cela vrstica).
+  Future<void> shraniPesmi(Api api, List<Zapis> spremembe, {void Function(int, int)? napredek}) async {
+    if (spremembe.isEmpty) return;
+    try {
+      final odg = await api.shraniPesmi(spremembe);
+      for (final v in (odg['vrstice'] as List).cast<Map<String, dynamic>>()) {
+        await _zamenjajVrstico('Pesmi', v);
+      }
+      napredek?.call(spremembe.length, spremembe.length);
+      return;
+    } catch (e) {
+      // Stara skripta ali brez interneta: vsaka pesem posebej (brez interneta počaka na napravi).
+      if (!e.toString().contains('Neznana akcija') && !_brezPovezave(e)) rethrow;
+    }
+    for (final (i, s) in spremembe.indexed) {
+      final stara = _vrstica('Pesmi', besedilo(s['ID']));
+      if (stara == null) continue;
+      await shraniPesem(api, {...stara, ...s});
+      napredek?.call(i + 1, spremembe.length);
+    }
+  }
+
   Pesem? pesem(String id) => _poId[id];
 
   /// Pesmi v mapi brez arhiviranih; [mapa] null pomeni vse mape.

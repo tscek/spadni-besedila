@@ -65,6 +65,10 @@ class Api {
   /// Shrani pesem (brez ID = nova). Vrne zapisano vrstico lista Pesmi.
   Future<Map<String, dynamic>> shraniPesem(Map<String, dynamic> pesem) => _post({'akcija': 'pesem', 'pesem': pesem});
 
+  /// Hitro urejanje: več pesmi (ID in spremenjena polja) naenkrat; vrne {vrstice}.
+  Future<Map<String, dynamic>> shraniPesmi(List<Map<String, dynamic>> pesmi) =>
+      _post({'akcija': 'pesmi', 'pesmi': pesmi});
+
   /// Samostojna kopija pesmi v drugi mapi; vrne {pesem, besedila, pdf}.
   Future<Map<String, dynamic>> kopirajPesem(String pesem, String mapa) =>
       _post({'akcija': 'kopirajPesem', 'pesem': pesem, 'mapa': mapa});

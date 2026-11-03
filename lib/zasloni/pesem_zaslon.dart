@@ -46,6 +46,7 @@ class PesemZaslon extends StatefulWidget {
     this.playlista,
     this.naslednja,
     this.izIskalnika,
+    this.hitroUrejanje = false,
   });
 
   /// Vrednost [mapa] za iskanje po vseh mapah.
@@ -84,6 +85,9 @@ class PesemZaslon extends StatefulWidget {
 
   /// Kaj naredi dotik pesmi v iskalniku (npr. v playlisti); privzeto gre pesem v čakalno vrsto.
   final void Function(Pesem)? izIskalnika;
+
+  /// Odprto iz hitrega urejanja: naprej in nazaj po [seznam] (vrstni red tabele), risanje na skupni plasti.
+  final bool hitroUrejanje;
 
   @override
   State<PesemZaslon> createState() => _PesemZaslonState();
@@ -280,6 +284,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
           mapa: widget.mapa,
           prednostne: widget.prednostne,
           playlista: widget.playlista,
+          hitroUrejanje: widget.hitroUrejanje,
         ),
         smer: smer,
       ),
@@ -375,6 +380,18 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (d == DejanjeMidi.gor || d == DejanjeMidi.dol) {
       Listanje.premakni(d == DejanjeMidi.gor ? -1 : 1);
       return true;
+    }
+    // Hitro urejanje: naprej in nazaj po vrstnem redu tabele.
+    final seznam = widget.seznam;
+    if (widget.hitroUrejanje &&
+        widget.odpri == null &&
+        seznam != null &&
+        (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja)) {
+      final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + (d == DejanjeMidi.naslednja ? 1 : -1);
+      if (i >= 0 && i < seznam.length) {
+        _odpri(seznam[i], smer: d == DejanjeMidi.naslednja ? 1 : -1);
+        return true;
+      }
     }
     // Izbrana pesem s seznamčka; v setlisti in pri sledenju (odpri je podan) naslednjo vodi zaslon okoli pesmi.
     final izbrana = widget.spil?.prvaNaslednja();
@@ -1041,6 +1058,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         klicaji: _klicaji,
         risbeSkupne: widget.baza.risbeSkupne,
         smeSkupno: _smeSkupno,
+        zacniSkupno: widget.hitroUrejanje,
         posnetki: _posnetki,
       );
     }
@@ -1061,6 +1079,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         klicaji: _klicaji,
         risbeSkupne: widget.baza.risbeSkupne,
         smeSkupno: _smeSkupno,
+        zacniSkupno: widget.hitroUrejanje,
         posnetki: _posnetki,
         obPovecavi: (z) => setState(() => _novaPdf = (z,)),
       );
