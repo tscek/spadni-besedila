@@ -14,7 +14,9 @@ enum Orodje {
   pisava('Gumba za manjšo in večjo pisavo (sicer s ščipom)', Mesto.skrito),
   pdf('Besedilo / PDF', Mesto.zgoraj),
   uredi('Uredi pesem', Mesto.zgoraj),
-  ura('Ura', Mesto.skrito);
+  ura('Ura', Mesto.skrito),
+  uvodi('Uvodi MIDI ob odprtju pesmi (vklop in izklop)', Mesto.zgoraj),
+  xyPad('XY pad (nastavitve MIDI)', Mesto.zgoraj);
 
   const Orodje(this.opis, this.privzeto);
   final String opis;
@@ -27,6 +29,16 @@ enum Mesto {
   skrito('Skrito');
 
   const Mesto(this.ime);
+  final String ime;
+}
+
+/// Usmeritev zaslona na tej napravi (zaklep deluje na Androidu).
+enum Usmeritev {
+  samodejno('Samodejno'),
+  pokoncno('Pokončno'),
+  lezece('Ležeče');
+
+  const Usmeritev(this.ime);
   final String ime;
 }
 
@@ -129,6 +141,8 @@ class Nastavitve extends ChangeNotifier {
   static const _svetla = 'svetla_tema';
   static const _sledenje = 'samodejno_sledenje';
   static const _zaslon = 'zaslon_prizgan';
+  static const _usmeritev = 'usmeritev';
+  static const _uvodi = 'uvodi';
   static const _poljaSeznama = 'polja_seznama';
   static const _ikoneSeznama = 'ikone_seznama';
   static const _razvrsti = 'razvrsti';
@@ -196,6 +210,12 @@ class Nastavitve extends ChangeNotifier {
   /// Zaslon se med uporabo aplikacije ne ugasne.
   bool zaslonPrizgan = true;
 
+  /// Zaklep usmeritve zaslona.
+  Usmeritev usmeritev = Usmeritev.samodejno;
+
+  /// Uvodi MIDI se pošiljajo ob odprtju pesmi (gumb Uvodi v orodni vrstici).
+  bool uvodi = true;
+
   /// Podatki v vrstici seznama pesmi (naslov je vedno).
   List<PoljePesmi> poljaSeznama = const [PoljePesmi.izvajalec, PoljePesmi.tonaliteta];
 
@@ -254,6 +274,8 @@ class Nastavitve extends ChangeNotifier {
     svetlaTema = p.getBool(_svetla) ?? d.svetlaTema;
     samodejnoSledenje = p.getBool(_sledenje) ?? d.samodejnoSledenje;
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
+    usmeritev = Usmeritev.values.asNameMap()[p.getString(_usmeritev)] ?? d.usmeritev;
+    uvodi = p.getBool(_uvodi) ?? d.uvodi;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);
       if (s == null) return null;
@@ -519,6 +541,16 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviPovecavoPdf(String pesem, double? v) async {
     final p = await SharedPreferences.getInstance();
     v == null ? await p.remove('pdf_zoom_$pesem') : await p.setDouble('pdf_zoom_$pesem', v);
+  }
+
+  Future<void> nastaviUsmeritev(Usmeritev v) {
+    usmeritev = v;
+    return _shrani((p) => p.setString(_usmeritev, v.name));
+  }
+
+  Future<void> nastaviUvode(bool v) {
+    uvodi = v;
+    return _shrani((p) => p.setBool(_uvodi, v));
   }
 
   Future<void> nastaviZaslonPrizgan(bool v) {

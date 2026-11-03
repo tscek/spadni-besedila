@@ -81,6 +81,16 @@ class NastavitveZaslon extends StatelessWidget {
               onChanged: n.nastaviZaslonPrizgan,
             ),
             ListTile(
+              title: const Text('Usmeritev zaslona'),
+              subtitle: const Text('Zaklep na tej napravi (Android; na iPadu v nadzornem centru)'),
+              trailing: DropdownButton<Usmeritev>(
+                key: const ValueKey('usmeritev'),
+                value: n.usmeritev,
+                onChanged: (u) => u == null ? null : n.nastaviUsmeritev(u),
+                items: [for (final u in Usmeritev.values) DropdownMenuItem(value: u, child: Text(u.ime))],
+              ),
+            ),
+            ListTile(
               key: const ValueKey('nastavitve-tipkovnica'),
               title: const Text('Tipkovnica'),
               subtitle: const Text('Bližnjice za tipkovnico in nožno stikalo BT (npr. i = iskalnik)'),

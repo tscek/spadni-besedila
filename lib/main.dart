@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'api.dart';
@@ -46,6 +47,8 @@ Future<void> main(List<String> argumenti) async {
     await SnemanjeSpila.aplikacija.nalozi();
   }
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
+  Nastavitve.aplikacija.addListener(_usmeritev);
+  _usmeritev();
   if (Config.samoKlicaji) {
     // iPad prek vodje MIDI nima in ga tudi ne sme pošiljati vodji (zaklenjeno za neprijavljene).
   } else {
@@ -120,6 +123,19 @@ Future<void> main(List<String> argumenti) async {
   runApp(SpadniBesedila(prijava: prijava, baza: baza, posodobitev: posodobitev, spil: spil, navigator: navigator));
   // Prijava se preveri v ozadju; seznam pesmi iz lokalne kopije je takoj na voljo tudi brez interneta.
   prijava.zacni();
+}
+
+/// Zaklep usmeritve (Android; drugje brez učinka).
+Usmeritev? _zadnjaUsmeritev;
+void _usmeritev() {
+  final u = Nastavitve.aplikacija.usmeritev;
+  if (u == _zadnjaUsmeritev) return;
+  _zadnjaUsmeritev = u;
+  SystemChrome.setPreferredOrientations(switch (u) {
+    Usmeritev.samodejno => const [],
+    Usmeritev.pokoncno => const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown],
+    Usmeritev.lezece => const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+  }).catchError((_) {});
 }
 
 void _zaslonPrizgan() => WakelockPlus.toggle(enable: Nastavitve.aplikacija.zaslonPrizgan).catchError((_) {});
