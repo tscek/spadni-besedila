@@ -307,7 +307,17 @@ void main() {
     expect(vNaslovu('PRVA'), findsOneWidget);
     expect(find.text('1  Pavza'), findsOneWidget); // splošni gumb
 
+    // Brez čakalne vrste naslednja ne lista po seznamu, ampak opozori.
     midi.prejeto([0xB0, 64, 127]); // naslednja
+    await tester.pumpAndSettle();
+    expect(vNaslovu('PRVA'), findsOneWidget);
+    expect(find.textContaining('Konec čakalne vrste'), findsOneWidget);
+    await tester.pumpWidget(
+      MaterialApp(
+        key: const ValueKey('druga'),
+        home: PesemZaslon(pesem: pesmi[1], baza: baza, prijava: Prijava(), seznam: pesmi),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(vNaslovu('DRUGA'), findsOneWidget);
     expect(find.text('2  Solo'), findsOneWidget); // gumb te pesmi je drugi

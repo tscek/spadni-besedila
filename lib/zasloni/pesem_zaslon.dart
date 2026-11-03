@@ -394,10 +394,24 @@ class _PesemZaslonState extends State<PesemZaslon> {
       if (p != null) _odpri(p, smer: -1);
       return true;
     }
-    final seznam = widget.seznam;
-    if (seznam != null && (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja)) {
-      final i = seznam.indexWhere((p) => p.id == widget.pesem.id) + (d == DejanjeMidi.naslednja ? 1 : -1);
-      if (i >= 0 && i < seznam.length) _odpri(seznam[i], smer: d == DejanjeMidi.naslednja ? 1 : -1);
+    // V setlisti naprej in nazaj vodi zaslon setliste.
+    if (widget.odpri != null) return false;
+    // Brez čakalne vrste, playliste ali setliste ni listanja po seznamu: drugo pesem izbereš v seznamu
+    // (tako je jasno, kdaj je playliste konec).
+    if (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const ValueKey('konec-vrste'),
+            duration: const Duration(seconds: 2),
+            content: Text(
+              d == DejanjeMidi.prejsnja
+                  ? 'Ni prejšnje pesmi v čakalni vrsti.'
+                  : 'Konec čakalne vrste. Naslednjo pesem izberi v iskalniku ali seznamu.',
+            ),
+          ),
+        );
       return true;
     }
     return false;
@@ -689,8 +703,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
                   ? 'Uvodi vklopljeni: MIDI za uvod gre ob odprtju pesmi'
                   : 'Uvodi izklopljeni',
               isSelected: Nastavitve.aplikacija.uvodi,
-              icon: const Icon(Icons.music_off_outlined),
-              selectedIcon: const Icon(Icons.queue_music),
+              icon: const Icon(Icons.hearing_disabled),
+              selectedIcon: const Icon(Icons.hearing),
               onPressed: () => Nastavitve.aplikacija.nastaviUvode(!Nastavitve.aplikacija.uvodi),
             ),
           ],
@@ -762,7 +776,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
           '→ ${napisVrste(n)}',
           barva: menjaHarmoniko(p, n) ? barvaHarmonike(widget.baza, n.harmonika) : null,
         ),
-        null => null,
+        // Konec čakalne vrste (ali je ni): opozorilo, da naslednja ni izbrana.
+        null => napis('→ ni izbrane', barva: Colors.orange),
       },
       InfoVrstice.ura => const Ura(),
       InfoVrstice.runda => const CasRunde(),
@@ -802,7 +817,10 @@ class _PesemZaslonState extends State<PesemZaslon> {
     // Brez dolgega dela si kratki razdelijo širino enakomerno (levo, sredina, desno).
     final imaDolg = polni.any((d) => d.$1.dolg);
     return [
-      for (final (v, w) in polni) ...[if (!imaDolg || v.dolg) Expanded(child: w) else w, const SizedBox(width: 12)],
+      for (final (v, w) in polni) ...[
+        if (!imaDolg || v.dolg) Expanded(child: w) else Flexible(child: w),
+        const SizedBox(width: 12),
+      ],
       if (polni.isEmpty) const Spacer(),
     ];
   }
@@ -815,7 +833,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       InfoVrstice.izvajalec => p.izvajalec,
       InfoVrstice.avtorji => '${p.avtorGlasbe} / ${p.avtorBesedila}',
       InfoVrstice.opombe => besedilo(p.vrstica['Opombe']),
-      InfoVrstice.naslednja => _naslednja == null ? '' : '→ ${napisVrste(_naslednja!)}',
+      InfoVrstice.naslednja => _naslednja == null ? '→ ni izbrane' : '→ ${napisVrste(_naslednja!)}',
       _ => '',
     };
   }

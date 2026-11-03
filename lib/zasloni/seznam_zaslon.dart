@@ -22,6 +22,7 @@ import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
+import 'xy_pad.dart';
 
 class SeznamZaslon extends StatefulWidget {
   const SeznamZaslon({
@@ -362,6 +363,16 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         actions: [
           if (_vMapi) _razvrscanje(),
           RundaGumb(baza: baza),
+          // XY pad je na dosegu tudi v seznamu (če ni skrit v nastavitvah orodne vrstice).
+          ListenableBuilder(
+            listenable: Listenable.merge([Midi.aplikacija, Nastavitve.aplikacija]),
+            builder: (context, _) =>
+                Midi.aplikacija.vklopljen &&
+                    Midi.aplikacija.xy.nastavljen &&
+                    Nastavitve.aplikacija.mesto(Orodje.xyPad) != Mesto.skrito
+                ? XyPadGumb(knjiznica: baza.midi)
+                : const SizedBox.shrink(),
+          ),
           SpilGumb(spil: widget.spil, baza: baza, prijava: widget.prijava),
           IconButton(
             tooltip: 'Setliste',
