@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:media_kit/media_kit.dart' as mk;
 
 import 'api.dart';
@@ -14,7 +15,9 @@ typedef IzhodZvoka = ({String id, String ime});
 
 /// Predvajalnik zvoka z izbiro izhoda (v testih ga zamenja ponaredek).
 abstract class PredvajalnikZvoka {
-  static PredvajalnikZvoka Function() tovarna = PredvajalnikMediaKit.new;
+  /// Windows: media_kit (izbira izhoda); Android in splet: audioplayers (manjši APK, izhod izbere sistem).
+  static PredvajalnikZvoka Function() tovarna = () =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows ? PredvajalnikMediaKit() : PredvajalnikAudioplayers();
 
   /// Naloži zvok; vrne trajanje (null, če ga ni bilo mogoče prebrati).
   Future<Duration?> odpri(Uint8List bajti, String vrsta);
@@ -28,7 +31,53 @@ abstract class PredvajalnikZvoka {
   void zapri();
 }
 
-/// media_kit (libmpv): predvajanje iz pomnilnika in izbira izhoda (Windows; Android le samodejno, splet privzeti).
+/// audioplayers: brez izbire izhoda (Android sam uporabi priključeno USB kartico).
+class PredvajalnikAudioplayers implements PredvajalnikZvoka {
+  ap.AudioPlayer? _p;
+  ap.AudioPlayer get _pl => _p ??= ap.AudioPlayer()..setReleaseMode(ap.ReleaseMode.stop);
+
+  @override
+  Future<Duration?> odpri(Uint8List bajti, String vrsta) async {
+    final p = _pl;
+    await p.stop();
+    await p.setSource(ap.BytesSource(bajti, mimeType: vrsta.isEmpty ? null : vrsta));
+    for (var i = 0; i < 25; i++) {
+      final d = await p.getDuration();
+      if (d != null && d > Duration.zero) return d;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return null;
+  }
+
+  @override
+  Future<void> predvajaj(Duration od) async {
+    await _pl.seek(od);
+    await _pl.resume();
+  }
+
+  @override
+  Future<void> ustavi() async => _p?.pause();
+
+  @override
+  Future<void> glasnost(double g) async => _p?.setVolume(g);
+
+  @override
+  Stream<Duration> get pozicija => _pl.onPositionChanged;
+
+  @override
+  Stream<void> get konec => _pl.onPlayerComplete;
+
+  @override
+  Future<List<IzhodZvoka>> izhodi() async => const [];
+
+  @override
+  Future<void> nastaviIzhod(String id) async {}
+
+  @override
+  void zapri() => _p?.dispose();
+}
+
+/// media_kit (libmpv): predvajanje iz pomnilnika in izbira izhoda (samo Windows).
 class PredvajalnikMediaKit implements PredvajalnikZvoka {
   static bool _pripravljen = false;
 

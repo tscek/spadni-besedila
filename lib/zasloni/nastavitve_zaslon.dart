@@ -624,28 +624,29 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
           onChanged: _prenasam ? null : (v) => setState(() => _hrani(v)),
         ),
         if (!kIsWeb) ...[
-          ListTile(
-            title: const Text('Zvočni izhod'),
-            subtitle: const Text('Za uvode (npr. USB zvočna kartica)'),
-            trailing: izhodi == null
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : DropdownButton<String>(
-                    key: const ValueKey('izhod-zvoka'),
-                    value: izhodi.any((i) => i.id == n.izhodZvoka) ? n.izhodZvoka : '',
-                    onChanged: (v) => setState(() => n.nastaviIzhodZvoka(v ?? '')),
-                    items: [
-                      const DropdownMenuItem(value: '', child: Text('Privzeti izhod sistema')),
-                      for (final i in izhodi)
-                        DropdownMenuItem(
-                          value: i.id,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 220),
-                            child: Text(i.ime, overflow: TextOverflow.ellipsis),
+          if (izhodi == null || izhodi.isNotEmpty)
+            ListTile(
+              title: const Text('Zvočni izhod'),
+              subtitle: const Text('Za uvode (npr. USB zvočna kartica)'),
+              trailing: izhodi == null
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : DropdownButton<String>(
+                      key: const ValueKey('izhod-zvoka'),
+                      value: izhodi.any((i) => i.id == n.izhodZvoka) ? n.izhodZvoka : '',
+                      onChanged: (v) => setState(() => n.nastaviIzhodZvoka(v ?? '')),
+                      items: [
+                        const DropdownMenuItem(value: '', child: Text('Privzeti izhod sistema')),
+                        for (final i in izhodi)
+                          DropdownMenuItem(
+                            value: i.id,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 220),
+                              child: Text(i.ime, overflow: TextOverflow.ellipsis),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
-          ),
+                      ],
+                    ),
+            ),
           ListTile(
             title: const Text('Zvočni vhod'),
             subtitle: const Text('Za snemanje uvodov in špila'),
