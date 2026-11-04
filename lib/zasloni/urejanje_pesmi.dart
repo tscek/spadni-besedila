@@ -14,6 +14,7 @@ import 'midi_zaslon.dart';
 import 'oznake.dart';
 import 'predogled.dart';
 import 'prijava_zaslon.dart';
+import 'urejanje_uvoda.dart';
 import 'uvoz_besedilosi.dart';
 
 /// Prijava: na Androidu sistemsko okno, v brskalniku zaslon z Googlovim gumbom.
@@ -612,6 +613,10 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
       padding: const EdgeInsets.all(16),
       children: [
         for (final (stolpec, vnos) in _polja) _polje(context, stolpec, vnos),
+        if (widget.pesem != null)
+          UrejanjeUvoda(baza: widget.baza, api: widget.api, pesem: widget.pesem!.id)
+        else
+          const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Zvočni uvod dodaš, ko pesem shraniš.')),
         if (widget.pesem != null && widget.pesem!.koda.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),

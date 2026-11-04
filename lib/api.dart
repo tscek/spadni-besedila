@@ -112,6 +112,23 @@ class Api {
   Future<Uint8List> posnetek(String id) async =>
       base64Decode((await _get({'akcija': 'posnetek', 'id': id}))['base64'] as String);
 
+  /// Shrani zvočni uvod pesmi (na Drive v mapo Uvodi; stari gre v koš); brez [bajti] uvod izbriše. Vrne {vrstica}.
+  Future<Map<String, dynamic>> shraniUvod(
+    String pesem,
+    Uint8List? bajti, {
+    String vrsta = '',
+    double od = 0,
+    double? doo,
+  }) => _post({
+    'akcija': 'uvod',
+    'pesem': pesem,
+    if (bajti != null) ...{'vrsta': vrsta, 'base64': base64Encode(bajti), 'od': od, 'do': ?doo},
+  });
+
+  /// Zvok uvoda pesmi.
+  Future<Uint8List> uvod(String pesem) async =>
+      base64Decode((await _get({'akcija': 'uvod', 'pesem': pesem}))['base64'] as String);
+
   /// Nastopi iz Nastopov okrog datuma (±1 dan): {nastopi: [{ID, Datum, Kraj, Dogodek, Zasedba, ZasedbaIme, Od}]}.
   Future<Map<String, dynamic>> nastopi(DateTime datum) => _get({
     'akcija': 'nastopi',

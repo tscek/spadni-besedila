@@ -100,6 +100,17 @@ class Pesem {
   /// Celotna vrstica iz lista Pesmi, za urejanje stolpcev, ki jih prikaz ne potrebuje.
   final Zapis vrstica;
 
+  /// Zvočni uvod: Drive ID datoteke (prazno = brez uvoda), MIME vrsta ter začetek in konec predvajanja v sekundah.
+  String get uvod => besedilo(vrstica['Uvod']);
+  String get uvodVrsta => besedilo(vrstica['Uvod vrsta']);
+  double get uvodOd => double.tryParse(besedilo(vrstica['Uvod od']).replaceAll(',', '.')) ?? 0;
+
+  /// Konec uvoda; null = do konca posnetka.
+  double? get uvodDo {
+    final d = double.tryParse(besedilo(vrstica['Uvod do']).replaceAll(',', '.'));
+    return d == null || d <= 0 ? null : d;
+  }
+
   int get kodaStevilka => int.tryParse(koda) ?? 1 << 30;
 
   /// Iskanje po naslovu ali izvajalcu, brez razlike med velikimi in malimi črkami ter šumniki.

@@ -428,6 +428,12 @@ class Baza extends ChangeNotifier {
 
       await Future.wait(List.generate(hkratniPrenosi, (_) => delavec()));
 
+      if (Nastavitve.aplikacija.hraniUvode) {
+        stanje = 'Prenašam uvode …';
+        notifyListeners();
+        await prenesiUvode(api);
+      }
+
       stanje = 'Usklajujem risbe …';
       notifyListeners();
       var risbeNapaka = false;
@@ -694,6 +700,76 @@ class Baza extends ChangeNotifier {
     await _shraniNeposlano();
     await _zamenjajVrstico('Klicaji', null, izbrisi: id);
     if (api != null) await _posljiTiho(api);
+  }
+
+  // ---------- Zvočni uvodi ----------
+
+  static String _kljucUvoda(String driveId) => 'uvodi/$driveId';
+
+  /// Uvodi, prebrani v tej seji (brez »Hrani uvode lokalno« se ne shranijo na napravo).
+  final _uvodiVSeji = <String, Uint8List>{};
+
+  /// Zvok uvoda pesmi: z naprave, iz te seje ali s strežnika. Null, če pesem nima uvoda ali ni dostopen.
+  Future<Uint8List?> zvokUvoda(Api? api, Pesem p) async {
+    if (p.uvod.isEmpty) return null;
+    final vSeji = _uvodiVSeji[p.uvod];
+    if (vSeji != null) return vSeji;
+    final lokalno = await shramba.beriBajte(_kljucUvoda(p.uvod));
+    if (lokalno != null) return _uvodiVSeji[p.uvod] = lokalno;
+    if (api == null) return null;
+    final bajti = await api.uvod(p.id);
+    if (Nastavitve.aplikacija.hraniUvode) await shramba.pisiBajte(_kljucUvoda(p.uvod), bajti);
+    return _uvodiVSeji[p.uvod] = bajti;
+  }
+
+  /// Prenese manjkajoče uvode na napravo in pobriše tiste, ki jih ni več. Vrne število neuspelih.
+  Future<int> prenesiUvode(Api api) async {
+    final preneseni = await shramba.kljuci('uvodi/');
+    final zdaj = {
+      for (final p in pesmi)
+        if (p.uvod.isNotEmpty) _kljucUvoda(p.uvod): p,
+    };
+    for (final k in preneseni.difference(zdaj.keys.toSet())) {
+      await shramba.izbrisi(k);
+    }
+    var neuspeli = 0;
+    for (final MapEntry(key: k, value: p) in zdaj.entries) {
+      if (preneseni.contains(k)) continue;
+      try {
+        final bajti = _uvodiVSeji[p.uvod] ?? await api.uvod(p.id);
+        await shramba.pisiBajte(k, bajti);
+      } catch (_) {
+        neuspeli++;
+      }
+    }
+    return neuspeli;
+  }
+
+  /// Pobriše uvode z naprave (ko izklopiš »Hrani uvode lokalno«).
+  Future<void> izbrisiLokalneUvode() async {
+    for (final k in await shramba.kljuci('uvodi/')) {
+      await shramba.izbrisi(k);
+    }
+  }
+
+  /// Nov zvočni uvod pesmi (zamenja starega) ali brez [bajti] izbris uvoda. Potrebuje internet.
+  Future<Pesem> shraniUvod(
+    Api api,
+    String pesem,
+    Uint8List? bajti, {
+    String vrsta = '',
+    double od = 0,
+    double? doo,
+  }) async {
+    final odg = await api.shraniUvod(pesem, bajti, vrsta: vrsta, od: od, doo: doo);
+    final vrstica = (odg['vrstica'] as Map).cast<String, dynamic>();
+    final id = besedilo(vrstica['Uvod']);
+    if (bajti != null && id.isNotEmpty) {
+      _uvodiVSeji[id] = bajti;
+      if (Nastavitve.aplikacija.hraniUvode) await shramba.pisiBajte(_kljucUvoda(id), bajti);
+    }
+    await _zamenjajVrstico('Pesmi', vrstica);
+    return Pesem.izVrstice(vrstica);
   }
 
   // ---------- Zvočni posnetki ----------

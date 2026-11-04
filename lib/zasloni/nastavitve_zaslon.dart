@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -5,6 +6,8 @@ import '../baza.dart';
 import '../models.dart';
 import '../nastavitve.dart';
 import '../prijava.dart';
+import '../snemanje.dart';
+import '../uvodi.dart';
 import 'deli_aplikacijo.dart';
 import 'pdf_risanje.dart';
 import 'midi_zaslon.dart';
@@ -290,6 +293,8 @@ class NastavitveZaslon extends StatelessWidget {
               ),
             ),
             const Divider(),
+            _ZvokNastavitve(baza: baza, prijava: prijava),
+            const Divider(),
             const ListTile(title: Text('Runda in pavza'), subtitle: Text('Gumba v oknu ure zgoraj')),
             _GumbRundeNastavitev(baza: baza, pavza: true),
             _GumbRundeNastavitev(baza: baza, pavza: false),
@@ -530,3 +535,144 @@ Future<Oblacek?> _urediOblacek(BuildContext context, Oblacek zacetni) => showDia
     );
   },
 );
+
+/// Zvočni uvodi in zvočni vhod in izhod naprave.
+class _ZvokNastavitve extends StatefulWidget {
+  const _ZvokNastavitve({required this.baza, this.prijava});
+
+  final Baza baza;
+  final Prijava? prijava;
+
+  @override
+  State<_ZvokNastavitve> createState() => _ZvokNastavitveState();
+}
+
+class _ZvokNastavitveState extends State<_ZvokNastavitve> {
+  List<IzhodZvoka>? _izhodi;
+  List<VhodZvoka>? _vhodi;
+  String? _vhod;
+  bool _prenasam = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!kIsWeb) _naprave();
+  }
+
+  Future<void> _naprave() async {
+    List<IzhodZvoka> izhodi = const [];
+    List<VhodZvoka> vhodi = const [];
+    try {
+      izhodi = await Uvodi.aplikacija.izhodi();
+    } catch (_) {}
+    try {
+      vhodi = await SnemanjeSpila.aplikacija.vhodi();
+    } catch (_) {}
+    final vhod = await SnemanjeSpila.aplikacija.shranjenVhod();
+    if (!mounted) return;
+    setState(() {
+      _izhodi = izhodi;
+      _vhodi = vhodi;
+      _vhod = vhod;
+    });
+  }
+
+  Future<void> _hrani(bool v) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Nastavitve.aplikacija.nastaviHraniUvode(v);
+    if (!v) {
+      await widget.baza.izbrisiLokalneUvode();
+      return;
+    }
+    final prijava = widget.prijava;
+    if (prijava == null || !prijava.prijavljen) return;
+    setState(() => _prenasam = true);
+    try {
+      final neuspeli = await widget.baza.prenesiUvode(Api(prijava.zeton));
+      messenger.showSnackBar(
+        SnackBar(content: Text(neuspeli == 0 ? 'Uvodi so preneseni.' : 'Uvodov, ki niso bili preneseni: $neuspeli.')),
+      );
+    } finally {
+      if (mounted) setState(() => _prenasam = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = Nastavitve.aplikacija;
+    final izhodi = _izhodi;
+    final vhodi = _vhodi;
+    return Column(
+      children: [
+        const ListTile(title: Text('Zvok in uvodi'), subtitle: Text('Velja samo za to napravo.')),
+        SwitchListTile(
+          key: const ValueKey('predvajaj-uvode'),
+          title: const Text('Predvajaj uvode na tej napravi'),
+          subtitle: const Text('Zvočni uvod pesmi ob odprtju, ko je uho v orodni vrstici vklopljeno'),
+          value: n.predvajajUvode,
+          onChanged: (v) => setState(() => n.nastaviPredvajajUvode(v)),
+        ),
+        SwitchListTile(
+          key: const ValueKey('hrani-uvode'),
+          title: const Text('Hrani uvode lokalno'),
+          subtitle: Text(
+            _prenasam
+                ? 'Prenašam uvode …'
+                : 'Ob osvežitvi prenese vse uvode na napravo (deluje brez interneta); sicer se predvajajo s spleta',
+          ),
+          value: n.hraniUvode,
+          onChanged: _prenasam ? null : (v) => setState(() => _hrani(v)),
+        ),
+        if (!kIsWeb) ...[
+          ListTile(
+            title: const Text('Zvočni izhod'),
+            subtitle: const Text('Za uvode (npr. USB zvočna kartica)'),
+            trailing: izhodi == null
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : DropdownButton<String>(
+                    key: const ValueKey('izhod-zvoka'),
+                    value: izhodi.any((i) => i.id == n.izhodZvoka) ? n.izhodZvoka : '',
+                    onChanged: (v) => setState(() => n.nastaviIzhodZvoka(v ?? '')),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('Privzeti izhod sistema')),
+                      for (final i in izhodi)
+                        DropdownMenuItem(
+                          value: i.id,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 220),
+                            child: Text(i.ime, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+          ListTile(
+            title: const Text('Zvočni vhod'),
+            subtitle: const Text('Za snemanje uvodov in špila'),
+            trailing: vhodi == null
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : DropdownButton<String>(
+                    key: const ValueKey('vhod-zvoka'),
+                    value: vhodi.any((v) => v.id == _vhod) ? _vhod : '',
+                    onChanged: (v) async {
+                      await SnemanjeSpila.aplikacija.nastaviVhod(v == null || v.isEmpty ? null : v);
+                      setState(() => _vhod = v);
+                    },
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('Privzeti vhod sistema')),
+                      for (final v in vhodi)
+                        DropdownMenuItem(
+                          value: v.id,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 220),
+                            child: Text(v.ime, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+}

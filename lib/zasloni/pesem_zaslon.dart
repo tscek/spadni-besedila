@@ -13,6 +13,7 @@ import '../midi/ukazi.dart';
 import '../tipkovnica.dart' show Listanje;
 import '../models.dart';
 import '../nastavitve.dart';
+import '../uvodi.dart';
 import '../odigrane.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
@@ -189,6 +190,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       if (!mounted) return;
       widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
       Midi.aplikacija.odprta(_pesem, widget.baza.midi, uvod: Nastavitve.aplikacija.uvodi);
+      Uvodi.aplikacija.obOdprtju(widget.baza, _apiZaBranje, _pesem);
     });
     final minute = Nastavitve.aplikacija.minuteOdigrane;
     if (minute > 0) {
@@ -215,6 +217,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _pridrzanje?.cancel();
     _risanje.dispose();
     Midi.aplikacija.zaprta(_pesem);
+    Uvodi.aplikacija.obZaprtju(_pesem);
     _zabelezi();
     super.dispose();
   }
@@ -340,6 +343,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
     Midi.aplikacija.poslji(k.razsiri(g.ukazi), knjiznica: k);
   }
 
+  /// Api za branje (uvodi s strežnika); brez prijave null.
+  Api? get _apiZaBranje => widget.prijava.prijavljen ? Api(widget.prijava.zeton) : null;
+
   void _uvod() {
     final k = widget.baza.midi;
     Midi.aplikacija.poslji(k.razsiri(_pesem.midiZaUvod), knjiznica: k);
@@ -356,6 +362,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
     }
     if (d == DejanjeMidi.uvod) {
       if (_pesem.midiZaUvod.isNotEmpty) _uvod();
+      if (_pesem.uvod.isNotEmpty && Nastavitve.aplikacija.predvajajUvode) {
+        Uvodi.aplikacija.predvajaj(widget.baza, _apiZaBranje, _pesem);
+      }
       return true;
     }
     if (_iskalnik) {
@@ -711,16 +720,20 @@ class _PesemZaslonState extends State<PesemZaslon> {
           Orodje.xyPad when Midi.aplikacija.vklopljen && Midi.aplikacija.xy.nastavljen => [
             XyPadGumb(knjiznica: widget.baza.midi),
           ],
-          Orodje.uvodi when Midi.aplikacija.vklopljen => [
+          Orodje.uvodi when Midi.aplikacija.vklopljen || Nastavitve.aplikacija.predvajajUvode => [
             IconButton(
               key: const ValueKey('uvodi'),
               tooltip: Nastavitve.aplikacija.uvodi
-                  ? 'Uvodi vklopljeni: MIDI za uvod gre ob odprtju pesmi'
+                  ? 'Uvodi vklopljeni: MIDI in zvočni uvod ob odprtju pesmi'
                   : 'Uvodi izklopljeni',
               isSelected: Nastavitve.aplikacija.uvodi,
               icon: const Icon(Icons.hearing_disabled),
               selectedIcon: const Icon(Icons.hearing),
-              onPressed: () => Nastavitve.aplikacija.nastaviUvode(!Nastavitve.aplikacija.uvodi),
+              onPressed: () {
+                final v = !Nastavitve.aplikacija.uvodi;
+                Nastavitve.aplikacija.nastaviUvode(v);
+                if (!v) Uvodi.aplikacija.ustavi();
+              },
             ),
           ],
           _ => const <Widget>[],

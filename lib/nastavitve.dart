@@ -15,7 +15,7 @@ enum Orodje {
   pdf('Besedilo / PDF', Mesto.zgoraj),
   uredi('Uredi pesem', Mesto.zgoraj),
   ura('Ura', Mesto.skrito),
-  uvodi('Uvodi MIDI ob odprtju pesmi (vklop in izklop)', Mesto.zgoraj),
+  uvodi('Uvodi ob odprtju pesmi: MIDI in zvok (vklop in izklop)', Mesto.zgoraj),
   xyPad('XY pad (nastavitve MIDI)', Mesto.zgoraj);
 
   const Orodje(this.opis, this.privzeto);
@@ -144,6 +144,9 @@ class Nastavitve extends ChangeNotifier {
   static const _zaslon = 'zaslon_prizgan';
   static const _usmeritev = 'usmeritev';
   static const _uvodi = 'uvodi';
+  static const _hraniUvode = 'hrani_uvode';
+  static const _predvajajUvode = 'predvajaj_uvode';
+  static const _izhodZvoka = 'izhod_zvoka';
   static const _poljaSeznama = 'polja_seznama';
   static const _ikoneSeznama = 'ikone_seznama';
   static const _razvrsti = 'razvrsti';
@@ -220,6 +223,15 @@ class Nastavitve extends ChangeNotifier {
   /// Uvodi MIDI se pošiljajo ob odprtju pesmi (gumb Uvodi v orodni vrstici).
   bool uvodi = true;
 
+  /// Zvočni uvodi pesmi se ob osvežitvi prenesejo na napravo (sicer se predvajajo s spleta).
+  bool hraniUvode = false;
+
+  /// Ta naprava predvaja zvočne uvode (privzeto le računalnik, da ne igrajo vsi iPadi hkrati).
+  bool predvajajUvode = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  /// Zvočni izhod za uvode (ime naprave; prazno = privzeti izhod sistema).
+  String izhodZvoka = '';
+
   /// Podatki v vrstici seznama pesmi (naslov je vedno).
   List<PoljePesmi> poljaSeznama = const [PoljePesmi.izvajalec, PoljePesmi.tonaliteta];
 
@@ -281,6 +293,9 @@ class Nastavitve extends ChangeNotifier {
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
     usmeritev = Usmeritev.values.asNameMap()[p.getString(_usmeritev)] ?? d.usmeritev;
     uvodi = p.getBool(_uvodi) ?? d.uvodi;
+    hraniUvode = p.getBool(_hraniUvode) ?? d.hraniUvode;
+    predvajajUvode = p.getBool(_predvajajUvode) ?? d.predvajajUvode;
+    izhodZvoka = p.getString(_izhodZvoka) ?? d.izhodZvoka;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);
       if (s == null) return null;
@@ -561,6 +576,21 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviUvode(bool v) {
     uvodi = v;
     return _shrani((p) => p.setBool(_uvodi, v));
+  }
+
+  Future<void> nastaviHraniUvode(bool v) {
+    hraniUvode = v;
+    return _shrani((p) => p.setBool(_hraniUvode, v));
+  }
+
+  Future<void> nastaviPredvajajUvode(bool v) {
+    predvajajUvode = v;
+    return _shrani((p) => p.setBool(_predvajajUvode, v));
+  }
+
+  Future<void> nastaviIzhodZvoka(String v) {
+    izhodZvoka = v;
+    return _shrani((p) => p.setString(_izhodZvoka, v));
   }
 
   Future<void> nastaviZaslonPrizgan(bool v) {

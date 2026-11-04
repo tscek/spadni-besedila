@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
   flutter_midi_command_windows
+  media_kit_libs_windows_audio
   record_windows
   share_plus
   universal_ble
