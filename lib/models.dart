@@ -127,6 +127,9 @@ class Pesem {
   /// Prazno, »čaka« (odstranjevanje vokala teče) ali »napaka: …«.
   String get playbackStanje => besedilo(vrstica['Playback stanje']);
 
+  /// Časi vrstic besedila v playbacku (za poudarjeno vrstico med predvajanjem).
+  CasiVrstic get casiPlaybacka => CasiVrstic.izBesedila(besedilo(vrstica['Playback časi']));
+
   /// Transpozicija playbacka v poltonih (−6 do +6).
   int get playbackTranspozicija => (int.tryParse(besedilo(vrstica['Playback transpozicija'])) ?? 0).clamp(-6, 6);
 
@@ -138,6 +141,52 @@ class Pesem {
     if (q.isEmpty) return true;
     return poenostavi(naslov).contains(q) || poenostavi(izvajalec).contains(q);
   }
+}
+
+/// Časi začetkov vrstic besedila v playbacku: indeks vrstice (kot v ChordPro razčlenitvi) → milisekunde,
+/// ter zamik celote (če je vse malo prezgodaj ali prepozno). Zapis v stolpcu »Playback časi«: {"v": [...], "z": ms}.
+class CasiVrstic {
+  const CasiVrstic(this.casi, {this.zamik = 0});
+
+  factory CasiVrstic.izBesedila(String s) {
+    if (s.trim().isEmpty) return const CasiVrstic([]);
+    try {
+      final j = jsonDecode(s) as Map<String, dynamic>;
+      return CasiVrstic([
+        for (final c in (j['v'] as List? ?? const [])) (c as num?)?.toInt(),
+      ], zamik: (j['z'] as num?)?.toInt() ?? 0);
+    } catch (_) {
+      return const CasiVrstic([]);
+    }
+  }
+
+  /// Čas začetka vsake vrstice (null = vrstica nima časa, npr. prazna).
+  final List<int?> casi;
+
+  /// Zamik vseh časov v milisekundah (pozitiven = vrstice pridejo pozneje).
+  final int zamik;
+
+  bool get prazno => casi.every((c) => c == null);
+  int get stevilo => casi.where((c) => c != null).length;
+
+  /// Vrstica, ki se poje ob času [pozicija] (zadnja, ki se je že začela), ali null pred prvo.
+  int? vrsticaOb(Duration pozicija) {
+    final ms = pozicija.inMilliseconds - zamik;
+    int? najboljsa;
+    var cas = -1;
+    for (var i = 0; i < casi.length; i++) {
+      final c = casi[i];
+      if (c != null && c <= ms && c >= cas) {
+        najboljsa = i;
+        cas = c;
+      }
+    }
+    return najboljsa;
+  }
+
+  String vBesedilo() => prazno ? '' : jsonEncode({'v': casi, 'z': zamik});
+
+  CasiVrstic kopija({List<int?>? casi, int? zamik}) => CasiVrstic(casi ?? this.casi, zamik: zamik ?? this.zamik);
 }
 
 /// Zvočni posnetek pri pesmi: uvod (v slušalke) ali playback (v ozvočenje).

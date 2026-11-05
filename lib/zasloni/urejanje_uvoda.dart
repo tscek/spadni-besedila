@@ -10,6 +10,7 @@ import '../baza.dart';
 import '../models.dart';
 import '../snemanje.dart';
 import '../uvodi.dart';
+import 'ucenje_casov.dart';
 import '../snemalnik_web.dart' if (dart.library.io) '../snemalnik_io.dart' as datoteka;
 
 /// Posnet uvod: bajti in MIME vrsta.
@@ -407,6 +408,21 @@ class _UrejanjeZvokaState extends State<UrejanjeZvoka> {
         : 'Ni playbacka. Naloži datoteko ali ga posnemi; predvajaš ga z gumbom ▶ v orodni vrstici.';
   }
 
+  bool get _imaBesedilo =>
+      (widget.baza.besedilaPesmi[widget.pesem] ?? const []).firstOrNull?.vsebina.trim().isNotEmpty ?? false;
+
+  /// Učenje časov vrstic za sledenje besedilu med playbackom.
+  Future<void> _naucCase() async {
+    await _predvajanje.ustavi();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => UcenjeCasovZaslon(baza: widget.baza, api: widget.api, pesem: widget.pesem),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = _pesem;
@@ -540,6 +556,17 @@ class _UrejanjeZvokaState extends State<UrejanjeZvoka> {
                       onPressed: _delam || spremembe ? null : () => _vokal(izvirnik: true),
                       icon: const Icon(Icons.restore),
                       label: const Text('Vrni izvirnik z vokalom'),
+                    ),
+                  if (!_uvod && naStrezniku && _imaBesedilo)
+                    OutlinedButton.icon(
+                      key: const ValueKey('playback-casi'),
+                      onPressed: _delam || spremembe ? null : _naucCase,
+                      icon: const Icon(Icons.subtitles),
+                      label: Text(
+                        p!.casiPlaybacka.prazno
+                            ? 'Nauči čase vrstic'
+                            : 'Nauči čase vrstic (${p.casiPlaybacka.stevilo} vrstic)',
+                      ),
                     ),
                   if (spremembe)
                     FilledButton.icon(

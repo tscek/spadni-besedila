@@ -10,6 +10,8 @@ import 'posodobitev.dart';
 import 'posodobitev_windows_web.dart' if (dart.library.io) 'posodobitev_windows_io.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
+import 'uvodi.dart';
+import 'zvok_spila.dart';
 import 'zasloni/ohranjevalnik.dart';
 import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
@@ -46,6 +48,13 @@ Future<void> main(List<String> argumenti) async {
       ..imeNaprave = kIsWeb ? 'Splet' : defaultTargetPlatform.name;
     await SnemanjeSpila.aplikacija.nalozi();
   }
+  // Uho in playback na špilu: playback, ki ga zahteva druga naprava, igra tu (če ta naprava predvaja playback).
+  ZvokSpila.aplikacija
+    ..predvajajTu = (id) async {
+      final p = baza.pesem(id);
+      if (p != null) await Predvajanje.playback.preklopi(baza, prijava.prijavljen ? Api(prijava.zeton) : null, p);
+    }
+    ..povezi();
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   Nastavitve.aplikacija.addListener(_usmeritev);
   _usmeritev();

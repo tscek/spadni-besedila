@@ -332,4 +332,5 @@ bool dovoljenoNeprijavljenemu(Map<String, dynamic> j) =>
     j['vrsta'] == 'ukaz' &&
     ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) ||
         j['ukaz'] == 'klicaj' ||
+        j['ukaz'] == 'zvok' ||
         (j['ukaz'] == 'odigrane' && j['akcija'] != 'ponastavi'));

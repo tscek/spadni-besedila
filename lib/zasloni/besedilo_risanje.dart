@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../chordpro.dart' as cp;
@@ -31,6 +32,7 @@ class BesediloZRisanjem extends StatefulWidget {
     this.smeSkupno = false,
     this.zacniSkupno = false,
     this.posnetki,
+    this.vrsticaPlaybacka,
   });
 
   /// Širina strani v enotah strani in privzeta pisava pesmi na njej.
@@ -64,6 +66,9 @@ class BesediloZRisanjem extends StatefulWidget {
 
   /// Odpre posnetke pesmi (osebno ali skupno, kot je izbrano pri zapiskih).
   final void Function(bool skupno)? posnetki;
+
+  /// Vrstica, ki jo med playbackom pravkar pojemo (poudarjena, besedilo se samo pomika k njej).
+  final ValueListenable<int?>? vrsticaPlaybacka;
 
   @override
   State<BesediloZRisanjem> createState() => _BesediloZRisanjemState();
@@ -135,6 +140,25 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   void initState() {
     super.initState();
     _listanje = Listanje.tok.listen(_listaj);
+    widget.vrsticaPlaybacka?.addListener(_slediPlaybacku);
+  }
+
+  @override
+  void didUpdateWidget(covariant BesediloZRisanjem stari) {
+    super.didUpdateWidget(stari);
+    if (stari.vrsticaPlaybacka != widget.vrsticaPlaybacka) {
+      stari.vrsticaPlaybacka?.removeListener(_slediPlaybacku);
+      widget.vrsticaPlaybacka?.addListener(_slediPlaybacku);
+    }
+  }
+
+  /// Playback: pomakni besedilo k vrstici, ki se poje (ne med risanjem).
+  void _slediPlaybacku() {
+    final i = widget.vrsticaPlaybacka?.value;
+    if (!mounted || i == null || risem || i >= _kljuci.length) return;
+    final c = _kljuci[i].currentContext;
+    if (c == null) return;
+    Scrollable.ensureVisible(c, alignment: 0.3, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
   }
 
   /// Tipka gor ali dol: premik za tretjino zaslona.
@@ -150,6 +174,7 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
 
   @override
   void dispose() {
+    widget.vrsticaPlaybacka?.removeListener(_slediPlaybacku);
     _listanje?.cancel();
     _navpicno.dispose();
     _vodoravno.dispose();
@@ -379,24 +404,28 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
                                       for (var i = 0; i < vrstice.length; i++)
                                         KeyedSubtree(
                                           key: i < _kljuci.length ? _kljuci[i] : null,
-                                          child: switch (poVrsticah[i]) {
-                                            final oznake? => Stack(
-                                              clipBehavior: Clip.none,
-                                              children: [
-                                                Positioned.fill(
-                                                  child: CustomPaint(
-                                                    painter: _OznakeVrstice(
-                                                      oznake,
-                                                      zAkordi: _zAkordi(i),
-                                                      pisava: widget.pisava,
+                                          child: _PoudarekPlaybacka(
+                                            vrstica: i,
+                                            trenutna: widget.vrsticaPlaybacka,
+                                            child: switch (poVrsticah[i]) {
+                                              final oznake? => Stack(
+                                                clipBehavior: Clip.none,
+                                                children: [
+                                                  Positioned.fill(
+                                                    child: CustomPaint(
+                                                      painter: _OznakeVrstice(
+                                                        oznake,
+                                                        zAkordi: _zAkordi(i),
+                                                        pisava: widget.pisava,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                                vrstice[i],
-                                              ],
-                                            ),
-                                            null => vrstice[i],
-                                          },
+                                                  vrstice[i],
+                                                ],
+                                              ),
+                                              null => vrstice[i],
+                                            },
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -524,4 +553,27 @@ class _OznakeVrstice extends CustomPainter {
 
   @override
   bool shouldRepaint(_OznakeVrstice old) => true;
+}
+
+/// Modra podlaga vrstice, ki se med playbackom pravkar poje.
+class _PoudarekPlaybacka extends StatelessWidget {
+  const _PoudarekPlaybacka({required this.vrstica, required this.trenutna, required this.child});
+
+  final int vrstica;
+  final ValueListenable<int?>? trenutna;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = trenutna;
+    if (t == null) return child;
+    return ValueListenableBuilder<int?>(
+      valueListenable: t,
+      child: child,
+      builder: (context, v, child) => DecoratedBox(
+        decoration: BoxDecoration(color: v == vrstica ? Colors.blue.withValues(alpha: 0.18) : null),
+        child: child,
+      ),
+    );
+  }
 }

@@ -182,6 +182,9 @@ class Predvajanje extends ChangeNotifier {
 
   /// Pesem, katere zvok igra (ali se pripravlja).
   String? igra;
+
+  /// Trenutni čas predvajanja (za sledenje vrstici).
+  final pozicija = ValueNotifier<Duration>(Duration.zero);
   int _zahteva = 0;
 
   /// Ob odprtju pesmi (samo uvod).
@@ -249,16 +252,17 @@ class Predvajanje extends ChangeNotifier {
     final konec = doo == null ? null : Duration(milliseconds: (doo * 1000).round());
     await _poz?.cancel();
     await _kon?.cancel();
-    if (konec != null) {
-      _poz = pl.pozicija.listen((pos) {
-        final ostane = konec - pos;
-        if (ostane <= Duration.zero) {
-          ustavi();
-        } else if (ostane < zatemni) {
-          pl.glasnost(ostane.inMilliseconds / zatemni.inMilliseconds);
-        }
-      });
-    }
+    pozicija.value = Duration(milliseconds: (od * 1000).round());
+    _poz = pl.pozicija.listen((pos) {
+      pozicija.value = pos;
+      if (konec == null) return;
+      final ostane = konec - pos;
+      if (ostane <= Duration.zero) {
+        ustavi();
+      } else if (ostane < zatemni) {
+        pl.glasnost(ostane.inMilliseconds / zatemni.inMilliseconds);
+      }
+    });
     _kon = pl.konec.listen((_) => ustavi());
     await pl.predvajaj(Duration(milliseconds: (od * 1000).round()));
   }

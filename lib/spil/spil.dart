@@ -9,6 +9,7 @@ import '../config.dart';
 import '../odigrane.dart';
 import '../runda.dart';
 import '../snemanje.dart';
+import '../zvok_spila.dart';
 import 'streznik.dart';
 
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
@@ -135,6 +136,7 @@ class Spil extends ChangeNotifier {
           _objaviRundo();
           _objaviSnemanje();
           _objaviOdigrane();
+          ZvokSpila.aplikacija.objavi();
         }
         sledilcev = n;
         notifyListeners();
@@ -156,6 +158,9 @@ class Spil extends ChangeNotifier {
       // Odigrane pesmi so skupne vsem na špilu.
       Odigrane.aplikacija.addListener(_objaviOdigrane);
       _objaviOdigrane();
+      // Uho in playback: skupna vsem na špilu.
+      ZvokSpila.aplikacija.vsem = (m) => _streznik?.poslji(jsonEncode(m));
+      ZvokSpila.aplikacija.objavi();
       // Klicaji: vsak nov ali izbrisan gre takoj vsem.
       _bazaVodje = baza;
       _zadnjiKlicaji = null;
@@ -289,6 +294,8 @@ class Spil extends ChangeNotifier {
         } else {
           b.shraniKlicaj(b.risbeClanov.api, k);
         }
+      case 'zvok':
+        ZvokSpila.aplikacija.odSledilca(u);
       case 'nastavi' when u['pesmi'] is List:
         _nastaviNaslednje([
           for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
@@ -400,6 +407,7 @@ class Spil extends ChangeNotifier {
         _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'odigrane', ...Odigrane.aplikacija.zaZdruzitev()});
         SnemanjeSpila.aplikacija.vodji = (u) =>
             _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'snemanje', 'admin': baza?.jeAdministrator ?? false, ...u});
+        ZvokSpila.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'zvok', ...u});
         // Klicaj iz aplikacije gre tudi vodji (iPad ga vodji pošlje sam prek /api).
         if (!Config.prekoVodje) {
           baza?.obKlicaju = (v, izbrisi) =>
@@ -421,6 +429,8 @@ class Spil extends ChangeNotifier {
             SnemanjeSpila.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'snemanjeUkaz') {
             SnemanjeSpila.aplikacija.izvediTu(j);
+          } else if (j['vrsta'] == 'zvok' || j['vrsta'] == 'zvokUkaz') {
+            ZvokSpila.aplikacija.odVodje(j);
           } else if (j['vrsta'] == 'klicaji' && j['klicaji'] is List) {
             baza?.prevzemiKlicaje(
               (j['klicaji'] as List).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList(),
@@ -450,6 +460,7 @@ class Spil extends ChangeNotifier {
       ..removeListener(_snemamKotSledilec)
       ..pozabiVodjo();
     baza?.obKlicaju = null;
+    ZvokSpila.aplikacija.pozabi();
     if (povezan) {
       povezan = false;
       prekinjeno = true;
@@ -469,6 +480,7 @@ class Spil extends ChangeNotifier {
       ..removeListener(_snemamKotSledilec)
       ..pozabiVodjo();
     baza?.obKlicaju = null;
+    ZvokSpila.aplikacija.pozabi();
     _ponovnaPovezava?.cancel();
     _poslusam?.cancel();
     _kanal?.sink.close();
@@ -492,6 +504,7 @@ class Spil extends ChangeNotifier {
       ..snemalcu = null;
     _bazaVodje?.removeListener(_objaviKlicaje);
     _bazaVodje = null;
+    ZvokSpila.aplikacija.pozabi();
     await _streznik?.ustavi();
     _streznik = null;
     vloga = VlogaSpila.nic;

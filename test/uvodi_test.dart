@@ -13,7 +13,9 @@ import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/uvodi.dart';
+import 'package:spadni_besedila/zasloni/ucenje_casov.dart';
 import 'package:spadni_besedila/zasloni/urejanje_uvoda.dart';
+import 'package:spadni_besedila/zvok_spila.dart';
 
 final _zvok = Uint8List.fromList([1, 2, 3, 4]);
 
@@ -40,6 +42,9 @@ Map<String, dynamic> _tabele({String uvod = 'd1'}) => {
       'Playback vir': 'naložen',
       'Playback transpozicija': -2,
     },
+  ],
+  'Besedila': [
+    {'ID': 't', 'Pesem': 'c', 'Besedilo': 'Prva vrstica\nDruga vrstica\n\nTretja vrstica'},
   ],
 };
 
@@ -83,7 +88,10 @@ Future<(Baza, _Pomnilnik, List<Map<String, dynamic>>, Api)> _baza() async {
         return http.Response.bytes(
           utf8.encode(
             jsonEncode({
-              'vrstica': {...(_tabele()['Pesmi'] as List).first as Map<String, dynamic>, ...p},
+              'vrstica': {
+                ...(_tabele()['Pesmi'] as List).cast<Map<String, dynamic>>().firstWhere((r) => r['ID'] == p['ID']),
+                ...p,
+              },
             }),
           ),
           200,
@@ -323,6 +331,118 @@ void main() {
     expect(baza.pesem('c')!.playbackStanje, 'čaka');
     expect(find.byKey(const ValueKey('playback-stanje')), findsOneWidget);
     expect(find.byKey(const ValueKey('playback-vokal')), findsNothing);
+  });
+
+  test('časi vrstic: vrstica ob času z zamikom, zapis in branje', () {
+    const c = CasiVrstic([1000, null, 3000, 5000], zamik: 500);
+    expect(c.vrsticaOb(const Duration(milliseconds: 1200)), isNull);
+    expect(c.vrsticaOb(const Duration(milliseconds: 1500)), 0);
+    expect(c.vrsticaOb(const Duration(milliseconds: 3600)), 2);
+    expect(c.vrsticaOb(const Duration(seconds: 60)), 3);
+    expect(c.stevilo, 3);
+    final z = CasiVrstic.izBesedila(c.vBesedilo());
+    expect(z.casi, [1000, null, 3000, 5000]);
+    expect(z.zamik, 500);
+    expect(CasiVrstic.izBesedila('nesmisel').prazno, isTrue);
+    expect(const CasiVrstic([null, null]).vBesedilo(), '');
+  });
+
+  test('zvok na špilu: uho za vse, ▶ gre napravi, ki predvaja playback, modro na vseh', () async {
+    final vodja = ZvokSpila();
+    final sledilec = ZvokSpila();
+    final odVodje = <Map<String, dynamic>>[];
+    final odSledilca = <Map<String, dynamic>>[];
+    final predvajanoTu = <String>[];
+    vodja
+      ..vsem = odVodje.add
+      ..predvajajTu = (id) async => predvajanoTu.add(id);
+    sledilec.vodji = odSledilca.add;
+
+    // Sledilec (tablica brez playbacka) pritisne uho: ukaz gre vodji, vodja ga sprejme in objavi vsem.
+    await Nastavitve.aplikacija.nastaviPredvajaj(VrstaZvoka.playback, false);
+    await sledilec.nastaviUho(false);
+    expect(odSledilca.last, {'akcija': 'uho', 'v': false});
+    await vodja.odSledilca(odSledilca.last);
+    expect(Nastavitve.aplikacija.uvodi, isFalse);
+    expect(odVodje.last['uho'], isFalse);
+
+    // ▶ na tablici: ukaz vodji; vodja (PC, predvaja playback) ga predvaja pri sebi.
+    expect(sledilec.lahkoPlayback, isTrue);
+    await sledilec.preklopiPlayback('c');
+    expect(odSledilca.last, {'akcija': 'playback', 'pesem': 'c'});
+    await Nastavitve.aplikacija.nastaviPredvajaj(VrstaZvoka.playback, true);
+    await vodja.odSledilca(odSledilca.last);
+    expect(predvajanoTu, ['c']);
+
+    // Vodja brez playbacka ukaz pošlje naprej sledilcem.
+    await Nastavitve.aplikacija.nastaviPredvajaj(VrstaZvoka.playback, false);
+    await vodja.odSledilca({'akcija': 'playback', 'pesem': 'c'});
+    expect(odVodje, anyElement(equals({'vrsta': 'zvokUkaz', 'akcija': 'playback', 'pesem': 'c'})));
+
+    // Stanje od vodje: playback igra drugje, tablica ga pokaže modro in oceni čas.
+    await sledilec.odVodje({'vrsta': 'zvok', 'uho': false, 'uvod': null, 'playback': 'c', 'ms': 4000});
+    expect(sledilec.playback, 'c');
+    expect(sledilec.uvod, isNull);
+    expect(sledilec.pozicijaPlaybacka.inMilliseconds, greaterThanOrEqualTo(4000));
+    sledilec.pozabi();
+    expect(sledilec.playback, isNull);
+  });
+
+  testWidgets('učenje časov vrstic: tap ob vrsticah, razveljavi, zamik, shrani', (t) async {
+    final (baza, _, poslano, api) = await t.runAsync(_baza) as (Baza, _Pomnilnik, List<Map<String, dynamic>>, Api);
+    await t.pumpWidget(
+      MaterialApp(
+        home: UcenjeCasovZaslon(baza: baza, api: api, pesem: 'c'),
+      ),
+    );
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await t.pump();
+    // Pred začetkom tap ne naredi nič.
+    await t.tap(find.byKey(const ValueKey('ucenje-tap')));
+    await t.runAsync(() async {
+      await t.tap(find.byKey(const ValueKey('ucenje-zacni')));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await t.pump();
+    expect(Predvajanje.playback.igra, 'c');
+    expect(predvajalnik.poltonov, -2);
+
+    Future<void> ob(int ms) async {
+      await t.runAsync(() async {
+        predvajalnik.poz.add(Duration(milliseconds: ms));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      });
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('ucenje-tap')));
+      await t.pump();
+    }
+
+    await ob(1000);
+    await ob(2500);
+    await t.tap(find.byKey(const ValueKey('ucenje-razveljavi')));
+    await t.pump();
+    await ob(3000);
+    await ob(6000);
+    // Vse tri vrstice z besedilom imajo čas; nadaljnji tap ne doda ničesar.
+    await ob(7000);
+
+    await t.tap(find.byKey(const ValueKey('ucenje-zamik')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('+0,25 s').last);
+    await t.pumpAndSettle();
+
+    await t.runAsync(() async {
+      await t.tap(find.byKey(const ValueKey('ucenje-shrani')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await t.pumpAndSettle();
+    final shranjeno = poslano.lastWhere((p) => p['akcija'] == 'pesem')['pesem'] as Map<String, dynamic>;
+    expect(jsonDecode(shranjeno['Playback časi'] as String), {
+      'v': [1000, 3000, null, 6000],
+      'z': 250,
+    });
+    expect(baza.pesem('c')!.casiPlaybacka.vrsticaOb(const Duration(milliseconds: 3300)), 1);
+    expect(Predvajanje.playback.igra, isNull);
   });
 }
 

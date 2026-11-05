@@ -14,6 +14,7 @@ import '../tipkovnica.dart' show Listanje;
 import '../models.dart';
 import '../nastavitve.dart';
 import '../uvodi.dart';
+import '../zvok_spila.dart';
 import '../odigrane.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
@@ -156,6 +157,26 @@ class _PesemZaslonState extends State<PesemZaslon> {
   /// Ko je pesem dovolj dolgo odprta, se označi kot odigrana.
   Timer? _odigrana;
 
+  /// Med playbackom te pesmi (na katerikoli napravi špila) vrstica, ki se poje.
+  final _vrsticaPlaybacka = ValueNotifier<int?>(null);
+  Timer? _slediPlaybacku;
+
+  void _obZvoku() {
+    final igra = ZvokSpila.aplikacija.playback == widget.pesem.id && !_pesem.casiPlaybacka.prazno;
+    if (!igra) {
+      _slediPlaybacku?.cancel();
+      _slediPlaybacku = null;
+      _vrsticaPlaybacka.value = null;
+      return;
+    }
+    _slediPlaybacku ??= Timer.periodic(const Duration(milliseconds: 200), (_) => _osveziVrstico());
+    _osveziVrstico();
+  }
+
+  void _osveziVrstico() {
+    _vrsticaPlaybacka.value = _pesem.casiPlaybacka.vrsticaOb(ZvokSpila.aplikacija.pozicijaPlaybacka);
+  }
+
   /// Kdaj je bila pesem odprta (za dnevnik).
   final _odprto = DateTime.now();
 
@@ -197,6 +218,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
       _odigrana = Timer(Duration(minutes: minute), () => Odigrane.aplikacija.oznaci(widget.pesem.id));
     }
     _naloziPdf();
+    ZvokSpila.aplikacija.addListener(_obZvoku);
+    _obZvoku();
   }
 
   void _naloziPdf() {
@@ -215,6 +238,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
   void dispose() {
     _odigrana?.cancel();
     _pridrzanje?.cancel();
+    ZvokSpila.aplikacija.removeListener(_obZvoku);
+    _slediPlaybacku?.cancel();
+    _vrsticaPlaybacka.dispose();
     _risanje.dispose();
     Midi.aplikacija.zaprta(_pesem);
     Predvajanje.uvodi.obZaprtju(_pesem);
@@ -369,9 +395,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       return true;
     }
     if (d == DejanjeMidi.playback) {
-      if (_pesem.playback.isNotEmpty && Nastavitve.aplikacija.predvajajPlayback) {
-        Predvajanje.playback.preklopi(widget.baza, _apiZaBranje, _pesem);
-      }
+      if (_pesem.playback.isNotEmpty) ZvokSpila.aplikacija.preklopiPlayback(_pesem.id);
       return true;
     }
     if (_iskalnik) {
@@ -727,47 +751,45 @@ class _PesemZaslonState extends State<PesemZaslon> {
           Orodje.xyPad when Midi.aplikacija.vklopljen && Midi.aplikacija.xy.nastavljen => [
             XyPadGumb(knjiznica: widget.baza.midi),
           ],
-          Orodje.uvodi when Midi.aplikacija.vklopljen || Nastavitve.aplikacija.predvajajUvode => [
-            // Modro, dokler se uvod predvaja.
-            ListenableBuilder(
-              listenable: Predvajanje.uvodi,
-              builder: (context, _) {
-                final igra = Predvajanje.uvodi.igra == widget.pesem.id;
-                return IconButton(
-                  key: const ValueKey('uvodi'),
-                  tooltip: igra
-                      ? 'Uvod se predvaja'
-                      : Nastavitve.aplikacija.uvodi
-                      ? 'Uvodi vklopljeni: MIDI in zvočni uvod ob odprtju pesmi'
-                      : 'Uvodi izklopljeni',
-                  isSelected: Nastavitve.aplikacija.uvodi,
-                  icon: const Icon(Icons.hearing_disabled),
-                  selectedIcon: Icon(Icons.hearing, color: igra ? Colors.blue : null),
-                  onPressed: () {
-                    final v = !Nastavitve.aplikacija.uvodi;
-                    Nastavitve.aplikacija.nastaviUvode(v);
-                    if (!v) Predvajanje.uvodi.ustavi();
-                  },
-                );
-              },
-            ),
-          ],
-          Orodje.playback
-              when _pesem.playback.isNotEmpty && Nastavitve.aplikacija.predvajajPlayback && !Config.prekoVodje =>
+          Orodje.uvodi
+              when Midi.aplikacija.vklopljen ||
+                  Nastavitve.aplikacija.predvajajUvode ||
+                  ZvokSpila.aplikacija.lahkoPlayback =>
             [
+              // Uho je skupno vsem na špilu; modro, dokler kakšna naprava predvaja uvod te pesmi.
               ListenableBuilder(
-                listenable: Predvajanje.playback,
+                listenable: ZvokSpila.aplikacija,
                 builder: (context, _) {
-                  final igra = Predvajanje.playback.igra == widget.pesem.id;
+                  final igra = ZvokSpila.aplikacija.uvod == widget.pesem.id;
                   return IconButton(
-                    key: const ValueKey('playback'),
-                    tooltip: igra ? 'Ustavi playback' : 'Predvajaj playback',
-                    icon: Icon(igra ? Icons.stop_circle : Icons.play_circle, color: igra ? Colors.blue : null),
-                    onPressed: () => Predvajanje.playback.preklopi(widget.baza, _apiZaBranje, _pesem),
+                    key: const ValueKey('uvodi'),
+                    tooltip: igra
+                        ? 'Uvod se predvaja'
+                        : Nastavitve.aplikacija.uvodi
+                        ? 'Uvodi vklopljeni: MIDI in zvočni uvod ob odprtju pesmi'
+                        : 'Uvodi izklopljeni',
+                    isSelected: Nastavitve.aplikacija.uvodi,
+                    icon: const Icon(Icons.hearing_disabled),
+                    selectedIcon: Icon(Icons.hearing, color: igra ? Colors.blue : null),
+                    onPressed: () => ZvokSpila.aplikacija.nastaviUho(!Nastavitve.aplikacija.uvodi),
                   );
                 },
               ),
             ],
+          Orodje.playback when _pesem.playback.isNotEmpty && ZvokSpila.aplikacija.lahkoPlayback => [
+            ListenableBuilder(
+              listenable: ZvokSpila.aplikacija,
+              builder: (context, _) {
+                final igra = ZvokSpila.aplikacija.playback == widget.pesem.id;
+                return IconButton(
+                  key: const ValueKey('playback'),
+                  tooltip: igra ? 'Ustavi playback' : 'Predvajaj playback',
+                  icon: Icon(igra ? Icons.stop_circle : Icons.play_circle, color: igra ? Colors.blue : null),
+                  onPressed: () => ZvokSpila.aplikacija.preklopiPlayback(widget.pesem.id),
+                );
+              },
+            ),
+          ],
           _ => const <Widget>[],
         },
     ];
@@ -1105,6 +1127,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         smeSkupno: _smeSkupno,
         zacniSkupno: widget.hitroUrejanje,
         posnetki: _posnetki,
+        vrsticaPlaybacka: _vrsticaPlaybacka,
       );
     }
     if (_pdfji.isNotEmpty) {
