@@ -1,0 +1,48 @@
+name: Pospravljanje artefaktov
+
+# Na GitHubu (Actions storage, 0,5 GB) hranimo le zadnji 2 gradnji za Android in zadnji 2 za Windows.
+# Starejše artefakte pobriše. Vse gradnje ostanejo na strani Releases (ne šteje v Actions storage)
+# in na Drivu (posodobitev v aplikaciji), zato se z brisanjem nič ne izgubi.
+on:
+  workflow_run:
+    workflows: [Android APK, Windows]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: pospravi-artefakte
+  cancel-in-progress: false
+
+jobs:
+  pospravi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const OBDRZI = 2;
+            const skupine = {
+              android: /^spadni-besedila-\d+$/,
+              windows: /^spadni-besedila-windows-\d+$/,
+            };
+            const vsi = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, per_page: 100,
+            });
+            const zivi = vsi.filter(a => !a.expired);
+            let sproscenoB = 0;
+            for (const [ime, vzorec] of Object.entries(skupine)) {
+              const moji = zivi.filter(a => vzorec.test(a.name))
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              core.info(`${ime}: ${moji.length} artefaktov, obdržim ${moji.slice(0, OBDRZI).map(a => a.name).join(', ')}`);
+              for (const a of moji.slice(OBDRZI)) {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner, repo: context.repo.repo, artifact_id: a.id,
+                });
+                sproscenoB += a.size_in_bytes;
+                core.info(`  pobrisan ${a.name} (${(a.size_in_bytes / 1e6).toFixed(1)} MB)`);
+              }
+            }
+            core.notice(`Sproščeno ${(sproscenoB / 1e6).toFixed(0)} MB.`);
