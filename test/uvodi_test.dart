@@ -9,6 +9,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
+import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/uvodi.dart';
@@ -29,6 +30,16 @@ Map<String, dynamic> _tabele({String uvod = 'd1'}) => {
       'Uvod do': 4,
     },
     {'ID': 'b', 'Koda': 2, 'Naslov': 'BREZ UVODA', 'Aktivna': true},
+    {
+      'ID': 'c',
+      'Koda': 3,
+      'Naslov': 'S PLAYBACKOM',
+      'Aktivna': true,
+      'Playback': 'p1',
+      'Playback vrsta': 'audio/mpeg',
+      'Playback vir': 'naložen',
+      'Playback transpozicija': -2,
+    },
   ],
 };
 
@@ -60,6 +71,13 @@ Future<(Baza, _Pomnilnik, List<Map<String, dynamic>>, Api)> _baza() async {
         };
         return http.Response.bytes(utf8.encode(jsonEncode({'vrstica': vrstica})), 200);
       }
+      if (telo['akcija'] == 'odstraniVokal') {
+        final vrstica = {
+          ...(_tabele()['Pesmi'] as List).cast<Map<String, dynamic>>().firstWhere((r) => r['ID'] == telo['pesem']),
+          'Playback stanje': 'čaka',
+        };
+        return http.Response.bytes(utf8.encode(jsonEncode({'vrstica': vrstica})), 200);
+      }
       if (telo['akcija'] == 'pesem') {
         final p = telo['pesem'] as Map<String, dynamic>;
         return http.Response.bytes(
@@ -87,7 +105,8 @@ void main() {
     Nastavitve.aplikacija = Nastavitve();
     predvajalnik = _Predvajalnik();
     PredvajalnikZvoka.tovarna = () => predvajalnik;
-    Uvodi.aplikacija = Uvodi();
+    Predvajanje.uvodi = Predvajanje(VrstaZvoka.uvod);
+    Predvajanje.playback = Predvajanje(VrstaZvoka.playback);
   });
 
   test('podatki uvoda pri pesmi', () async {
@@ -102,29 +121,29 @@ void main() {
 
   test('brez »Hrani uvode lokalno« se uvod prebere s spleta enkrat na sejo in ne shrani na napravo', () async {
     final (baza, shramba, poslano, api) = await _baza();
-    expect(await baza.zvokUvoda(api, baza.pesem('a')!), _zvok);
-    expect(await baza.zvokUvoda(api, baza.pesem('a')!), _zvok);
+    expect(await baza.zvok(api, baza.pesem('a')!, VrstaZvoka.uvod), _zvok);
+    expect(await baza.zvok(api, baza.pesem('a')!, VrstaZvoka.uvod), _zvok);
     expect(poslano.where((p) => p['akcija'] == 'uvod'), hasLength(1));
     expect(await shramba.kljuci('uvodi/'), isEmpty);
-    expect(await baza.zvokUvoda(api, baza.pesem('b')!), isNull);
+    expect(await baza.zvok(api, baza.pesem('b')!, VrstaZvoka.uvod), isNull);
   });
 
   test('hrani uvode lokalno: prenese manjkajoče, pobriše stare, ob izklopu pobriše vse', () async {
     final (baza, shramba, poslano, api) = await _baza();
     await Nastavitve.aplikacija.nastaviHraniUvode(true);
     await shramba.pisiBajte('uvodi/star', _zvok);
-    expect(await baza.prenesiUvode(api), 0);
+    expect(await baza.prenesiZvoke(api, VrstaZvoka.uvod), 0);
     expect(await shramba.kljuci('uvodi/'), {'uvodi/d1'});
     // Že prenesen se ne prenaša znova.
-    await baza.prenesiUvode(api);
+    await baza.prenesiZvoke(api, VrstaZvoka.uvod);
     expect(poslano.where((p) => p['akcija'] == 'uvod'), hasLength(1));
-    await baza.izbrisiLokalneUvode();
+    await baza.izbrisiLokalneZvoke(VrstaZvoka.uvod);
     expect(await shramba.kljuci('uvodi/'), isEmpty);
   });
 
   test('shrani in izbriši uvod', () async {
     final (baza, _, poslano, api) = await _baza();
-    final p = await baza.shraniUvod(api, 'a', _zvok, vrsta: 'audio/mp4', od: 0.5, doo: 3);
+    final p = await baza.shraniZvok(api, 'a', VrstaZvoka.uvod, _zvok, vrsta: 'audio/mp4', od: 0.5, doo: 3);
     expect(poslano.single['akcija'], 'uvod');
     expect(poslano.single['od'], 0.5);
     expect(poslano.single['do'], 3);
@@ -132,8 +151,8 @@ void main() {
     expect(p.uvod, 'd2');
     expect(baza.pesem('a')!.uvod, 'd2');
     // Pravkar shranjen je že v seji (ni prenosa).
-    expect(await baza.zvokUvoda(null, baza.pesem('a')!), _zvok);
-    await baza.shraniUvod(api, 'a', null);
+    expect(await baza.zvok(null, baza.pesem('a')!, VrstaZvoka.uvod), _zvok);
+    await baza.shraniZvok(api, 'a', VrstaZvoka.uvod, null);
     expect(poslano.last.containsKey('base64'), isFalse);
     expect(baza.pesem('a')!.uvod, isEmpty);
   });
@@ -143,20 +162,20 @@ void main() {
     final p = baza.pesem('a')!;
     final n = Nastavitve.aplikacija;
     await n.nastaviPredvajajUvode(false);
-    await Uvodi.aplikacija.obOdprtju(baza, api, p);
+    await Predvajanje.uvodi.obOdprtju(baza, api, p);
     expect(predvajalnik.od, isNull);
 
     await n.nastaviPredvajajUvode(true);
     await n.nastaviUvode(false);
-    await Uvodi.aplikacija.obOdprtju(baza, api, p);
+    await Predvajanje.uvodi.obOdprtju(baza, api, p);
     expect(predvajalnik.od, isNull);
 
     await n.nastaviUvode(true);
     await n.nastaviIzhodZvoka('usb');
-    await Uvodi.aplikacija.obOdprtju(baza, api, p);
+    await Predvajanje.uvodi.obOdprtju(baza, api, p);
     expect(predvajalnik.od, const Duration(milliseconds: 1500));
     expect(predvajalnik.izhod, 'usb');
-    expect(Uvodi.aplikacija.igra, 'a');
+    expect(Predvajanje.uvodi.igra, 'a');
 
     // 0,4 s pred koncem (4 s) je glasnost pol manjša, na koncu se ustavi.
     predvajalnik.poz.add(const Duration(milliseconds: 3600));
@@ -165,17 +184,17 @@ void main() {
     predvajalnik.poz.add(const Duration(milliseconds: 4000));
     await Future<void>.delayed(Duration.zero);
     expect(predvajalnik.ustavljen, isTrue);
-    expect(Uvodi.aplikacija.igra, isNull);
+    expect(Predvajanje.uvodi.igra, isNull);
   });
 
   test('zaprtje pesmi ustavi le njen uvod', () async {
     final (baza, _, _, api) = await _baza();
     await Nastavitve.aplikacija.nastaviPredvajajUvode(true);
-    await Uvodi.aplikacija.obOdprtju(baza, api, baza.pesem('a')!);
-    await Uvodi.aplikacija.obZaprtju(baza.pesem('b')!);
-    expect(Uvodi.aplikacija.igra, 'a');
-    await Uvodi.aplikacija.obZaprtju(baza.pesem('a')!);
-    expect(Uvodi.aplikacija.igra, isNull);
+    await Predvajanje.uvodi.obOdprtju(baza, api, baza.pesem('a')!);
+    await Predvajanje.uvodi.obZaprtju(baza.pesem('b')!);
+    expect(Predvajanje.uvodi.igra, 'a');
+    await Predvajanje.uvodi.obZaprtju(baza.pesem('a')!);
+    expect(Predvajanje.uvodi.igra, isNull);
     expect(predvajalnik.ustavljen, isTrue);
   });
 
@@ -186,7 +205,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ListView(
-            children: [UrejanjeUvoda(baza: baza, api: api, pesem: 'b')],
+            children: [UrejanjeZvoka(baza: baza, api: api, pesem: 'b')],
           ),
         ),
       ),
@@ -217,7 +236,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ListView(
-            children: [UrejanjeUvoda(key: UniqueKey(), baza: baza, api: api, pesem: 'a')],
+            children: [UrejanjeZvoka(key: UniqueKey(), baza: baza, api: api, pesem: 'a')],
           ),
         ),
       ),
@@ -237,6 +256,73 @@ void main() {
     expect(pesem['Uvod od'], 2);
     expect(pesem['Uvod do'], '');
     expect(poslano.where((p) => p['akcija'] == 'uvod' && p.containsKey('base64')), isEmpty);
+  });
+
+  test('playback: gumb predvaja s transpozicijo in drugič ustavi; ob odprtju se ne začne sam', () async {
+    final (baza, shramba, poslano, api) = await _baza();
+    final p = baza.pesem('c')!;
+    expect(p.playback, 'p1');
+    expect(p.playbackTranspozicija, -2);
+    await Nastavitve.aplikacija.nastaviIzhod(VrstaZvoka.playback, 'pa');
+    await Predvajanje.playback.preklopi(baza, api, p);
+    expect(Predvajanje.playback.igra, 'c');
+    expect(predvajalnik.poltonov, -2);
+    expect(predvajalnik.izhod, 'pa');
+    expect(predvajalnik.od, Duration.zero);
+    expect(poslano.single['kaj'], 'playback');
+    // Uvod igra posebej (svoj predvajalnik), playback ostane.
+    expect(Predvajanje.uvodi.igra, isNull);
+    await Predvajanje.playback.preklopi(baza, api, p);
+    expect(Predvajanje.playback.igra, isNull);
+    expect(predvajalnik.ustavljen, isTrue);
+    // Hrani lokalno samo playback.
+    await Nastavitve.aplikacija.nastaviHrani(VrstaZvoka.playback, true);
+    await baza.prenesiZvoke(api, VrstaZvoka.playback);
+    expect(await shramba.kljuci('playback/'), {'playback/p1'});
+    expect(await shramba.kljuci('uvodi/'), isEmpty);
+  });
+
+  testWidgets('playback pri urejanju: transpozicija, odstranitev vokala, potrditev ob zamenjavi', (t) async {
+    final (baza, _, poslano, api) = await t.runAsync(_baza) as (Baza, _Pomnilnik, List<Map<String, dynamic>>, Api);
+    SnemalnikUvoda.tovarna = _Snemalnik.new;
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [UrejanjeZvoka(baza: baza, api: api, pesem: 'c', vrsta: VrstaZvoka.playback)],
+          ),
+        ),
+      ),
+    );
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await t.pump();
+    expect(find.byKey(const ValueKey('uvod-obseg')), findsNothing);
+    expect(find.byKey(const ValueKey('playback-vokal')), findsOneWidget);
+
+    // Snemanje čez obstoječ playback vpraša; »Ne« ne začne snemati.
+    await t.tap(find.byKey(const ValueKey('playback-snemaj')));
+    await t.pumpAndSettle();
+    expect(find.text('Zamenjam obstoječi playback?'), findsOneWidget);
+    await t.tap(find.text('Ne'));
+    await t.pumpAndSettle();
+    expect(find.text('Ustavi snemanje'), findsNothing);
+
+    // Brisanje vpraša.
+    await t.tap(find.byKey(const ValueKey('playback-izbrisi')));
+    await t.pumpAndSettle();
+    expect(find.text('Izbrišem playback?'), findsOneWidget);
+    await t.tap(find.text('Ne'));
+    await t.pumpAndSettle();
+
+    await t.runAsync(() async {
+      await t.tap(find.byKey(const ValueKey('playback-vokal')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await t.pump();
+    expect(poslano.last['akcija'], 'odstraniVokal');
+    expect(baza.pesem('c')!.playbackStanje, 'čaka');
+    expect(find.byKey(const ValueKey('playback-stanje')), findsOneWidget);
+    expect(find.byKey(const ValueKey('playback-vokal')), findsNothing);
   });
 }
 
@@ -274,6 +360,11 @@ class _Predvajalnik implements PredvajalnikZvoka {
 
   @override
   Future<void> nastaviIzhod(String id) async => izhod = id;
+
+  int poltonov = 0;
+
+  @override
+  Future<void> transponiraj(int poltonov) async => this.poltonov = poltonov;
 
   @override
   void zapri() {}

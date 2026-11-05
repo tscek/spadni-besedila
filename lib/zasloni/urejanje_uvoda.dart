@@ -90,30 +90,40 @@ String casUvoda(double s) {
   return '$m:${sek.toString().padLeft(2, '0')},${d % 10}';
 }
 
-/// Zvočni uvod pesmi pri urejanju: posnemi ali naloži (eno ali drugo, nov zamenja starega),
-/// obreži začetek in konec ter poslušaj. Shrani se takoj (potrebuje internet).
-class UrejanjeUvoda extends StatefulWidget {
-  const UrejanjeUvoda({super.key, required this.baza, required this.api, required this.pesem});
+/// Uvod ali playback pesmi pri urejanju: posnemi ali naloži (eno ali drugo, nov zamenja starega, z vprašanjem),
+/// pri uvodu obreži začetek in konec, pri playbacku transpozicija in odstranitev vokala. Shrani se takoj
+/// (potrebuje internet).
+class UrejanjeZvoka extends StatefulWidget {
+  const UrejanjeZvoka({
+    super.key,
+    required this.baza,
+    required this.api,
+    required this.pesem,
+    this.vrsta = VrstaZvoka.uvod,
+  });
 
   final Baza baza;
   final Api api;
   final String pesem;
+  final VrstaZvoka vrsta;
 
-  /// Največja velikost datoteke uvoda.
-  static const najvec = 15 * 1024 * 1024;
+  /// Največja velikost datoteke.
+  int get najvec => (vrsta == VrstaZvoka.playback ? 25 : 15) * 1024 * 1024;
 
   @override
-  State<UrejanjeUvoda> createState() => _UrejanjeUvodaState();
+  State<UrejanjeZvoka> createState() => _UrejanjeZvokaState();
 }
 
-class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
+class _UrejanjeZvokaState extends State<UrejanjeZvoka> {
   Uint8List? _bajti;
   String _vrsta = '';
   double? _trajanje;
   RangeValues _obseg = const RangeValues(0, 0);
+  int? _transpozicija;
 
   /// Nov zvok (posnet ali naložen), ki še ni na strežniku.
   bool _nov = false;
+  bool _posnet = false;
   bool _spremenjenObseg = false;
   bool _delam = false;
   String? _napaka;
@@ -122,6 +132,10 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
   DateTime? _zacetek;
   Timer? _ura;
 
+  VrstaZvoka get _v => widget.vrsta;
+  bool get _uvod => _v == VrstaZvoka.uvod;
+  String get _k => _v.kaj;
+  Predvajanje get _predvajanje => Predvajanje.za(_v);
   Pesem? get _pesem => widget.baza.pesem(widget.pesem);
 
   @override
@@ -134,26 +148,26 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
   void dispose() {
     _ura?.cancel();
     _snemalnik?.zapri();
-    Uvodi.aplikacija.ustavi();
+    _predvajanje.ustavi();
     super.dispose();
   }
 
   Future<void> _naloziObstojecega() async {
     final p = _pesem;
-    if (p == null || p.uvod.isEmpty) return;
+    if (p == null || p.zvok(_v).isEmpty) return;
     setState(() => _delam = true);
     try {
-      final b = await widget.baza.zvokUvoda(widget.api, p);
-      if (b != null) await _pripravi(b, p.uvodVrsta, od: p.uvodOd, doo: p.uvodDo);
+      final b = await widget.baza.zvok(widget.api, p, _v);
+      if (b != null) await _pripravi(b, p.zvokVrsta(_v), od: _uvod ? p.uvodOd : 0, doo: _uvod ? p.uvodDo : null);
     } catch (e) {
-      _napaka = 'Uvoda ni bilo mogoče prebrati: $e';
+      _napaka = 'Posnetka ni bilo mogoče prebrati: $e';
     } finally {
       if (mounted) setState(() => _delam = false);
     }
   }
 
   Future<void> _pripravi(Uint8List bajti, String vrsta, {double od = 0, double? doo}) async {
-    final t = await Uvodi.aplikacija.trajanje(bajti, vrsta);
+    final t = await _predvajanje.trajanje(bajti, vrsta);
     if (!mounted) return;
     final s = t == null ? null : t.inMilliseconds / 1000;
     setState(() {
@@ -167,6 +181,27 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     });
   }
 
+  /// Pred zamenjavo obstoječega posnetka vpraša.
+  Future<bool> _smemZamenjati() async {
+    if ((_pesem?.zvok(_v).isEmpty ?? true) && _bajti == null) return true;
+    final da = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Zamenjam obstoječi ${_uvod ? 'uvod' : 'playback'}?'),
+        content: const Text('Ko novega shraniš, gre stari posnetek v koš na Drivu.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Ne')),
+          FilledButton(
+            key: ValueKey('$_k-zamenjaj'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Zamenjaj'),
+          ),
+        ],
+      ),
+    );
+    return da == true;
+  }
+
   Future<void> _snemaj() async {
     final messenger = ScaffoldMessenger.of(context);
     if (_snemalnik != null) {
@@ -177,11 +212,13 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
       await s.zapri();
       if (posneto == null) return;
       _nov = true;
+      _posnet = true;
       _spremenjenObseg = false;
       await _pripravi(posneto.bajti, posneto.vrsta);
       return;
     }
-    await Uvodi.aplikacija.ustavi();
+    if (!await _smemZamenjati()) return;
+    await _predvajanje.ustavi();
     final s = SnemalnikUvoda.tovarna();
     if (!await s.dovoljenje()) {
       messenger.showSnackBar(const SnackBar(content: Text('Aplikacija nima dovoljenja za mikrofon.')));
@@ -200,6 +237,7 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
 
   Future<void> _nalozi() async {
     final messenger = ScaffoldMessenger.of(context);
+    if (!await _smemZamenjati()) return;
     final izbrane = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'webm', 'flac'],
@@ -207,11 +245,14 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     if (izbrane.isEmpty || !mounted) return;
     final f = izbrane.first;
     final bajti = await f.readAsBytes();
-    if (bajti.length > UrejanjeUvoda.najvec) {
-      messenger.showSnackBar(const SnackBar(content: Text('Datoteka je prevelika (največ 15 MB).')));
+    if (bajti.length > widget.najvec) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Datoteka je prevelika (največ ${widget.najvec ~/ (1024 * 1024)} MB).')),
+      );
       return;
     }
     _nov = true;
+    _posnet = false;
     _spremenjenObseg = false;
     await _pripravi(bajti, vrstaZvoka(f.name));
     if (_trajanje == null) {
@@ -221,7 +262,7 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
 
   double? get _doo {
     final t = _trajanje;
-    if (t == null || _obseg.end >= t - 0.05) return null;
+    if (!_uvod || t == null || _obseg.end >= t - 0.05) return null;
     return _obseg.end;
   }
 
@@ -229,26 +270,41 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     final messenger = ScaffoldMessenger.of(context);
     final p = _pesem;
     final bajti = _bajti;
-    if (p == null || bajti == null) return;
-    await Uvodi.aplikacija.ustavi();
+    if (p == null) return;
+    await _predvajanje.ustavi();
     setState(() => _delam = true);
     try {
-      if (_nov) {
-        await widget.baza.shraniUvod(widget.api, p.id, bajti, vrsta: _vrsta, od: _obseg.start, doo: _doo);
-      } else {
+      if (_nov && bajti != null) {
+        await widget.baza.shraniZvok(
+          widget.api,
+          p.id,
+          _v,
+          bajti,
+          vrsta: _vrsta,
+          od: _uvod ? _obseg.start : 0,
+          doo: _doo,
+          posnet: _posnet,
+        );
+      }
+      final t = _transpozicija;
+      if ((!_nov && _spremenjenObseg) || (t != null && t != p.playbackTranspozicija)) {
         await widget.baza.shraniPesem(widget.api, {
           'ID': p.id,
           'Koda': p.koda,
           'Naslov': p.naslov,
-          'Uvod od': double.parse(_obseg.start.toStringAsFixed(1)),
-          'Uvod do': _doo == null ? '' : double.parse(_doo!.toStringAsFixed(1)),
+          if (_uvod && !_nov) ...{
+            'Uvod od': double.parse(_obseg.start.toStringAsFixed(1)),
+            'Uvod do': _doo == null ? '' : double.parse(_doo!.toStringAsFixed(1)),
+          },
+          'Playback transpozicija': ?t,
         });
       }
       _nov = false;
       _spremenjenObseg = false;
-      messenger.showSnackBar(const SnackBar(content: Text('Uvod je shranjen.')));
+      _transpozicija = null;
+      messenger.showSnackBar(SnackBar(content: Text('${_v.ime} je shranjen.')));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Uvoda ni bilo mogoče shraniti: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('${_v.ime}: shranjevanje ni uspelo: $e')));
     } finally {
       if (mounted) setState(() => _delam = false);
     }
@@ -261,19 +317,27 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     final da = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Izbrišem uvod?'),
-        content: const Text('Datoteka gre v koš na Drivu.'),
+        title: Text('Izbrišem ${_uvod ? 'uvod' : 'playback'}?'),
+        content: Text(
+          'Posnetek pesmi »${p.naslov}« bo izbrisan za vse. Datoteka gre v koš na Drivu'
+          '${p.playbackIzvirnik.isNotEmpty && !_uvod ? ' (tudi izvirnik z vokalom)' : ''}.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Ne')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Izbriši')),
+          FilledButton(
+            key: ValueKey('$_k-izbrisi-potrdi'),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Izbriši'),
+          ),
         ],
       ),
     );
     if (da != true) return;
-    await Uvodi.aplikacija.ustavi();
+    await _predvajanje.ustavi();
     setState(() => _delam = true);
     try {
-      if (p.uvod.isNotEmpty) await widget.baza.shraniUvod(widget.api, p.id, null);
+      if (p.zvok(_v).isNotEmpty) await widget.baza.shraniZvok(widget.api, p.id, _v, null);
       setState(() {
         _bajti = null;
         _trajanje = null;
@@ -281,7 +345,31 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
         _spremenjenObseg = false;
       });
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Uvoda ni bilo mogoče izbrisati: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Posnetka ni bilo mogoče izbrisati: $e')));
+    } finally {
+      if (mounted) setState(() => _delam = false);
+    }
+  }
+
+  /// Odstrani vokal (GitHub) ali vrni izvirnik.
+  Future<void> _vokal({required bool izvirnik}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final p = _pesem;
+    if (p == null) return;
+    await _predvajanje.ustavi();
+    setState(() => _delam = true);
+    try {
+      await widget.baza.obdelajPlayback(widget.api, p.id, izvirnik: izvirnik);
+      if (izvirnik) {
+        _bajti = null;
+        await _naloziObstojecega();
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Vokal se odstranjuje (nekaj minut). Ko bo končano, osveži seznam pesmi.')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Ni uspelo: $e')));
     } finally {
       if (mounted) setState(() => _delam = false);
     }
@@ -291,7 +379,32 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     final b = _bajti;
     if (b == null) return;
     final od = konec ? (_obseg.end - 3).clamp(_obseg.start, _obseg.end).toDouble() : _obseg.start;
-    Uvodi.aplikacija.predvajajBajte(b, _vrsta, od: od, doo: _doo);
+    _predvajanje.predvajajBajte(
+      b,
+      _vrsta,
+      od: _uvod ? od : (konec ? od : 0),
+      doo: _doo,
+      transpozicija: _uvod ? 0 : (_transpozicija ?? _pesem?.playbackTranspozicija ?? 0),
+    );
+  }
+
+  String _opis(Pesem? p, double? t, bool imaZvok) {
+    if (_snemalnik != null) return 'Snemam … ${casUvoda(DateTime.now().difference(_zacetek!).inMilliseconds / 1000)}';
+    if (t != null) {
+      final nov = _nov ? ' · še ni shranjen' : '';
+      if (_uvod) {
+        return 'Dolžina ${casUvoda(t)}, predvaja se od ${casUvoda(_obseg.start)} do ${casUvoda(_obseg.end)}$nov';
+      }
+      final vir = switch (p?.playbackVir) {
+        'brez vokala' when !_nov => ' · brez vokala',
+        _ => '',
+      };
+      return 'Dolžina ${casUvoda(t)}$vir$nov';
+    }
+    if (imaZvok) return _napaka ?? 'Nalagam posnetek …';
+    return _uvod
+        ? 'Ni uvoda. Posnemi ga ali naloži datoteko; predvaja se ob odprtju pesmi (uho v orodni vrstici).'
+        : 'Ni playbacka. Naloži datoteko ali ga posnemi; predvajaš ga z gumbom ▶ v orodni vrstici.';
   }
 
   @override
@@ -299,10 +412,15 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
     final p = _pesem;
     final t = _trajanje;
     final snemam = _snemalnik != null;
-    final imaUvod = (p?.uvod.isNotEmpty ?? false) || _bajti != null;
+    final imaZvok = (p?.zvok(_v).isNotEmpty ?? false) || _bajti != null;
+    final naStrezniku = (p?.zvok(_v).isNotEmpty ?? false) && !_nov;
     final slog = Theme.of(context).textTheme;
+    final stanje = _uvod ? '' : (p?.playbackStanje ?? '');
+    final transpozicija = _transpozicija ?? p?.playbackTranspozicija ?? 0;
+    final spremembe =
+        _nov || _spremenjenObseg || (_transpozicija != null && _transpozicija != p?.playbackTranspozicija);
     return Card(
-      key: const ValueKey('uvod'),
+      key: ValueKey(_k),
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -311,45 +429,45 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
           children: [
             Row(
               children: [
-                const Icon(Icons.hearing),
+                Icon(_uvod ? Icons.hearing : Icons.speaker),
                 const SizedBox(width: 8),
-                Text('Uvod', style: slog.titleMedium),
+                Text(_v.ime, style: slog.titleMedium),
                 const Spacer(),
                 if (_delam) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              snemam
-                  ? 'Snemam … ${casUvoda(DateTime.now().difference(_zacetek!).inMilliseconds / 1000)}'
-                  : t != null
-                  ? 'Dolžina ${casUvoda(t)}, predvaja se od ${casUvoda(_obseg.start)} do ${casUvoda(_obseg.end)}'
-                        '${_nov ? ' · še ni shranjen' : ''}'
-                  : imaUvod
-                  ? (_napaka ?? 'Nalagam uvod …')
-                  : 'Ni uvoda. Posnemi ga ali naloži datoteko; predvaja se ob odprtju pesmi (uho v orodni vrstici).',
-              style: slog.bodySmall,
-            ),
+            Text(_opis(p, t, imaZvok), style: slog.bodySmall),
+            if (stanje.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                stanje == 'čaka' ? 'Vokal se odstranjuje (nekaj minut). Ko bo končano, osveži seznam pesmi.' : stanje,
+                key: const ValueKey('playback-stanje'),
+                style: slog.bodySmall?.copyWith(
+                  color: stanje == 'čaka' ? Colors.blue : Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 FilledButton.tonalIcon(
-                  key: const ValueKey('uvod-snemaj'),
+                  key: ValueKey('$_k-snemaj'),
                   onPressed: _delam ? null : _snemaj,
                   icon: Icon(snemam ? Icons.stop : Icons.mic, color: snemam ? Colors.red : null),
                   label: Text(snemam ? 'Ustavi snemanje' : 'Posnemi'),
                 ),
                 OutlinedButton.icon(
-                  key: const ValueKey('uvod-nalozi'),
+                  key: ValueKey('$_k-nalozi'),
                   onPressed: _delam || snemam ? null : _nalozi,
                   icon: const Icon(Icons.upload_file),
                   label: const Text('Naloži datoteko'),
                 ),
-                if (imaUvod)
+                if (imaZvok)
                   TextButton.icon(
-                    key: const ValueKey('uvod-izbrisi'),
+                    key: ValueKey('$_k-izbrisi'),
                     onPressed: _delam || snemam ? null : _izbrisi,
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Izbriši'),
@@ -358,41 +476,77 @@ class _UrejanjeUvodaState extends State<UrejanjeUvoda> {
             ),
             if (t != null && t > 0 && !snemam) ...[
               const SizedBox(height: 8),
-              RangeSlider(
-                key: const ValueKey('uvod-obseg'),
-                min: 0,
-                max: t,
-                values: _obseg,
-                labels: RangeLabels(casUvoda(_obseg.start), casUvoda(_obseg.end)),
-                divisions: (t * 10).round().clamp(1, 100000),
-                onChanged: (v) => setState(() {
-                  _obseg = v;
-                  _spremenjenObseg = true;
-                }),
-              ),
+              if (_uvod)
+                RangeSlider(
+                  key: const ValueKey('uvod-obseg'),
+                  min: 0,
+                  max: t,
+                  values: _obseg,
+                  labels: RangeLabels(casUvoda(_obseg.start), casUvoda(_obseg.end)),
+                  divisions: (t * 10).round().clamp(1, 100000),
+                  onChanged: (v) => setState(() {
+                    _obseg = v;
+                    _spremenjenObseg = true;
+                  }),
+                )
+              else
+                Row(
+                  children: [
+                    const Text('Transpozicija'),
+                    const SizedBox(width: 12),
+                    DropdownButton<int>(
+                      key: const ValueKey('playback-transpozicija'),
+                      value: transpozicija,
+                      onChanged: (v) => setState(() => _transpozicija = v),
+                      items: [
+                        for (var i = -6; i <= 6; i++)
+                          DropdownMenuItem(value: i, child: Text(i == 0 ? '0' : '${i > 0 ? '+' : '−'}${i.abs()} pol.')),
+                      ],
+                    ),
+                    if (!kIsWeb && defaultTargetPlatform != TargetPlatform.windows) ...[
+                      const SizedBox(width: 8),
+                      Flexible(child: Text('(velja na računalniku)', style: slog.bodySmall)),
+                    ],
+                  ],
+                ),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   OutlinedButton.icon(
-                    key: const ValueKey('uvod-poslusaj'),
+                    key: ValueKey('$_k-poslusaj'),
                     onPressed: _poslusaj,
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Poslušaj'),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: () => _poslusaj(konec: true),
-                    icon: const Icon(Icons.skip_next),
-                    label: const Text('Konec (zadnje 3 s)'),
-                  ),
-                  IconButton(tooltip: 'Ustavi', onPressed: Uvodi.aplikacija.ustavi, icon: const Icon(Icons.stop)),
-                  if (_nov || _spremenjenObseg)
+                  if (_uvod)
+                    OutlinedButton.icon(
+                      onPressed: () => _poslusaj(konec: true),
+                      icon: const Icon(Icons.skip_next),
+                      label: const Text('Konec (zadnje 3 s)'),
+                    ),
+                  IconButton(tooltip: 'Ustavi', onPressed: _predvajanje.ustavi, icon: const Icon(Icons.stop)),
+                  if (!_uvod && naStrezniku && stanje != 'čaka' && p!.playbackVir == 'naložen')
+                    OutlinedButton.icon(
+                      key: const ValueKey('playback-vokal'),
+                      onPressed: _delam || spremembe ? null : () => _vokal(izvirnik: false),
+                      icon: const Icon(Icons.mic_off),
+                      label: const Text('Odstrani vokal'),
+                    ),
+                  if (!_uvod && naStrezniku && p!.playbackIzvirnik.isNotEmpty)
+                    OutlinedButton.icon(
+                      key: const ValueKey('playback-izvirnik'),
+                      onPressed: _delam || spremembe ? null : () => _vokal(izvirnik: true),
+                      icon: const Icon(Icons.restore),
+                      label: const Text('Vrni izvirnik z vokalom'),
+                    ),
+                  if (spremembe)
                     FilledButton.icon(
-                      key: const ValueKey('uvod-shrani'),
+                      key: ValueKey('$_k-shrani'),
                       onPressed: _delam ? null : _shrani,
                       icon: const Icon(Icons.save),
-                      label: const Text('Shrani uvod'),
+                      label: Text(_uvod ? 'Shrani uvod' : 'Shrani playback'),
                     ),
                 ],
               ),

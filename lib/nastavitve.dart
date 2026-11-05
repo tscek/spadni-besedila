@@ -16,7 +16,8 @@ enum Orodje {
   uredi('Uredi pesem', Mesto.zgoraj),
   ura('Ura', Mesto.skrito),
   uvodi('Uvodi ob odprtju pesmi: MIDI in zvok (vklop in izklop)', Mesto.zgoraj),
-  xyPad('XY pad (nastavitve MIDI)', Mesto.zgoraj);
+  xyPad('XY pad (nastavitve MIDI)', Mesto.zgoraj),
+  playback('Playback ▶/■ (če ga ima pesem)', Mesto.zgoraj);
 
   const Orodje(this.opis, this.privzeto);
   final String opis;
@@ -147,6 +148,9 @@ class Nastavitve extends ChangeNotifier {
   static const _hraniUvode = 'hrani_uvode';
   static const _predvajajUvode = 'predvajaj_uvode';
   static const _izhodZvoka = 'izhod_zvoka';
+  static const _hraniPlayback = 'hrani_playback';
+  static const _predvajajPlayback = 'predvajaj_playback';
+  static const _izhodPlaybacka = 'izhod_playbacka';
   static const _poljaSeznama = 'polja_seznama';
   static const _ikoneSeznama = 'ikone_seznama';
   static const _razvrsti = 'razvrsti';
@@ -232,6 +236,30 @@ class Nastavitve extends ChangeNotifier {
   /// Zvočni izhod za uvode (ime naprave; prazno = privzeti izhod sistema).
   String izhodZvoka = '';
 
+  /// Playback pesmi: prenos na napravo, predvajanje na tej napravi in izhod (npr. ozvočenje).
+  bool hraniPlayback = false;
+  bool predvajajPlayback = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  String izhodPlaybacka = '';
+
+  bool hrani(VrstaZvoka v) => v == VrstaZvoka.playback ? hraniPlayback : hraniUvode;
+  bool predvajaj(VrstaZvoka v) => v == VrstaZvoka.playback ? predvajajPlayback : predvajajUvode;
+  String izhod(VrstaZvoka v) => v == VrstaZvoka.playback ? izhodPlaybacka : izhodZvoka;
+
+  Future<void> nastaviHrani(VrstaZvoka v, bool da) => v == VrstaZvoka.playback
+      ? _nastavi(() => hraniPlayback = da, (p) => p.setBool(_hraniPlayback, da))
+      : nastaviHraniUvode(da);
+  Future<void> nastaviPredvajaj(VrstaZvoka v, bool da) => v == VrstaZvoka.playback
+      ? _nastavi(() => predvajajPlayback = da, (p) => p.setBool(_predvajajPlayback, da))
+      : nastaviPredvajajUvode(da);
+  Future<void> nastaviIzhod(VrstaZvoka v, String id) => v == VrstaZvoka.playback
+      ? _nastavi(() => izhodPlaybacka = id, (p) => p.setString(_izhodPlaybacka, id))
+      : nastaviIzhodZvoka(id);
+
+  Future<void> _nastavi(void Function() v, void Function(SharedPreferences) zapis) {
+    v();
+    return _shrani(zapis);
+  }
+
   /// Podatki v vrstici seznama pesmi (naslov je vedno).
   List<PoljePesmi> poljaSeznama = const [PoljePesmi.izvajalec, PoljePesmi.tonaliteta];
 
@@ -296,6 +324,9 @@ class Nastavitve extends ChangeNotifier {
     hraniUvode = p.getBool(_hraniUvode) ?? d.hraniUvode;
     predvajajUvode = p.getBool(_predvajajUvode) ?? d.predvajajUvode;
     izhodZvoka = p.getString(_izhodZvoka) ?? d.izhodZvoka;
+    hraniPlayback = p.getBool(_hraniPlayback) ?? d.hraniPlayback;
+    predvajajPlayback = p.getBool(_predvajajPlayback) ?? d.predvajajPlayback;
+    izhodPlaybacka = p.getString(_izhodPlaybacka) ?? d.izhodPlaybacka;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);
       if (s == null) return null;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
@@ -28,6 +29,9 @@ abstract class PredvajalnikZvoka {
   Stream<void> get konec;
   Future<List<IzhodZvoka>> izhodi();
   Future<void> nastaviIzhod(String id);
+
+  /// Višina v poltonih (samo Windows).
+  Future<void> transponiraj(int poltonov);
   void zapri();
 }
 
@@ -74,6 +78,9 @@ class PredvajalnikAudioplayers implements PredvajalnikZvoka {
   Future<void> nastaviIzhod(String id) async {}
 
   @override
+  Future<void> transponiraj(int poltonov) async {}
+
+  @override
   void zapri() => _p?.dispose();
 }
 
@@ -87,7 +94,7 @@ class PredvajalnikMediaKit implements PredvajalnikZvoka {
       mk.MediaKit.ensureInitialized();
       _pripravljen = true;
     }
-    return _p ??= mk.Player();
+    return _p ??= mk.Player(configuration: const mk.PlayerConfiguration(pitch: true));
   }
 
   @override
@@ -145,13 +152,25 @@ class PredvajalnikMediaKit implements PredvajalnikZvoka {
   }
 
   @override
+  Future<void> transponiraj(int poltonov) => _pl.setPitch(math.pow(2, poltonov / 12).toDouble());
+
+  @override
   void zapri() => _p?.dispose();
 }
 
-/// Zvočni uvodi pesmi: ob odprtju pesmi (uho vklopljeno in »Predvajaj uvode na tej napravi«) se predvaja
-/// del posnetka od–do, s kratkim pojemanjem na koncu. Ustavi se ob zaprtju pesmi.
-class Uvodi extends ChangeNotifier {
-  static Uvodi aplikacija = Uvodi();
+/// Predvajanje zvoka pesmi, ločeno za uvode in playback (vsak ima svoj predvajalnik in izhod).
+/// Uvod: ob odprtju pesmi (uho vklopljeno in »Predvajaj uvode na tej napravi«) se predvaja del od–do
+/// s kratkim pojemanjem na koncu. Playback: z gumbom ▶/■ ali nožnim stikalom, s transpozicijo.
+/// Oba se ustavita ob zaprtju pesmi.
+class Predvajanje extends ChangeNotifier {
+  Predvajanje(this.vrsta);
+
+  static Predvajanje uvodi = Predvajanje(VrstaZvoka.uvod);
+  static Predvajanje playback = Predvajanje(VrstaZvoka.playback);
+
+  static Predvajanje za(VrstaZvoka v) => v == VrstaZvoka.playback ? playback : uvodi;
+
+  final VrstaZvoka vrsta;
 
   /// Pojemanje glasnosti pred koncem (ko konec ni konec posnetka).
   static const zatemni = Duration(milliseconds: 800);
@@ -161,32 +180,48 @@ class Uvodi extends ChangeNotifier {
   StreamSubscription<Duration>? _poz;
   StreamSubscription<void>? _kon;
 
-  /// Pesem, katere uvod igra (ali se pripravlja).
+  /// Pesem, katere zvok igra (ali se pripravlja).
   String? igra;
   int _zahteva = 0;
 
-  /// Ob odprtju pesmi.
+  /// Ob odprtju pesmi (samo uvod).
   Future<void> obOdprtju(Baza baza, Api? api, Pesem p) async {
     final n = Nastavitve.aplikacija;
-    if (!n.uvodi || !n.predvajajUvode || Config.prekoVodje || p.uvod.isEmpty) {
+    if (!n.uvodi || !n.predvajaj(vrsta) || Config.prekoVodje || p.zvok(vrsta).isEmpty) {
       await ustavi();
       return;
     }
     await predvajaj(baza, api, p);
   }
 
-  /// Predvaja uvod pesmi (tudi ročno, z nožnim stikalom).
+  /// Predvaja ali ustavi (gumb ▶/■, nožno stikalo).
+  Future<void> preklopi(Baza baza, Api? api, Pesem p) => igra == p.id ? ustavi() : predvajaj(baza, api, p);
+
+  /// Predvaja zvok pesmi (tudi ročno, z nožnim stikalom).
   Future<void> predvajaj(Baza baza, Api? api, Pesem p) async {
     final zahteva = ++_zahteva;
     await _ustaviTiho();
     igra = p.id;
     notifyListeners();
     try {
-      final bajti = await baza.zvokUvoda(api, p);
-      if (bajti == null || zahteva != _zahteva) return;
-      await predvajajBajte(bajti, p.uvodVrsta, od: p.uvodOd, doo: p.uvodDo, zahteva: zahteva);
+      final bajti = await baza.zvok(api, p, vrsta);
+      if (zahteva != _zahteva) return;
+      if (bajti == null) {
+        igra = null;
+        notifyListeners();
+        return;
+      }
+      final uvod = vrsta == VrstaZvoka.uvod;
+      await predvajajBajte(
+        bajti,
+        p.zvokVrsta(vrsta),
+        od: uvod ? p.uvodOd : 0,
+        doo: uvod ? p.uvodDo : null,
+        transpozicija: uvod ? 0 : p.playbackTranspozicija,
+        zahteva: zahteva,
+      );
     } catch (e) {
-      debugPrint('Uvod: $e');
+      debugPrint('${vrsta.ime}: $e');
       if (zahteva == _zahteva) {
         igra = null;
         notifyListeners();
@@ -194,15 +229,23 @@ class Uvodi extends ChangeNotifier {
     }
   }
 
-  /// Predvaja zvok od [od] do [doo] sekund (tudi za poslušanje pri obrezovanju).
-  Future<void> predvajajBajte(Uint8List bajti, String vrsta, {double od = 0, double? doo, int? zahteva}) async {
+  /// Predvaja zvok od [od] do [doo] sekund (tudi za poslušanje pri urejanju).
+  Future<void> predvajajBajte(
+    Uint8List bajti,
+    String mime, {
+    double od = 0,
+    double? doo,
+    int transpozicija = 0,
+    int? zahteva,
+  }) async {
     zahteva ??= ++_zahteva;
     final pl = _pl;
-    final izhod = Nastavitve.aplikacija.izhodZvoka;
-    await pl.odpri(bajti, vrsta);
+    final izhod = Nastavitve.aplikacija.izhod(vrsta);
+    await pl.odpri(bajti, mime);
     if (zahteva != _zahteva) return;
     if (izhod.isNotEmpty) await pl.nastaviIzhod(izhod);
     await pl.glasnost(1);
+    await pl.transponiraj(transpozicija);
     final konec = doo == null ? null : Duration(milliseconds: (doo * 1000).round());
     await _poz?.cancel();
     await _kon?.cancel();
@@ -236,7 +279,7 @@ class Uvodi extends ChangeNotifier {
     if (bilo) notifyListeners();
   }
 
-  /// Ob zaprtju pesmi ustavi le njen uvod (naslednja pesem ga že lahko predvaja).
+  /// Ob zaprtju pesmi ustavi le njen zvok (naslednja pesem ga že lahko predvaja).
   Future<void> obZaprtju(Pesem p) async {
     if (igra == p.id) await ustavi();
   }
@@ -244,8 +287,8 @@ class Uvodi extends ChangeNotifier {
   Future<List<IzhodZvoka>> izhodi() => _pl.izhodi();
 
   /// Trajanje zvoka (za obrezovanje).
-  Future<Duration?> trajanje(Uint8List bajti, String vrsta) async {
+  Future<Duration?> trajanje(Uint8List bajti, String mime) async {
     await ustavi();
-    return _pl.odpri(bajti, vrsta);
+    return _pl.odpri(bajti, mime);
   }
 }

@@ -536,7 +536,7 @@ Future<Oblacek?> _urediOblacek(BuildContext context, Oblacek zacetni) => showDia
   },
 );
 
-/// Zvočni uvodi in zvočni vhod in izhod naprave.
+/// Zvočni uvodi, playback ter zvočni vhod in izhoda naprave.
 class _ZvokNastavitve extends StatefulWidget {
   const _ZvokNastavitve({required this.baza, this.prijava});
 
@@ -551,7 +551,7 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
   List<IzhodZvoka>? _izhodi;
   List<VhodZvoka>? _vhodi;
   String? _vhod;
-  bool _prenasam = false;
+  final _prenasam = <VrstaZvoka>{};
 
   @override
   void initState() {
@@ -563,7 +563,7 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
     List<IzhodZvoka> izhodi = const [];
     List<VhodZvoka> vhodi = const [];
     try {
-      izhodi = await Uvodi.aplikacija.izhodi();
+      izhodi = await Predvajanje.uvodi.izhodi();
     } catch (_) {}
     try {
       vhodi = await SnemanjeSpila.aplikacija.vhodi();
@@ -577,24 +577,53 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
     });
   }
 
-  Future<void> _hrani(bool v) async {
+  Future<void> _hrani(VrstaZvoka v, bool da) async {
     final messenger = ScaffoldMessenger.of(context);
-    await Nastavitve.aplikacija.nastaviHraniUvode(v);
-    if (!v) {
-      await widget.baza.izbrisiLokalneUvode();
+    await Nastavitve.aplikacija.nastaviHrani(v, da);
+    if (!da) {
+      await widget.baza.izbrisiLokalneZvoke(v);
       return;
     }
     final prijava = widget.prijava;
     if (prijava == null || !prijava.prijavljen) return;
-    setState(() => _prenasam = true);
+    setState(() => _prenasam.add(v));
     try {
-      final neuspeli = await widget.baza.prenesiUvode(Api(prijava.zeton));
+      final neuspeli = await widget.baza.prenesiZvoke(Api(prijava.zeton), v);
       messenger.showSnackBar(
-        SnackBar(content: Text(neuspeli == 0 ? 'Uvodi so preneseni.' : 'Uvodov, ki niso bili preneseni: $neuspeli.')),
+        SnackBar(
+          content: Text(neuspeli == 0 ? '${v.ime}: vse preneseno.' : '${v.ime}: neuspešnih prenosov: $neuspeli.'),
+        ),
       );
     } finally {
-      if (mounted) setState(() => _prenasam = false);
+      if (mounted) setState(() => _prenasam.remove(v));
     }
+  }
+
+  Widget _izbiraIzhoda(VrstaZvoka v) {
+    final n = Nastavitve.aplikacija;
+    final izhodi = _izhodi;
+    return ListTile(
+      title: Text(v == VrstaZvoka.uvod ? 'Izhod za uvode' : 'Izhod za playback'),
+      subtitle: Text(v == VrstaZvoka.uvod ? 'Npr. slušalke' : 'Npr. ozvočenje (USB zvočna kartica)'),
+      trailing: izhodi == null
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : DropdownButton<String>(
+              key: ValueKey('izhod-${v.kaj}'),
+              value: izhodi.any((i) => i.id == n.izhod(v)) ? n.izhod(v) : '',
+              onChanged: (id) => setState(() => n.nastaviIzhod(v, id ?? '')),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Privzeti izhod sistema')),
+                for (final i in izhodi)
+                  DropdownMenuItem(
+                    value: i.id,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 220),
+                      child: Text(i.ime, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+              ],
+            ),
+    );
   }
 
   @override
@@ -604,52 +633,36 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
     final vhodi = _vhodi;
     return Column(
       children: [
-        const ListTile(title: Text('Zvok in uvodi'), subtitle: Text('Velja samo za to napravo.')),
-        SwitchListTile(
-          key: const ValueKey('predvajaj-uvode'),
-          title: const Text('Predvajaj uvode na tej napravi'),
-          subtitle: const Text('Zvočni uvod pesmi ob odprtju, ko je uho v orodni vrstici vklopljeno'),
-          value: n.predvajajUvode,
-          onChanged: (v) => setState(() => n.nastaviPredvajajUvode(v)),
-        ),
-        SwitchListTile(
-          key: const ValueKey('hrani-uvode'),
-          title: const Text('Hrani uvode lokalno'),
-          subtitle: Text(
-            _prenasam
-                ? 'Prenašam uvode …'
-                : 'Ob osvežitvi prenese vse uvode na napravo (deluje brez interneta); sicer se predvajajo s spleta',
-          ),
-          value: n.hraniUvode,
-          onChanged: _prenasam ? null : (v) => setState(() => _hrani(v)),
-        ),
-        if (!kIsWeb) ...[
-          if (izhodi == null || izhodi.isNotEmpty)
-            ListTile(
-              title: const Text('Zvočni izhod'),
-              subtitle: const Text('Za uvode (npr. USB zvočna kartica)'),
-              trailing: izhodi == null
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : DropdownButton<String>(
-                      key: const ValueKey('izhod-zvoka'),
-                      value: izhodi.any((i) => i.id == n.izhodZvoka) ? n.izhodZvoka : '',
-                      onChanged: (v) => setState(() => n.nastaviIzhodZvoka(v ?? '')),
-                      items: [
-                        const DropdownMenuItem(value: '', child: Text('Privzeti izhod sistema')),
-                        for (final i in izhodi)
-                          DropdownMenuItem(
-                            value: i.id,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 220),
-                              child: Text(i.ime, overflow: TextOverflow.ellipsis),
-                            ),
-                          ),
-                      ],
-                    ),
+        const ListTile(title: Text('Zvok, uvodi in playback'), subtitle: Text('Velja samo za to napravo.')),
+        for (final v in VrstaZvoka.values) ...[
+          SwitchListTile(
+            key: ValueKey('predvajaj-${v.kaj}'),
+            title: Text(v == VrstaZvoka.uvod ? 'Predvajaj uvode na tej napravi' : 'Predvajaj playback na tej napravi'),
+            subtitle: Text(
+              v == VrstaZvoka.uvod
+                  ? 'Zvočni uvod pesmi ob odprtju, ko je uho v orodni vrstici vklopljeno'
+                  : 'Gumb ▶/■ v orodni vrstici pri pesmih s playbackom (tudi nožno stikalo)',
             ),
+            value: n.predvajaj(v),
+            onChanged: (da) => setState(() => n.nastaviPredvajaj(v, da)),
+          ),
+          SwitchListTile(
+            key: ValueKey('hrani-${v.kaj}'),
+            title: Text(v == VrstaZvoka.uvod ? 'Hrani uvode lokalno' : 'Hrani playback lokalno'),
+            subtitle: Text(
+              _prenasam.contains(v)
+                  ? 'Prenašam …'
+                  : 'Ob osvežitvi prenese vse na napravo (deluje brez interneta); sicer se predvaja s spleta',
+            ),
+            value: n.hrani(v),
+            onChanged: _prenasam.contains(v) ? null : (da) => setState(() => _hrani(v, da)),
+          ),
+          if (!kIsWeb && (izhodi == null || izhodi.isNotEmpty)) _izbiraIzhoda(v),
+        ],
+        if (!kIsWeb)
           ListTile(
             title: const Text('Zvočni vhod'),
-            subtitle: const Text('Za snemanje uvodov in špila'),
+            subtitle: const Text('Za snemanje uvodov, playbacka in špila'),
             trailing: vhodi == null
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : DropdownButton<String>(
@@ -672,7 +685,6 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
                     ],
                   ),
           ),
-        ],
       ],
     );
   }

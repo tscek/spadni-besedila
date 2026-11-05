@@ -190,7 +190,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       if (!mounted) return;
       widget.spil?.prikazujem(widget.stanje ?? StanjeSpila(pesem: widget.pesem.id));
       Midi.aplikacija.odprta(_pesem, widget.baza.midi, uvod: Nastavitve.aplikacija.uvodi);
-      Uvodi.aplikacija.obOdprtju(widget.baza, _apiZaBranje, _pesem);
+      Predvajanje.uvodi.obOdprtju(widget.baza, _apiZaBranje, _pesem);
     });
     final minute = Nastavitve.aplikacija.minuteOdigrane;
     if (minute > 0) {
@@ -217,7 +217,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _pridrzanje?.cancel();
     _risanje.dispose();
     Midi.aplikacija.zaprta(_pesem);
-    Uvodi.aplikacija.obZaprtju(_pesem);
+    Predvajanje.uvodi.obZaprtju(_pesem);
+    Predvajanje.playback.obZaprtju(_pesem);
     _zabelezi();
     super.dispose();
   }
@@ -363,7 +364,13 @@ class _PesemZaslonState extends State<PesemZaslon> {
     if (d == DejanjeMidi.uvod) {
       if (_pesem.midiZaUvod.isNotEmpty) _uvod();
       if (_pesem.uvod.isNotEmpty && Nastavitve.aplikacija.predvajajUvode) {
-        Uvodi.aplikacija.predvajaj(widget.baza, _apiZaBranje, _pesem);
+        Predvajanje.uvodi.predvajaj(widget.baza, _apiZaBranje, _pesem);
+      }
+      return true;
+    }
+    if (d == DejanjeMidi.playback) {
+      if (_pesem.playback.isNotEmpty && Nastavitve.aplikacija.predvajajPlayback) {
+        Predvajanje.playback.preklopi(widget.baza, _apiZaBranje, _pesem);
       }
       return true;
     }
@@ -721,21 +728,46 @@ class _PesemZaslonState extends State<PesemZaslon> {
             XyPadGumb(knjiznica: widget.baza.midi),
           ],
           Orodje.uvodi when Midi.aplikacija.vklopljen || Nastavitve.aplikacija.predvajajUvode => [
-            IconButton(
-              key: const ValueKey('uvodi'),
-              tooltip: Nastavitve.aplikacija.uvodi
-                  ? 'Uvodi vklopljeni: MIDI in zvočni uvod ob odprtju pesmi'
-                  : 'Uvodi izklopljeni',
-              isSelected: Nastavitve.aplikacija.uvodi,
-              icon: const Icon(Icons.hearing_disabled),
-              selectedIcon: const Icon(Icons.hearing),
-              onPressed: () {
-                final v = !Nastavitve.aplikacija.uvodi;
-                Nastavitve.aplikacija.nastaviUvode(v);
-                if (!v) Uvodi.aplikacija.ustavi();
+            // Modro, dokler se uvod predvaja.
+            ListenableBuilder(
+              listenable: Predvajanje.uvodi,
+              builder: (context, _) {
+                final igra = Predvajanje.uvodi.igra == widget.pesem.id;
+                return IconButton(
+                  key: const ValueKey('uvodi'),
+                  tooltip: igra
+                      ? 'Uvod se predvaja'
+                      : Nastavitve.aplikacija.uvodi
+                      ? 'Uvodi vklopljeni: MIDI in zvočni uvod ob odprtju pesmi'
+                      : 'Uvodi izklopljeni',
+                  isSelected: Nastavitve.aplikacija.uvodi,
+                  icon: const Icon(Icons.hearing_disabled),
+                  selectedIcon: Icon(Icons.hearing, color: igra ? Colors.blue : null),
+                  onPressed: () {
+                    final v = !Nastavitve.aplikacija.uvodi;
+                    Nastavitve.aplikacija.nastaviUvode(v);
+                    if (!v) Predvajanje.uvodi.ustavi();
+                  },
+                );
               },
             ),
           ],
+          Orodje.playback
+              when _pesem.playback.isNotEmpty && Nastavitve.aplikacija.predvajajPlayback && !Config.prekoVodje =>
+            [
+              ListenableBuilder(
+                listenable: Predvajanje.playback,
+                builder: (context, _) {
+                  final igra = Predvajanje.playback.igra == widget.pesem.id;
+                  return IconButton(
+                    key: const ValueKey('playback'),
+                    tooltip: igra ? 'Ustavi playback' : 'Predvajaj playback',
+                    icon: Icon(igra ? Icons.stop_circle : Icons.play_circle, color: igra ? Colors.blue : null),
+                    onPressed: () => Predvajanje.playback.preklopi(widget.baza, _apiZaBranje, _pesem),
+                  );
+                },
+              ),
+            ],
           _ => const <Widget>[],
         },
     ];

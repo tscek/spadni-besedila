@@ -112,22 +112,32 @@ class Api {
   Future<Uint8List> posnetek(String id) async =>
       base64Decode((await _get({'akcija': 'posnetek', 'id': id}))['base64'] as String);
 
-  /// Shrani zvočni uvod pesmi (na Drive v mapo Uvodi; stari gre v koš); brez [bajti] uvod izbriše. Vrne {vrstica}.
-  Future<Map<String, dynamic>> shraniUvod(
+  /// Shrani zvočni uvod ali playback pesmi ([kaj] 'uvod' ali 'playback'; na Drive, stari gre v koš);
+  /// brez [bajti] ga izbriše. Vrne {vrstica}.
+  Future<Map<String, dynamic>> shraniZvok(
+    String kaj,
     String pesem,
     Uint8List? bajti, {
     String vrsta = '',
     double od = 0,
     double? doo,
+    bool posnet = false,
   }) => _post({
     'akcija': 'uvod',
+    'kaj': kaj,
     'pesem': pesem,
-    if (bajti != null) ...{'vrsta': vrsta, 'base64': base64Encode(bajti), 'od': od, 'do': ?doo},
+    if (bajti != null) ...{'vrsta': vrsta, 'base64': base64Encode(bajti), 'od': od, 'do': ?doo, 'posnet': posnet},
   });
 
-  /// Zvok uvoda pesmi.
-  Future<Uint8List> uvod(String pesem) async =>
-      base64Decode((await _get({'akcija': 'uvod', 'pesem': pesem}))['base64'] as String);
+  /// Zvok uvoda ali playbacka pesmi.
+  Future<Uint8List> zvok(String kaj, String pesem) async =>
+      base64Decode((await _get({'akcija': 'uvod', 'kaj': kaj, 'pesem': pesem}))['base64'] as String);
+
+  /// GitHub odstrani vokal iz playbacka (nekaj minut). Vrne {vrstica} s stanjem »čaka«.
+  Future<Map<String, dynamic>> odstraniVokal(String pesem) => _post({'akcija': 'odstraniVokal', 'pesem': pesem});
+
+  /// Playback z vokalom nazaj. Vrne {vrstica}.
+  Future<Map<String, dynamic>> vrniIzvirnik(String pesem) => _post({'akcija': 'vrniIzvirnik', 'pesem': pesem});
 
   /// Nastopi iz Nastopov okrog datuma (±1 dan): {nastopi: [{ID, Datum, Kraj, Dogodek, Zasedba, ZasedbaIme, Od}]}.
   Future<Map<String, dynamic>> nastopi(DateTime datum) => _get({

@@ -614,9 +614,13 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
       children: [
         for (final (stolpec, vnos) in _polja) _polje(context, stolpec, vnos),
         if (widget.pesem != null)
-          UrejanjeUvoda(baza: widget.baza, api: widget.api, pesem: widget.pesem!.id)
+          for (final v in VrstaZvoka.values)
+            UrejanjeZvoka(baza: widget.baza, api: widget.api, pesem: widget.pesem!.id, vrsta: v)
         else
-          const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Zvočni uvod dodaš, ko pesem shraniš.')),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('Zvočni uvod in playback dodaš, ko pesem shraniš.'),
+          ),
         if (widget.pesem != null && widget.pesem!.koda.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),

@@ -100,9 +100,13 @@ class Pesem {
   /// Celotna vrstica iz lista Pesmi, za urejanje stolpcev, ki jih prikaz ne potrebuje.
   final Zapis vrstica;
 
-  /// Zvočni uvod: Drive ID datoteke (prazno = brez uvoda), MIME vrsta ter začetek in konec predvajanja v sekundah.
-  String get uvod => besedilo(vrstica['Uvod']);
-  String get uvodVrsta => besedilo(vrstica['Uvod vrsta']);
+  /// Zvočni posnetek pesmi (uvod ali playback): Drive ID datoteke (prazno = ga ni) in MIME vrsta.
+  String zvok(VrstaZvoka v) => besedilo(vrstica[v.stolpec]);
+  String zvokVrsta(VrstaZvoka v) => besedilo(vrstica['${v.stolpec} vrsta']);
+
+  /// Zvočni uvod: Drive ID, MIME vrsta ter začetek in konec predvajanja v sekundah.
+  String get uvod => zvok(VrstaZvoka.uvod);
+  String get uvodVrsta => zvokVrsta(VrstaZvoka.uvod);
   double get uvodOd => double.tryParse(besedilo(vrstica['Uvod od']).replaceAll(',', '.')) ?? 0;
 
   /// Konec uvoda; null = do konca posnetka.
@@ -110,6 +114,21 @@ class Pesem {
     final d = double.tryParse(besedilo(vrstica['Uvod do']).replaceAll(',', '.'));
     return d == null || d <= 0 ? null : d;
   }
+
+  /// Playback (spremljava za ozvočenje).
+  String get playback => zvok(VrstaZvoka.playback);
+
+  /// posnet, naložen ali brez vokala.
+  String get playbackVir => besedilo(vrstica['Playback vir']);
+
+  /// Drive ID izvirnika (z vokalom), ko je vokal odstranjen.
+  String get playbackIzvirnik => besedilo(vrstica['Playback izvirnik']);
+
+  /// Prazno, »čaka« (odstranjevanje vokala teče) ali »napaka: …«.
+  String get playbackStanje => besedilo(vrstica['Playback stanje']);
+
+  /// Transpozicija playbacka v poltonih (−6 do +6).
+  int get playbackTranspozicija => (int.tryParse(besedilo(vrstica['Playback transpozicija'])) ?? 0).clamp(-6, 6);
 
   int get kodaStevilka => int.tryParse(koda) ?? 1 << 30;
 
@@ -119,6 +138,23 @@ class Pesem {
     if (q.isEmpty) return true;
     return poenostavi(naslov).contains(q) || poenostavi(izvajalec).contains(q);
   }
+}
+
+/// Zvočni posnetek pri pesmi: uvod (v slušalke) ali playback (v ozvočenje).
+enum VrstaZvoka {
+  uvod('Uvod', 'uvodi', 'Uvod'),
+  playback('Playback', 'playback', 'Playback');
+
+  const VrstaZvoka(this.stolpec, this.kljuc, this.ime);
+
+  /// Stolpec v Pesmi (in predpona stolpcev »… vrsta« itd.).
+  final String stolpec;
+
+  /// Predpona ključev v shrambi naprave in vrednost »kaj« za skripto.
+  final String kljuc;
+  final String ime;
+
+  String get kaj => this == playback ? 'playback' : 'uvod';
 }
 
 enum StatusPesmi {
