@@ -260,6 +260,9 @@ class Efekti extends ChangeNotifier {
   /// Bajti efekta iz knjižnice (nastavi main: lokalno ali s spleta).
   Future<({Uint8List bajti, String vrsta})?> Function(String efekt)? bajti;
 
+  /// Knjižnica efektov (nastavi main iz baze).
+  List<Efekt> Function() knjiznica = () => const [];
+
   /// Trenutna postavitev (nastavi main iz baze).
   PostavitevFx Function() postavitev = () => const PostavitevFx();
 
@@ -273,6 +276,9 @@ class Efekti extends ChangeNotifier {
   final _nalozeno = <String, String>{};
   final _trajanja = <String, Duration>{};
   final _igra = <String, List<_Igra>>{};
+
+  /// Gumbi na besedilih (njihovi predvajalniki ostanejo ob spremembi postavitve).
+  final _zunanji = <String>{};
 
   /// Glasnost vseh efektov (drsnik ob strani panela).
   double glasnost = 1;
@@ -316,7 +322,7 @@ class Efekti extends ChangeNotifier {
       }
     }
     // Gumbi, ki jih ni več.
-    for (final id in _predvajalniki.keys.where((id) => p.gumb(id) == null).toList()) {
+    for (final id in _predvajalniki.keys.where((id) => p.gumb(id) == null && !_zunanji.contains(id)).toList()) {
       await _ustaviGumb(id, takoj: true);
       _predvajalniki.remove(id)?.zapri();
       _nalozeno.remove(id);
@@ -325,8 +331,10 @@ class Efekti extends ChangeNotifier {
   }
 
   /// Pritisk (dol = true) ali spust gumba.
-  Future<void> dogodek(String id, {required bool dol}) async {
-    final g = postavitev().gumb(id);
+  /// [gumb] pride z gumbom na besedilu (ni v skupni postavitvi).
+  Future<void> dogodek(String id, {required bool dol, GumbFx? gumb}) async {
+    final g = gumb ?? postavitev().gumb(id);
+    if (gumb != null) _zunanji.add(id);
     if (g == null) return;
     if (!dol) {
       if (g.nacin == NacinFx.medPritiskom) await _ustaviGumb(id);
@@ -358,11 +366,11 @@ class Efekti extends ChangeNotifier {
   }
 
   /// Nožno stikalo ali klik brez spusta: pri »med pritiskom« preklopi.
-  Future<void> klik(String id) async {
-    final g = postavitev().gumb(id);
+  Future<void> klik(String id, {GumbFx? gumb}) async {
+    final g = gumb ?? postavitev().gumb(id);
     if (g == null) return;
-    if (g.nacin == NacinFx.medPritiskom && _aktiven(id)) return dogodek(id, dol: false);
-    return dogodek(id, dol: true);
+    if (g.nacin == NacinFx.medPritiskom && _aktiven(id)) return dogodek(id, dol: false, gumb: gumb);
+    return dogodek(id, dol: true, gumb: gumb);
   }
 
   double _jakost(_Igra i) => (i.gumb.glasnost * glasnost * i.faktor).clamp(0.0, 1.0);

@@ -13,9 +13,12 @@ import 'package:spadni_besedila/efekti.dart';
 import 'package:spadni_besedila/midi/ukazi.dart';
 import 'package:spadni_besedila/midi/xy.dart';
 import 'package:spadni_besedila/nastavitve.dart';
+import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
+import 'package:spadni_besedila/spil/streznik_io.dart' show dovoljenoNeprijavljenemu;
 import 'package:spadni_besedila/uvodi.dart';
 import 'package:spadni_besedila/zasloni/fx_panel.dart';
+import 'package:spadni_besedila/zasloni/pdf_risanje.dart' show GumbVOpombah;
 import 'package:spadni_besedila/zvok_spila.dart';
 
 final _zvok = Uint8List.fromList([9, 8, 7]);
@@ -215,6 +218,7 @@ void main() {
     final (baza, poslano, api) = await t.runAsync(_baza) as (Baza, List<Map<String, dynamic>>, Api);
     Efekti.aplikacija
       ..postavitev = (() => baza.fx)
+      ..knjiznica = (() => baza.efekti)
       ..bajti = ((id) => baza.bajtiEfekta(api, id));
     FxPrikaz.odprt.value = true;
     FxPrikaz.urejam.value = false;
@@ -270,9 +274,78 @@ void main() {
     expect(fx.na(0, 5, null)!.ime, 'Bobni');
     expect(baza.fx.gumbi, hasLength(6));
     expect(find.text('Bobni'), findsOneWidget);
-    FxPrikaz.odprt.value = false;
+    // Tap na besedilo (mimo oken) zapre FX in XY.
+    await t.tap(find.byKey(const ValueKey('fx-uredi')));
+    await t.pump();
     FxPrikaz.xy.value = false;
+    await t.pump();
+    await t.tapAt(const Offset(400, 120));
+    await t.pump();
+    expect(FxPrikaz.odprt.value, isFalse);
+    expect(find.byKey(const ValueKey('fx-panel')), findsNothing);
+    // XY pad (zgornja polovica) se zapre ob tapu spodaj.
+    FxPrikaz.xy.value = true;
+    await t.pump();
+    await t.tapAt(const Offset(400, 800));
+    await t.pump();
+    expect(FxPrikaz.xy.value, isFalse);
     FxPrikaz.urejam.value = false;
+  });
+
+  testWidgets('gumb na besedilu z zvokom: zapis, pritisk predvaja efekt, gumb utripa', (t) async {
+    final (baza, _, api) = await t.runAsync(_baza) as (Baza, List<Map<String, dynamic>>, Api);
+    Efekti.aplikacija
+      ..postavitev = (() => baza.fx)
+      ..knjiznica = (() => baza.efekti)
+      ..bajti = ((id) => baza.bajtiEfekta(api, id));
+    final gumb = GumbNaStrani.izJson(
+      GumbNaStrani(
+        napis: 'Strel',
+        midi: '',
+        barva: 0xFFE53935,
+        zvok: const GumbFx(id: 'strel', efekt: 'e1', fadeOut: 0),
+      ).vJson(),
+    );
+    expect(gumb.zvok!.efekt, 'e1');
+    expect(gumb.prikaz.zvok!.id, 'strel');
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: GumbVOpombah(gumb: gumb, velikost: 20, knjiznica: baza.midi),
+          ),
+        ),
+      ),
+    );
+    await t.runAsync(() async {
+      await t.tap(find.text('Strel'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await t.pump();
+    expect(Efekti.aplikacija.igra('strel'), isTrue);
+    expect(find.byKey(const ValueKey('zvok-igra-strel')), findsOneWidget);
+    // Nove postavitve FX ga ne pobrišejo.
+    await t.runAsync(Efekti.aplikacija.pripravi);
+    expect(Efekti.aplikacija.igra('strel'), isTrue);
+    await t.runAsync(() async {
+      await Efekti.aplikacija.ustaviVse();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await t.pump();
+    expect(find.byKey(const ValueKey('zvok-igra-strel')), findsNothing);
+  });
+
+  test('obračanje za vse: nastavitev administratorja, iPad sme le z dovoljenjem', () async {
+    final (baza, poslano, api) = await _baza();
+    expect(baza.obracanje, (vsi: false, neprijavljeni: false));
+    expect(baza.obracaZaVse, isFalse);
+    await baza.shraniObracanje(api, vsi: true, neprijavljeni: false);
+    expect(jsonDecode(poslano.last['vsebina'] as String), {'vsi': true, 'neprijavljeni': false});
+    expect(baza.obracaZaVse, isTrue);
+    final prikazi = {'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': <String, dynamic>{}};
+    expect(dovoljenoNeprijavljenemu(prikazi, obracajo: baza.obracanje.neprijavljeni), isFalse);
+    await baza.shraniObracanje(api, vsi: true, neprijavljeni: true);
+    expect(dovoljenoNeprijavljenemu(prikazi, obracajo: baza.obracanje.neprijavljeni), isTrue);
   });
 }
 
@@ -317,6 +390,7 @@ Future<(Baza, List<Map<String, dynamic>>, Api)> _baza() async {
       }
       final telo = jsonDecode(r.body) as Map<String, dynamic>;
       poslano.add(telo);
+      if (telo['akcija'] == 'spil') return http.Response(jsonEncode({'spil': telo['vsebina']}), 200);
       if (telo['akcija'] == 'fx') {
         fx = telo['vsebina'] as String;
         return http.Response.bytes(utf8.encode(jsonEncode({'fx': fx})), 200);

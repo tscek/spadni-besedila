@@ -621,6 +621,26 @@ class Baza extends ChangeNotifier {
 
   bool get jeAdministrator => vloge.any((v) => v.vloga == 'Administrator');
 
+  /// Nastavitve špila (administrator): ali vsak obrne pesem za vse, tudi neprijavljene naprave.
+  ({bool vsi, bool neprijavljeni}) get obracanje {
+    try {
+      final j = jsonDecode(besedilo(_podatki['spil']));
+      if (j is Map) return (vsi: j['vsi'] == true, neprijavljeni: j['vsi'] == true && j['neprijavljeni'] == true);
+    } catch (_) {}
+    return (vsi: false, neprijavljeni: false);
+  }
+
+  /// Ali sme ta naprava (sledilec) obrniti pesem za vse.
+  bool get obracaZaVse => Config.samoKlicaji ? obracanje.neprijavljeni : obracanje.vsi;
+
+  Future<void> shraniObracanje(Api api, {required bool vsi, required bool neprijavljeni}) async {
+    final vsebina = jsonEncode({'vsi': vsi, 'neprijavljeni': neprijavljeni});
+    await api.shraniSpil(vsebina);
+    _podatki['spil'] = vsebina;
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    notifyListeners();
+  }
+
   /// Skupna postavitev FX panela in XY pada.
   PostavitevFx get fx {
     final b = besedilo(_podatki['fx']);

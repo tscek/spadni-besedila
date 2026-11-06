@@ -10,9 +10,12 @@ import '../midi/midi.dart';
 import '../midi/ukazi.dart';
 import '../models.dart' show KlicajPesmi;
 import '../nastavitve.dart' show Nastavitve;
+import '../efekti.dart';
 import '../risbe.dart';
+import '../zvok_spila.dart';
 import '../tipkovnica.dart' show Listanje;
 import 'drsnik.dart';
+import 'fx_panel.dart' show UrejanjeGumbaFx, UrejenGumbFx;
 import 'midi_zaslon.dart';
 import 'oznake.dart';
 
@@ -318,7 +321,8 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
         for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[]) {
           final p = g.prikaz;
           if (p.nozno == n && !p.oblika.jeDrsnik) {
-            Midi.aplikacija.poslji(knjiznica.razsiri(p.midi), knjiznica: knjiznica);
+            if (p.midi.isNotEmpty) Midi.aplikacija.poslji(knjiznica.razsiri(p.midi), knjiznica: knjiznica);
+            if (p.zvok case final z?) ZvokSpila.aplikacija.fxKlik(z.id, nastavitve: z);
             return true;
           }
         }
@@ -960,6 +964,16 @@ class GumbVOpombah extends StatelessWidget {
       child: InkWell(
         customBorder: oblika,
         onTap: () => _pritisni(context),
+        // Zvok »med pritiskom« igra, dokler držiš.
+        onTapDown: gumb.zvok?.nacin == NacinFx.medPritiskom
+            ? (_) => ZvokSpila.aplikacija.fx(gumb.zvok!.id, dol: true, nastavitve: gumb.zvok)
+            : null,
+        onTapUp: gumb.zvok?.nacin == NacinFx.medPritiskom
+            ? (_) => ZvokSpila.aplikacija.fx(gumb.zvok!.id, dol: false, nastavitve: gumb.zvok)
+            : null,
+        onTapCancel: gumb.zvok?.nacin == NacinFx.medPritiskom
+            ? () => ZvokSpila.aplikacija.fx(gumb.zvok!.id, dol: false, nastavitve: gumb.zvok)
+            : null,
         child: gumb.oblika == OblikaGumba.krog
             ? SizedBox.square(
                 dimension: velikost * 3.2,
@@ -971,13 +985,14 @@ class GumbVOpombah extends StatelessWidget {
               ),
       ),
     );
-    if (gumb.nozno == 0) return material;
+    final zZvokom = gumb.zvok == null ? material : ZvokGumba(id: gumb.zvok!.id, barva: barva, child: material);
+    if (gumb.nozno == 0) return zZvokom;
     // Številka gumba nožnega stikala v kotu.
     final pika = (velikost * 1.1).clamp(14.0, 40.0);
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        material,
+        zZvokom,
         Positioned(
           right: -pika * 0.35,
           top: -pika * 0.35,
@@ -1004,6 +1019,11 @@ class GumbVOpombah extends StatelessWidget {
   }
 
   void _pritisni(BuildContext context) {
+    final z = gumb.zvok;
+    if (z != null && z.nacin != NacinFx.medPritiskom) {
+      ZvokSpila.aplikacija.fx(z.id, dol: true, nastavitve: z);
+    }
+    if (z != null && gumb.midi.trim().isEmpty) return;
     final midi = Midi.aplikacija;
     if (!midi.vklopljen) {
       ScaffoldMessenger.of(context)
@@ -1137,6 +1157,7 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
   var oblika = zacetni?.oblika ?? OblikaGumba.zaobljen;
   var velikost = obstojeci?.velikost ?? 1.0;
   var nozno = obstojeci?.nozno ?? 0;
+  var zvok = zacetni?.zvok;
   var shrani = false;
   String? izShranjenih;
   final nacin = await showDialog<_Shranjevanje?>(
@@ -1185,6 +1206,38 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
                 knjiznica: knjiznica,
                 pomoc: 'Npr. PC 1 5 ali ime ukaza oziroma makra; več jih loči s ;',
               ),
+              if (!oblika.jeDrsnik)
+                ListTile(
+                  key: const ValueKey('gumb-zvok'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.graphic_eq),
+                  title: Text(switch (zvok) {
+                    null => 'Zvočni efekt: brez',
+                    final z =>
+                      'Zvočni efekt: ${Efekti.aplikacija.knjiznica().where((e) => e.id == z.efekt).firstOrNull?.ime ?? '?'}',
+                  }),
+                  subtitle: const Text('Iz knjižnice efektov; predvaja ga naprava z efekti (PC).'),
+                  trailing: zvok == null
+                      ? const Icon(Icons.chevron_right)
+                      : IconButton(
+                          tooltip: 'Brez zvoka',
+                          icon: const Icon(Icons.close),
+                          onPressed: () => nastavi(() => zvok = null),
+                        ),
+                  onTap: () async {
+                    final r = await showDialog<UrejenGumbFx>(
+                      context: context,
+                      builder: (_) => UrejanjeGumbaFx(
+                        midi: knjiznica,
+                        gumb: zvok ?? GumbFx(id: UrejanjeGumbaFx.novId(), fadeOut: 300),
+                        nov: zvok == null,
+                        samoZvok: true,
+                      ),
+                    );
+                    if (r == null || r.izbrisi) return;
+                    nastavi(() => zvok = r.gumb.imaZvok ? r.gumb : null);
+                  },
+                ),
               Wrap(
                 spacing: 6,
                 children: [
@@ -1276,6 +1329,7 @@ Future<({GumbNaStrani? gumb})?> urediGumb(
     oblika: oblika,
     velikost: velikost,
     nozno: nozno,
+    zvok: oblika.jeDrsnik ? null : zvok,
     predloga: nacin == _Shranjevanje.povsod ? obstojeci!.predloga : '',
   );
   napis.dispose();
@@ -1537,4 +1591,107 @@ class _RisbaSlikar extends CustomPainter {
 
   @override
   bool shouldRepaint(_RisbaSlikar old) => true;
+}
+
+/// Gumb na besedilu z zvokom: med igranjem utripa (obroba) in kaže črto do konca.
+class ZvokGumba extends StatefulWidget {
+  const ZvokGumba({super.key, required this.id, required this.barva, required this.child});
+
+  final String id;
+  final Color barva;
+  final Widget child;
+
+  @override
+  State<ZvokGumba> createState() => _ZvokGumbaState();
+}
+
+class _ZvokGumbaState extends State<ZvokGumba> with SingleTickerProviderStateMixin {
+  late final _utrip = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+  Timer? _osvezi;
+
+  @override
+  void initState() {
+    super.initState();
+    ZvokSpila.aplikacija.addListener(_obStanju);
+    Efekti.aplikacija.addListener(_obStanju);
+    _obStanju();
+  }
+
+  @override
+  void dispose() {
+    _osvezi?.cancel();
+    ZvokSpila.aplikacija.removeListener(_obStanju);
+    Efekti.aplikacija.removeListener(_obStanju);
+    _utrip.dispose();
+    super.dispose();
+  }
+
+  void _obStanju() {
+    if (!mounted) return;
+    final igra = ZvokSpila.aplikacija.stanjeFx(widget.id) != null;
+    if (igra) {
+      _osvezi ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
+        if (!mounted) return;
+        if (ZvokSpila.aplikacija.stanjeFx(widget.id) == null) _obStanju();
+        setState(() {});
+      });
+      if (!_utrip.isAnimating) _utrip.repeat(reverse: true);
+    } else {
+      _osvezi?.cancel();
+      _osvezi = null;
+      _utrip
+        ..stop()
+        ..value = 0;
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ZvokSpila.aplikacija.stanjeFx(widget.id);
+    if (s == null) return widget.child;
+    final napredek = s.trajanje <= Duration.zero
+        ? null
+        : (s.pozicija.inMilliseconds / s.trajanje.inMilliseconds).clamp(0.0, 1.0);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedBuilder(
+          animation: _utrip,
+          builder: (context, child) => DecoratedBox(
+            key: ValueKey('zvok-igra-${widget.id}'),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.barva.withValues(alpha: 0.9),
+                  blurRadius: 6 + 10 * _utrip.value,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: child,
+          ),
+          child: widget.child,
+        ),
+        if (napredek != null)
+          Positioned(
+            left: 4,
+            right: 4,
+            bottom: 2,
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: napredek,
+                  minHeight: 3,
+                  color: Colors.white,
+                  backgroundColor: Colors.black26,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }

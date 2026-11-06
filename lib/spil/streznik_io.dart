@@ -141,7 +141,10 @@ class StreznikIo implements StreznikVodje {
         (m) {
           try {
             final j = jsonDecode(m as String);
-            if (j is Map<String, dynamic> && (!brskalnik || dovoljenoNeprijavljenemu(j))) _obSporocilu?.call(j);
+            if (j is! Map<String, dynamic>) return;
+            if (!brskalnik || dovoljenoNeprijavljenemu(j, obracajo: baza.obracanje.neprijavljeni)) {
+              _obSporocilu?.call(j);
+            }
           } catch (_) {}
         },
         onDone: () {
@@ -328,9 +331,11 @@ Future<String?> lokalniNaslov() async {
 
 /// Kar sme neprijavljen sledilec (brskalnik prek vodje) poslati po WebSocketu:
 /// predlog pesmi (na konec čakalne vrste) in klicaj.
-bool dovoljenoNeprijavljenemu(Map<String, dynamic> j) =>
+/// [obracajo]: administrator je dovolil, da neprijavljene naprave (iPadi) obračajo pesmi za vse.
+bool dovoljenoNeprijavljenemu(Map<String, dynamic> j, {bool obracajo = false}) =>
     j['vrsta'] == 'ukaz' &&
     ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) ||
+        (j['ukaz'] == 'prikazi' && obracajo) ||
         j['ukaz'] == 'klicaj' ||
         j['ukaz'] == 'zvok' ||
         (j['ukaz'] == 'odigrane' && j['akcija'] != 'ponastavi'));

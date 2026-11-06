@@ -196,7 +196,8 @@ class Spil extends ChangeNotifier {
   String? nazaj() {
     if (_zgodovina.length < 2) return null;
     final zdaj = _zgodovina.removeLast();
-    dodajNaslednjo(Naslednja(pesem: zdaj), naPrvo: true);
+    // Neprijavljen sledilec ne sme na prvo mesto vrste.
+    if (!Config.samoKlicaji) dodajNaslednjo(Naslednja(pesem: zdaj), naPrvo: true);
     return _zgodovina.last;
   }
 
@@ -216,7 +217,7 @@ class Spil extends ChangeNotifier {
 
   /// Sledilec s pravico: vsem (tudi vodji) pokaže to pesem.
   void zamenjajVsem(StanjeSpila s) {
-    if (Config.samoKlicaji) return;
+    if (Config.samoKlicaji && !(baza?.obracanje.neprijavljeni ?? false)) return;
     if (vloga == VlogaSpila.sledilec) {
       _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.vJson()});
     } else {

@@ -8,6 +8,7 @@ import '../baza.dart';
 import '../efekti.dart';
 import '../uvodi.dart';
 import '../zvok_spila.dart';
+import '../midi/ukazi.dart';
 import 'midi_zaslon.dart' show PoljeMidi;
 import 'urejanje_uvoda.dart' show casUvoda;
 import 'xy_pad.dart';
@@ -73,7 +74,19 @@ class FxOkvir extends StatelessWidget {
         final polovica = meje.maxHeight / 2;
         return Stack(
           children: [
-            Positioned.fill(child: child),
+            // Kratek tap na besedilo (mimo oken) zapre FX in XY; vlečenje (pomikanje) ne.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: FxPrikaz.odprt.value || FxPrikaz.xy.value
+                    ? () {
+                        FxPrikaz.odprt.value = false;
+                        FxPrikaz.xy.value = false;
+                      }
+                    : null,
+                child: child,
+              ),
+            ),
             if (FxPrikaz.xy.value)
               Positioned(
                 top: 0,
@@ -192,12 +205,11 @@ class _FxPanelState extends State<FxPanel> {
   }
 
   Future<void> _uredi(GumbFx? g, int stran, int mesto) async {
-    final rezultat = await showDialog<_Urejeno>(
+    final rezultat = await showDialog<UrejenGumbFx>(
       context: context,
       builder: (_) => UrejanjeGumbaFx(
-        baza: widget.baza,
-        api: widget.api,
-        gumb: g ?? GumbFx(id: _novId(), stran: stran, mesto: mesto),
+        midi: widget.baza.midi,
+        gumb: g ?? GumbFx(id: UrejanjeGumbaFx.novId(), stran: stran, mesto: mesto),
         nov: g == null,
         pesem: widget.pesem,
       ),
@@ -206,8 +218,6 @@ class _FxPanelState extends State<FxPanel> {
     final fx = widget.baza.fx;
     await _shrani(rezultat.izbrisi ? fx.brezGumba(rezultat.gumb.id) : fx.zGumbom(rezultat.gumb));
   }
-
-  static String _novId() => DateTime.now().microsecondsSinceEpoch.toRadixString(36);
 
   @override
   Widget build(BuildContext context) {
@@ -505,7 +515,7 @@ class _TipkaFxState extends State<TipkaFx> with SingleTickerProviderStateMixin {
 }
 
 /// Rezultat urejanja gumba.
-typedef _Urejeno = ({GumbFx gumb, bool izbrisi});
+typedef UrejenGumbFx = ({GumbFx gumb, bool izbrisi});
 
 /// Barve za gumbe.
 const barveFx = [
@@ -525,18 +535,23 @@ const barveFx = [
 class UrejanjeGumbaFx extends StatefulWidget {
   const UrejanjeGumbaFx({
     super.key,
-    required this.baza,
-    required this.api,
+    required this.midi,
     required this.gumb,
     this.nov = false,
     this.pesem,
+    this.samoZvok = false,
   });
 
-  final Baza baza;
-  final Api? Function() api;
+  final KnjiznicaMidi midi;
   final GumbFx gumb;
   final bool nov;
   final String? pesem;
+
+  /// Gumb na besedilu: samo zvok (ime, MIDI in barvo ima gumb sam).
+  final bool samoZvok;
+
+  /// Novo ID gumba.
+  static String novId() => DateTime.now().microsecondsSinceEpoch.toRadixString(36);
 
   @override
   State<UrejanjeGumbaFx> createState() => _UrejanjeGumbaFxState();
@@ -579,7 +594,7 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
       _trajanje = null;
     });
     try {
-      final b = await widget.baza.bajtiEfekta(widget.api(), _g.efekt);
+      final b = await Efekti.aplikacija.bajti?.call(_g.efekt);
       if (b == null) throw StateError('ni na voljo brez interneta');
       final p = _poslusanje ??= PredvajalnikZvoka.tovarna();
       final d = await p.odpri(b.bajti, b.vrsta);
@@ -607,12 +622,13 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
 
   @override
   Widget build(BuildContext context) {
-    final efekti = widget.baza.efekti;
+    final efekti = Efekti.aplikacija.knjiznica();
+    final samoZvok = widget.samoZvok;
     final t = _trajanje;
     final od = _g.od;
     final doo = _g.doo ?? t ?? 0;
     return AlertDialog(
-      title: Text(widget.nov ? 'Nov gumb FX' : 'Gumb FX'),
+      title: Text(samoZvok ? 'Zvočni efekt gumba' : (widget.nov ? 'Nov gumb FX' : 'Gumb FX')),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -620,36 +636,38 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                key: const ValueKey('fx-ime'),
-                controller: _ime,
-                autofocus: widget.nov,
-                decoration: const InputDecoration(labelText: 'Ime gumba'),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final b in barveFx)
-                    InkWell(
-                      onTap: () => _spremeni((j) => _z({...j, 'barva': b})),
-                      child: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Color(b),
-                        child: b == _g.barva ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+              if (!samoZvok) ...[
+                TextField(
+                  key: const ValueKey('fx-ime'),
+                  controller: _ime,
+                  autofocus: widget.nov,
+                  decoration: const InputDecoration(labelText: 'Ime gumba'),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final b in barveFx)
+                      InkWell(
+                        onTap: () => _spremeni((j) => _z({...j, 'barva': b})),
+                        child: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: Color(b),
+                          child: b == _g.barva ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+                        ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
               DropdownButtonFormField<String>(
                 key: const ValueKey('fx-efekt'),
                 initialValue: efekti.any((e) => e.id == _g.efekt) ? _g.efekt : '',
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Zvočni efekt'),
                 items: [
-                  const DropdownMenuItem(value: '', child: Text('Brez zvoka (samo MIDI ali XY)')),
+                  DropdownMenuItem(value: '', child: Text(samoZvok ? 'Brez zvoka' : 'Brez zvoka (samo MIDI ali XY)')),
                   for (final e in efekti) DropdownMenuItem(value: e.id, child: Text(e.ime)),
                 ],
                 onChanged: (v) {
@@ -752,21 +770,24 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
                   ),
                 ],
               ],
-              const SizedBox(height: 12),
-              PoljeMidi(
-                oznaka: 'MIDI ukazi ali makri ob pritisku',
-                vnos: _ukazi,
-                knjiznica: widget.baza.midi,
-                pomoc: 'Pošlje jih naprava z efekti (PC), če ima vklopljen MIDI.',
-              ),
-              SwitchListTile(
-                key: const ValueKey('fx-odpre-xy'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Odpre XY pad (zgornja polovica)'),
-                value: _g.xy,
-                onChanged: (v) => _spremeni((j) => _z({...j, 'xy': v})),
-              ),
-              if (widget.pesem != null)
+              if (!samoZvok) ...[
+                const SizedBox(height: 12),
+                PoljeMidi(
+                  oznaka: 'MIDI ukazi ali makri ob pritisku',
+                  vnos: _ukazi,
+                  knjiznica: widget.midi,
+                  pomoc: 'Pošlje jih naprava z efekti (PC), če ima vklopljen MIDI.',
+                ),
+              ],
+              if (!samoZvok)
+                SwitchListTile(
+                  key: const ValueKey('fx-odpre-xy'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Odpre XY pad (zgornja polovica)'),
+                  value: _g.xy,
+                  onChanged: (v) => _spremeni((j) => _z({...j, 'xy': v})),
+                ),
+              if (widget.pesem != null && !samoZvok)
                 SwitchListTile(
                   key: const ValueKey('fx-samo-pesem'),
                   contentPadding: EdgeInsets.zero,
@@ -789,10 +810,10 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
         ),
       ),
       actions: [
-        if (!widget.nov)
+        if (!widget.nov && !samoZvok)
           TextButton(
             key: const ValueKey('fx-izbrisi'),
-            onPressed: () => Navigator.pop<_Urejeno>(context, (gumb: _g, izbrisi: true)),
+            onPressed: () => Navigator.pop<UrejenGumbFx>(context, (gumb: _g, izbrisi: true)),
             child: Text('Izbriši', style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
@@ -800,7 +821,7 @@ class _UrejanjeGumbaFxState extends State<UrejanjeGumbaFx> {
           key: const ValueKey('fx-shrani'),
           onPressed: () {
             final g = _z({..._g.vJson(), 'ime': _ime.text.trim(), 'ukazi': _ukazi.text.trim()});
-            Navigator.pop<_Urejeno>(context, (gumb: g, izbrisi: false));
+            Navigator.pop<UrejenGumbFx>(context, (gumb: g, izbrisi: false));
           },
           child: const Text('Shrani'),
         ),

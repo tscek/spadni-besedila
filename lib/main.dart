@@ -61,6 +61,7 @@ Future<void> main(List<String> argumenti) async {
   Efekti.aplikacija
     ..bajti = ((id) => baza.bajtiEfekta(apiZaEfekte(), id))
     ..postavitev = (() => baza.fx)
+    ..knjiznica = (() => baza.efekti)
     ..midi = ((ukazi) async {
       await Midi.aplikacija.poslji(baza.midi.razsiri(ukazi), knjiznica: baza.midi);
     });

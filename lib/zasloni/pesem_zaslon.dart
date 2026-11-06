@@ -444,6 +444,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
         return true;
       }
     }
+    // Sledilec obrne pesem za vse (če je administrator to dovolil): vodja odpre pesem, vsi mu sledijo.
+    if (widget.spil case final spil?
+        when spil.vloga == VlogaSpila.sledilec &&
+            widget.baza.obracaZaVse &&
+            (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja || d == DejanjeMidi.izbrana)) {
+      final id = d == DejanjeMidi.prejsnja ? spil.nazaj() : spil.prvaNaslednja()?.pesem;
+      if (id != null && widget.baza.pesem(id) != null) {
+        spil.zamenjajVsem(StanjeSpila(pesem: id));
+        return true;
+      }
+    }
     // Izbrana pesem s seznamčka; v setlisti in pri sledenju (odpri je podan) naslednjo vodi zaslon okoli pesmi.
     final izbrana = widget.spil?.prvaNaslednja();
     if (izbrana != null &&

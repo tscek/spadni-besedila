@@ -45,6 +45,9 @@ class Api {
   /// Administrator pošlje svoje nastavitve pogleda vsem (JSON).
   Future<Map<String, dynamic>> posljiPogled(String vsebina) => _post({'akcija': 'pogled', 'vsebina': vsebina});
 
+  /// Nastavitve špila (samo administrator). Vrne {spil}.
+  Future<Map<String, dynamic>> shraniSpil(String vsebina) => _post({'akcija': 'spil', 'vsebina': vsebina});
+
   /// Skupna postavitev FX panela in XY pada (samo administrator). Vrne {fx}.
   Future<Map<String, dynamic>> shraniFx(String vsebina) => _post({'akcija': 'fx', 'vsebina': vsebina});
 

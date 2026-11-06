@@ -61,10 +61,13 @@ class ZvokSpila extends ChangeNotifier {
   double get glasnostFx => _efektiTu ? Efekti.aplikacija.glasnost : (_drugGlasnost ?? 1);
 
   /// Pritisk ali spust gumba FX (s katerekoli naprave; igra naprava z efekti).
-  void fx(String gumb, {required bool dol}) => _ukazFx({'akcija': 'fx', 'gumb': gumb, 'dol': dol});
+  /// [nastavitve] pošlje gumb na besedilu (ni v skupni postavitvi FX).
+  void fx(String gumb, {required bool dol, GumbFx? nastavitve}) =>
+      _ukazFx({'akcija': 'fx', 'gumb': gumb, 'dol': dol, 'g': ?nastavitve?.vJson()});
 
   /// Klik brez spusta (nožno stikalo).
-  void fxKlik(String gumb) => _ukazFx({'akcija': 'fxKlik', 'gumb': gumb});
+  void fxKlik(String gumb, {GumbFx? nastavitve}) =>
+      _ukazFx({'akcija': 'fxKlik', 'gumb': gumb, 'g': ?nastavitve?.vJson()});
 
   void fxUstaviVse() => _ukazFx({'akcija': 'fxUstavi'});
 
@@ -121,11 +124,12 @@ class ZvokSpila extends ChangeNotifier {
   Future<void> _izvediFx(Map<String, dynamic> u) async {
     final e = Efekti.aplikacija;
     final gumb = u['gumb']?.toString() ?? '';
+    final nastavitve = u['g'] is Map ? GumbFx.izJson((u['g'] as Map).cast<String, dynamic>()) : null;
     switch (u['akcija']) {
       case 'fx':
-        await e.dogodek(gumb, dol: u['dol'] == true);
+        await e.dogodek(gumb, dol: u['dol'] == true, gumb: nastavitve);
       case 'fxKlik':
-        await e.klik(gumb);
+        await e.klik(gumb, gumb: nastavitve);
       case 'fxUstavi':
         await e.ustaviVse();
       case 'fxGlasnost':

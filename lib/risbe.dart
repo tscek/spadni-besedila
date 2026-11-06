@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'efekti.dart';
 import 'shramba/shramba.dart';
 
 /// Osebne risbe in opombe člana nad PDF-ji. Koordinate so relativne na stran (0..1),
@@ -157,6 +158,7 @@ class GumbNaStrani {
     this.predloga = '',
     this.velikost = 1,
     this.nozno = 0,
+    this.zvok,
   });
 
   factory GumbNaStrani.izJson(Map<String, dynamic> j) => GumbNaStrani(
@@ -168,6 +170,7 @@ class GumbNaStrani {
     predloga: j['p'] as String? ?? '',
     velikost: (j['v'] as num?)?.toDouble() ?? 1,
     nozno: ((j['n'] as num?)?.toInt() ?? 0).clamp(0, 8),
+    zvok: j['z'] is Map ? GumbFx.izJson((j['z'] as Map).cast<String, dynamic>()) : null,
   );
 
   Offset polozaj;
@@ -185,6 +188,9 @@ class GumbNaStrani {
   /// Gumb nožnega stikala (1–8), ki sproži ta gumb (0 = brez). Ima prednost pred gumbom v spodnji vrstici.
   int nozno;
 
+  /// Zvočni efekt iz knjižnice (predvaja ga naprava z efekti, kot gumb FX); null = samo MIDI.
+  GumbFx? zvok;
+
   GumbNaStrani kopija({Offset? polozaj, String? predloga, double? velikost, int? nozno}) => GumbNaStrani(
     polozaj: polozaj ?? this.polozaj,
     napis: napis,
@@ -194,6 +200,7 @@ class GumbNaStrani {
     predloga: predloga ?? this.predloga,
     velikost: velikost ?? this.velikost,
     nozno: nozno ?? this.nozno,
+    zvok: zvok,
   );
 
   /// Kar se nariše in pošlje: pri shranjenem gumbu napis, ukazi, barva in oblika iz shranjenega.
@@ -207,6 +214,7 @@ class GumbNaStrani {
       predloga: predloga,
       velikost: velikost,
       nozno: nozno,
+      zvok: p.zvok,
     ),
     null => this,
   };
@@ -221,6 +229,7 @@ class GumbNaStrani {
     if (predloga.isNotEmpty) 'p': predloga,
     if (velikost != 1) 'v': _zaokrozi(velikost),
     if (nozno > 0) 'n': nozno,
+    if (zvok != null) 'z': zvok!.vJson(),
   };
 }
 

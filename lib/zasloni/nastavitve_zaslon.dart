@@ -47,6 +47,7 @@ class NastavitveZaslon extends StatelessWidget {
                 ),
                 onTap: () => _posljiPogled(context, Api(prijava.zeton)),
               ),
+              _ObracanjeZaVse(baza: baza, api: Api(prijava.zeton)),
             ],
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
@@ -700,6 +701,62 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
                         ),
                     ],
                   ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Administrator: ali sledilci obračajo pesmi za vse (naslednja, prejšnja), tudi neprijavljeni iPadi.
+class _ObracanjeZaVse extends StatefulWidget {
+  const _ObracanjeZaVse({required this.baza, required this.api});
+
+  final Baza baza;
+  final Api api;
+
+  @override
+  State<_ObracanjeZaVse> createState() => _ObracanjeZaVseState();
+}
+
+class _ObracanjeZaVseState extends State<_ObracanjeZaVse> {
+  bool _shranjujem = false;
+
+  Future<void> _shrani({required bool vsi, required bool neprijavljeni}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _shranjujem = true);
+    try {
+      await widget.baza.shraniObracanje(widget.api, vsi: vsi, neprijavljeni: neprijavljeni);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+    } finally {
+      if (mounted) setState(() => _shranjujem = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final o = widget.baza.obracanje;
+    return Column(
+      children: [
+        SwitchListTile(
+          key: const ValueKey('obracajo-vsi'),
+          secondary: const Icon(Icons.swap_horiz),
+          title: const Text('Vsak lahko obrne pesem za vse'),
+          subtitle: const Text(
+            'Na špilu naslednja in prejšnja (podrsaj, nožno stikalo, čakalna vrsta) na kateri koli napravi '
+            'zamenjata pesem vsem. Izklopljeno: obrača le vodja. Velja za vse naprave.',
+          ),
+          value: o.vsi,
+          onChanged: _shranjujem ? null : (v) => _shrani(vsi: v, neprijavljeni: v && o.neprijavljeni),
+        ),
+        if (o.vsi)
+          SwitchListTile(
+            key: const ValueKey('obracajo-neprijavljeni'),
+            secondary: const SizedBox(width: 24),
+            title: const Text('Tudi neprijavljene naprave (iPadi prek Safarija)'),
+            subtitle: const Text('iPadi dobijo nastavitev, ko se znova povežejo z vodjo.'),
+            value: o.neprijavljeni,
+            onChanged: _shranjujem ? null : (v) => _shrani(vsi: true, neprijavljeni: v),
           ),
       ],
     );
