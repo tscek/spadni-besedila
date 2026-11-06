@@ -16,7 +16,7 @@ enum Orodje {
   uredi('Uredi pesem', Mesto.zgoraj),
   ura('Ura', Mesto.skrito),
   uvodi('Uvodi ob odprtju pesmi: MIDI in zvok (vklop in izklop)', Mesto.zgoraj),
-  xyPad('XY pad (nastavitve MIDI)', Mesto.zgoraj),
+  xyPad('FX: zvočni efekti in XY pad', Mesto.zgoraj),
   playback('Playback ▶/■ (če ga ima pesem)', Mesto.zgoraj);
 
   const Orodje(this.opis, this.privzeto);
@@ -151,6 +151,9 @@ class Nastavitve extends ChangeNotifier {
   static const _hraniPlayback = 'hrani_playback';
   static const _predvajajPlayback = 'predvajaj_playback';
   static const _izhodPlaybacka = 'izhod_playbacka';
+  static const _hraniEfekte = 'hrani_efekte';
+  static const _predvajajEfekte = 'predvajaj_efekte';
+  static const _izhodEfektov = 'izhod_efektov';
   static const _poljaSeznama = 'polja_seznama';
   static const _ikoneSeznama = 'ikone_seznama';
   static const _razvrsti = 'razvrsti';
@@ -241,6 +244,17 @@ class Nastavitve extends ChangeNotifier {
   bool predvajajPlayback = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
   String izhodPlaybacka = '';
 
+  /// Zvočni efekti (FX panel): prenos na napravo, predvajanje na tej napravi (privzeto PC) in izhod.
+  bool hraniEfekte = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  bool predvajajEfekte = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  String izhodEfektov = '';
+
+  Future<void> nastaviHraniEfekte(bool da) => _nastavi(() => hraniEfekte = da, (p) => p.setBool(_hraniEfekte, da));
+  Future<void> nastaviPredvajajEfekte(bool da) =>
+      _nastavi(() => predvajajEfekte = da, (p) => p.setBool(_predvajajEfekte, da));
+  Future<void> nastaviIzhodEfektov(String id) =>
+      _nastavi(() => izhodEfektov = id, (p) => p.setString(_izhodEfektov, id));
+
   bool hrani(VrstaZvoka v) => v == VrstaZvoka.playback ? hraniPlayback : hraniUvode;
   bool predvajaj(VrstaZvoka v) => v == VrstaZvoka.playback ? predvajajPlayback : predvajajUvode;
   String izhod(VrstaZvoka v) => v == VrstaZvoka.playback ? izhodPlaybacka : izhodZvoka;
@@ -327,6 +341,9 @@ class Nastavitve extends ChangeNotifier {
     hraniPlayback = p.getBool(_hraniPlayback) ?? d.hraniPlayback;
     predvajajPlayback = p.getBool(_predvajajPlayback) ?? d.predvajajPlayback;
     izhodPlaybacka = p.getString(_izhodPlaybacka) ?? d.izhodPlaybacka;
+    hraniEfekte = p.getBool(_hraniEfekte) ?? d.hraniEfekte;
+    predvajajEfekte = p.getBool(_predvajajEfekte) ?? d.predvajajEfekte;
+    izhodEfektov = p.getString(_izhodEfektov) ?? d.izhodEfektov;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);
       if (s == null) return null;

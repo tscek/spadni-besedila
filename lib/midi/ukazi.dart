@@ -390,10 +390,22 @@ enum DejanjeMidi {
   gumb5('Gumb 5 na pesmi', 5),
   gumb6('Gumb 6 na pesmi', 6),
   gumb7('Gumb 7 na pesmi', 7),
-  gumb8('Gumb 8 na pesmi', 8);
+  gumb8('Gumb 8 na pesmi', 8),
+  fx1('FX gumb 1 (izbrana stran)', 0, 1),
+  fx2('FX gumb 2', 0, 2),
+  fx3('FX gumb 3', 0, 3),
+  fx4('FX gumb 4', 0, 4),
+  fx5('FX gumb 5', 0, 5),
+  fx6('FX gumb 6', 0, 6),
+  fx7('FX gumb 7', 0, 7),
+  fx8('FX gumb 8', 0, 8),
+  fxUstavi('FX: ustavi vse');
 
-  const DejanjeMidi(this.oznaka, [this.gumb = 0]);
+  const DejanjeMidi(this.oznaka, [this.gumb = 0, this.fx = 0]);
   final String oznaka;
+
+  /// Zaporedna številka gumba FX na izbrani strani panela (1 je levo zgoraj), 0 pri ostalih dejanjih.
+  final int fx;
 
   /// Zaporedna številka gumba na trenutni pesmi (1 je prvi z leve), 0 pri ostalih dejanjih.
   final int gumb;

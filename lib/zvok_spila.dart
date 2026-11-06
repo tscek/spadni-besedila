@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'efekti.dart';
+import 'midi/midi.dart';
+import 'midi/ukazi.dart';
 import 'nastavitve.dart';
 import 'uvodi.dart';
 
@@ -26,8 +29,125 @@ class ZvokSpila extends ChangeNotifier {
   int _drugMs = 0;
   DateTime _drugCas = DateTime.now();
 
+  /// Efekti, ki igrajo na drugi napravi: gumb → [pozicija ms, trajanje ms, zanka 0/1], in njihova glasnost.
+  Map<String, List<int>> _drugFx = {};
+  DateTime _drugFxCas = DateTime.now();
+  double? _drugGlasnost;
+
+  /// MIDI knjižnica (za ukaze gumbov, ki jih pošlje ta naprava; nastavi main).
+  KnjiznicaMidi Function()? knjiznica;
+
   bool _povezano = false;
   Timer? _porocaj;
+
+  /// Ta naprava predvaja efekte (PC) ali pa ni na špilu (efekti igrajo tu).
+  bool get _efektiTu => Nastavitve.aplikacija.predvajajEfekte || (vodji == null && vsem == null);
+
+  /// Stanje efekta gumba na tej ali drugi napravi (null = ne igra).
+  StanjeFx? stanjeFx(String gumb) {
+    if (_efektiTu) return Efekti.aplikacija.stanje[gumb];
+    final d = _drugFx[gumb];
+    if (d == null || d.length < 2) return null;
+    var poz = d[0] + DateTime.now().difference(_drugFxCas).inMilliseconds;
+    final zanka = d.length > 2 && d[2] == 1;
+    if (zanka && d[1] > 0) poz %= d[1];
+    return (pozicija: Duration(milliseconds: poz.clamp(0, d[1])), trajanje: Duration(milliseconds: d[1]), zanka: zanka);
+  }
+
+  /// Ali kakšen efekt igra na drugi napravi.
+  bool get igraKakFx => _efektiTu ? Efekti.aplikacija.stanje.isNotEmpty : _drugFx.isNotEmpty;
+
+  /// Glasnost efektov (na napravi, ki jih predvaja).
+  double get glasnostFx => _efektiTu ? Efekti.aplikacija.glasnost : (_drugGlasnost ?? 1);
+
+  /// Pritisk ali spust gumba FX (s katerekoli naprave; igra naprava z efekti).
+  void fx(String gumb, {required bool dol}) => _ukazFx({'akcija': 'fx', 'gumb': gumb, 'dol': dol});
+
+  /// Klik brez spusta (nožno stikalo).
+  void fxKlik(String gumb) => _ukazFx({'akcija': 'fxKlik', 'gumb': gumb});
+
+  void fxUstaviVse() => _ukazFx({'akcija': 'fxUstavi'});
+
+  void fxGlasnost(double g) {
+    _drugGlasnost = g;
+    _ukazFx({'akcija': 'fxGlasnost', 'g': g});
+    notifyListeners();
+  }
+
+  /// MIDI (XY pad): s te naprave, če ima vklopljen MIDI, sicer prek špila na napravo z efekti.
+  Future<void> posljiMidi(List<PoslaniUkaz> ukazi, {KnjiznicaMidi? knjiznica, bool surovo = false}) async {
+    final midi = Midi.aplikacija;
+    if (midi.vklopljen || (vodji == null && vsem == null)) {
+      if (surovo) {
+        for (final u in ukazi) {
+          midi.posljiSurovo(u.ukaz.bajti, u.izhod);
+        }
+        midi.aktivnostIzhoda.value++;
+      } else {
+        await midi.poslji(ukazi, knjiznica: knjiznica);
+      }
+      return;
+    }
+    _ukazFx({
+      'akcija': 'midi',
+      'ukazi': [
+        for (final u in ukazi) {'z': u.ukaz.zapis, 'i': u.izhod},
+      ],
+    });
+  }
+
+  /// MIDI ukazi ali makri po imenu (gumbi nad XY padom).
+  Future<void> posljiMidiZapis(String zapis, KnjiznicaMidi k) async {
+    if (Midi.aplikacija.vklopljen || (vodji == null && vsem == null)) {
+      await Midi.aplikacija.poslji(k.razsiri(zapis), knjiznica: k);
+      return;
+    }
+    _ukazFx({'akcija': 'midi', 'zapis': zapis});
+  }
+
+  void _ukazFx(Map<String, dynamic> u) {
+    if (_efektiTu) {
+      _izvediFx(u);
+    } else if (vodji case final f?) {
+      f(u);
+    } else {
+      vsem?.call({'vrsta': 'zvokUkaz', ...u});
+    }
+  }
+
+  static const _akcijeFx = {'fx', 'fxKlik', 'fxUstavi', 'fxGlasnost', 'midi'};
+
+  /// Ukaz za efekte izvede ta naprava (ima efekte).
+  Future<void> _izvediFx(Map<String, dynamic> u) async {
+    final e = Efekti.aplikacija;
+    final gumb = u['gumb']?.toString() ?? '';
+    switch (u['akcija']) {
+      case 'fx':
+        await e.dogodek(gumb, dol: u['dol'] == true);
+      case 'fxKlik':
+        await e.klik(gumb);
+      case 'fxUstavi':
+        await e.ustaviVse();
+      case 'fxGlasnost':
+        e.nastaviGlasnost((u['g'] as num?)?.toDouble() ?? 1);
+      case 'midi':
+        final midi = Midi.aplikacija;
+        if (!midi.vklopljen) return;
+        final k = knjiznica?.call();
+        if (u['zapis'] case final String z when k != null) {
+          await midi.poslji(k.razsiri(z), knjiznica: k);
+        } else if (u['ukazi'] case final List l) {
+          final ukazi = [
+            for (final x in l.whereType<Map>())
+              if (razcleniUkaz(x['z']?.toString() ?? '') case final m?) PoslaniUkaz(m, x['i']?.toString() ?? ''),
+          ];
+          for (final p in ukazi) {
+            midi.posljiSurovo(p.ukaz.bajti, p.izhod);
+          }
+          if (ukazi.isNotEmpty) midi.aktivnostIzhoda.value++;
+        }
+    }
+  }
 
   /// Pesem, katere uvod igra na tej ali drugi napravi.
   String? get uvod => Predvajanje.uvodi.igra ?? _drugUvod;
@@ -48,6 +168,7 @@ class ZvokSpila extends ChangeNotifier {
     _povezano = true;
     Predvajanje.uvodi.addListener(_lokalno);
     Predvajanje.playback.addListener(_lokalno);
+    Efekti.aplikacija.addListener(_lokalno);
   }
 
   void odklopi() {
@@ -55,13 +176,14 @@ class ZvokSpila extends ChangeNotifier {
     _povezano = false;
     Predvajanje.uvodi.removeListener(_lokalno);
     Predvajanje.playback.removeListener(_lokalno);
+    Efekti.aplikacija.removeListener(_lokalno);
     _porocaj?.cancel();
   }
 
   void _lokalno() {
     _porocaj?.cancel();
     // Med playbackom vsake 2 s čas, da druge naprave sledijo vrstici.
-    if (Predvajanje.playback.igra != null) {
+    if (Predvajanje.playback.igra != null || Efekti.aplikacija.stanje.isNotEmpty) {
       _porocaj = Timer.periodic(const Duration(seconds: 2), (_) => _sporoci());
     }
     _sporoci();
@@ -72,7 +194,31 @@ class ZvokSpila extends ChangeNotifier {
     'uvod': Predvajanje.uvodi.igra,
     'playback': Predvajanje.playback.igra,
     'ms': Predvajanje.playback.pozicija.value.inMilliseconds,
+    if (Nastavitve.aplikacija.predvajajEfekte) ...{'fx': _lastniFx(), 'fxG': Efekti.aplikacija.glasnost},
   };
+
+  static Map<String, List<int>> _lastniFx() => {
+    for (final MapEntry(key: id, value: s) in Efekti.aplikacija.stanje.entries)
+      id: [s.pozicija.inMilliseconds, s.trajanje.inMilliseconds, if (s.zanka) 1 else 0],
+  };
+
+  Map<String, List<int>> _drugFxZdaj() {
+    final pretece = DateTime.now().difference(_drugFxCas).inMilliseconds;
+    return {
+      for (final MapEntry(key: id, value: d) in _drugFx.entries)
+        if (d.length >= 2) id: [d[0] + pretece, d[1], if (d.length > 2) d[2] else 0],
+    };
+  }
+
+  void _sprejmiFx(Object? fx, Object? g) {
+    if (fx is! Map) return;
+    _drugFx = {
+      for (final MapEntry(:key, :value) in fx.entries)
+        if (value is List) key.toString(): [for (final v in value) (v as num).toInt()],
+    };
+    _drugFxCas = DateTime.now();
+    if (g is num) _drugGlasnost = g.toDouble();
+  }
 
   void _sporoci() {
     if (vodji case final f?) {
@@ -98,6 +244,8 @@ class ZvokSpila extends ChangeNotifier {
           : _drugPlayback == null
           ? 0
           : _drugMs + DateTime.now().difference(_drugCas).inMilliseconds,
+      'fx': lastno['fx'] ?? _drugFxZdaj(),
+      'fxG': lastno['fxG'] ?? _drugGlasnost,
     });
   }
 
@@ -130,6 +278,14 @@ class ZvokSpila extends ChangeNotifier {
 
   /// Vodja: ukaz sledilca (uho, playback, stanje predvajanja).
   Future<void> odSledilca(Map<String, dynamic> u) async {
+    if (_akcijeFx.contains(u['akcija'])) {
+      if (Nastavitve.aplikacija.predvajajEfekte) {
+        await _izvediFx(u);
+      } else {
+        vsem?.call({'vrsta': 'zvokUkaz', ...u});
+      }
+      return;
+    }
     switch (u['akcija']) {
       case 'uho':
         await _uho(u['v'] == true);
@@ -146,6 +302,7 @@ class ZvokSpila extends ChangeNotifier {
         _drugPlayback = u['playback']?.toString();
         _drugMs = (u['ms'] as num?)?.toInt() ?? 0;
         _drugCas = DateTime.now();
+        if (u.containsKey('fx')) _sprejmiFx(u['fx'], u['fxG']);
         notifyListeners();
     }
     objavi();
@@ -157,6 +314,7 @@ class ZvokSpila extends ChangeNotifier {
       if (j['akcija'] == 'playback' && Nastavitve.aplikacija.predvajajPlayback) {
         await predvajajTu?.call(j['pesem']?.toString() ?? '');
       }
+      if (_akcijeFx.contains(j['akcija']) && Nastavitve.aplikacija.predvajajEfekte) await _izvediFx(j);
       return;
     }
     if (j['uho'] is bool && j['uho'] != Nastavitve.aplikacija.uvodi) await _uho(j['uho'] as bool);
@@ -167,6 +325,7 @@ class ZvokSpila extends ChangeNotifier {
     _drugPlayback = playback == Predvajanje.playback.igra ? null : playback;
     _drugMs = (j['ms'] as num?)?.toInt() ?? 0;
     _drugCas = DateTime.now();
+    if (!Nastavitve.aplikacija.predvajajEfekte) _sprejmiFx(j['fx'], j['fxG']);
     notifyListeners();
   }
 
@@ -176,6 +335,7 @@ class ZvokSpila extends ChangeNotifier {
     vodji = null;
     _drugUvod = null;
     _drugPlayback = null;
+    _drugFx = {};
     notifyListeners();
   }
 }

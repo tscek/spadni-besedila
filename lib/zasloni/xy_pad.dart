@@ -3,40 +3,8 @@ import 'package:flutter/material.dart';
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
 import '../midi/xy.dart';
+import '../zvok_spila.dart';
 import 'drsnik.dart';
-import 'midi_zaslon.dart' show preizkusiMidi;
-
-/// Gumb v orodni vrstici, ki odpre oblaček z XY padom.
-class XyPadGumb extends StatelessWidget {
-  const XyPadGumb({super.key, required this.knjiznica});
-
-  final KnjiznicaMidi knjiznica;
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-    key: const ValueKey('xy-pad'),
-    tooltip: 'XY pad',
-    icon: const Icon(Icons.control_camera),
-    onPressed: () => odpriXyPad(context, knjiznica),
-  );
-}
-
-Future<void> odpriXyPad(BuildContext context, KnjiznicaMidi knjiznica) => showDialog<void>(
-  context: context,
-  barrierColor: Colors.black26,
-  builder: (context) => Align(
-    alignment: Alignment.topRight,
-    child: Padding(
-      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 56, right: 8, left: 8),
-      child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(width: 320, child: XyPad(knjiznica: knjiznica)),
-      ),
-    ),
-  ),
-);
 
 /// Gumbi in pad: vodoravno pošilja CC osi X, navpično CC osi Y. Začne na sredini in ne pošlje nič,
 /// dokler ga ne premakneš.
@@ -90,7 +58,9 @@ class _XyPadState extends State<XyPad> {
     if (!n.nastavljen) {
       return const Padding(
         padding: EdgeInsets.all(20),
-        child: Text('XY pad še ni nastavljen. Nastavi ga v Nastavitve MIDI (skupine osi X in Y ter gumbi).'),
+        child: Text(
+          'XY pad še ni nastavljen. Administrator ga nastavi v Nastavitve MIDI (skupine osi X in Y ter gumbi).',
+        ),
       );
     }
     return Padding(
@@ -109,7 +79,8 @@ class _XyPadState extends State<XyPad> {
                       child: FilledButton.tonal(
                         key: ValueKey('xy-gumb-$i'),
                         style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
-                        onPressed: () => preizkusiMidi(context, widget.knjiznica, n.gumbi[i].ukazi),
+                        // Brez MIDI na tej napravi gre ukaz prek špila na napravo z efekti (PC).
+                        onPressed: () => ZvokSpila.aplikacija.posljiMidiZapis(n.gumbi[i].ukazi, widget.knjiznica),
                         child: Text(n.gumbi[i].napis, maxLines: 1, overflow: TextOverflow.ellipsis),
                       ),
                     ),

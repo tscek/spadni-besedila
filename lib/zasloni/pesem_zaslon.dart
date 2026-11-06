@@ -13,6 +13,7 @@ import '../midi/ukazi.dart';
 import '../tipkovnica.dart' show Listanje;
 import '../models.dart';
 import '../nastavitve.dart';
+import '../efekti.dart';
 import '../uvodi.dart';
 import '../zvok_spila.dart';
 import '../odigrane.dart';
@@ -26,7 +27,7 @@ import 'orodja.dart';
 import 'oznake.dart';
 import 'drsnik.dart' show Vlecenje;
 import 'pdf_risanje.dart';
-import 'xy_pad.dart';
+import 'fx_panel.dart';
 import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
@@ -245,6 +246,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
     Midi.aplikacija.zaprta(_pesem);
     Predvajanje.uvodi.obZaprtju(_pesem);
     Predvajanje.playback.obZaprtju(_pesem);
+    if (Nastavitve.aplikacija.predvajajEfekte) Efekti.aplikacija.obMenjaviPesmi();
     _zabelezi();
     super.dispose();
   }
@@ -392,6 +394,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
       if (_pesem.uvod.isNotEmpty && Nastavitve.aplikacija.predvajajUvode) {
         Predvajanje.uvodi.predvajaj(widget.baza, _apiZaBranje, _pesem);
       }
+      return true;
+    }
+    if (d.fx > 0) {
+      final gumbi = widget.baza.fx.poVrsti(FxPrikaz.stran.value, widget.pesem.id);
+      if (d.fx <= gumbi.length) ZvokSpila.aplikacija.fxKlik(gumbi[d.fx - 1].id);
+      return true;
+    }
+    if (d == DejanjeMidi.fxUstavi) {
+      ZvokSpila.aplikacija.fxUstaviVse();
       return true;
     }
     if (d == DejanjeMidi.playback) {
@@ -748,9 +759,11 @@ class _PesemZaslonState extends State<PesemZaslon> {
             ),
           ],
           Orodje.ura => [const Ura()],
-          Orodje.xyPad when Midi.aplikacija.vklopljen && Midi.aplikacija.xy.nastavljen => [
-            XyPadGumb(knjiznica: widget.baza.midi),
-          ],
+          Orodje.xyPad
+              when widget.baza.fx.gumbi.isNotEmpty ||
+                  (widget.baza.fx.xy?.nastavljen ?? false) ||
+                  widget.baza.jeAdministrator =>
+            [const FxGumb()],
           Orodje.uvodi
               when Midi.aplikacija.vklopljen ||
                   Nastavitve.aplikacija.predvajajUvode ||
@@ -1099,7 +1112,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
         ],
         bottom: _zgornjaVrstica(context),
       ),
-      body: _telo(context),
+      body: FxOkvir(baza: widget.baza, api: () => _apiZaBranje, pesem: widget.pesem.id, child: _telo(context)),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../midi/midi.dart';
+import '../zvok_spila.dart';
 import '../midi/ukazi.dart';
 import '../risbe.dart';
 
@@ -40,7 +41,7 @@ class PosiljalecVrednosti {
   Timer? _odlozeno;
 
   void premik() {
-    final razmik = Duration(milliseconds: Midi.aplikacija.prekoVodje != null ? 100 : 33);
+    final razmik = Duration(milliseconds: Midi.aplikacija.prekoVodje != null || !Midi.aplikacija.vklopljen ? 100 : 33);
     final zdaj = DateTime.now();
     if (zdaj.difference(_zadnje) >= razmik) {
       _poslji();
@@ -56,9 +57,13 @@ class PosiljalecVrednosti {
     _odlozeno = null;
     _zadnje = DateTime.now();
     final midi = Midi.aplikacija;
-    if (!midi.vklopljen) return;
     final s = ukazi();
     if (s.isEmpty) return;
+    // Brez MIDI na tej napravi gre prek špila na napravo z efekti (PC).
+    if (!midi.vklopljen) {
+      ZvokSpila.aplikacija.posljiMidi(s, knjiznica: knjiznica, surovo: !koncno);
+      return;
+    }
     if (koncno || midi.prekoVodje != null) {
       midi.poslji(s, knjiznica: knjiznica);
     } else {

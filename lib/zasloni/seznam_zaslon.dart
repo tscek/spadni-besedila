@@ -23,7 +23,7 @@ import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
-import 'xy_pad.dart';
+import 'fx_panel.dart';
 
 class SeznamZaslon extends StatefulWidget {
   const SeznamZaslon({
@@ -364,14 +364,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         actions: [
           if (_vMapi) _razvrscanje(),
           RundaGumb(baza: baza),
-          // XY pad je na dosegu tudi v seznamu (če ni skrit v nastavitvah orodne vrstice).
+          // FX (efekti in XY pad) je na dosegu tudi v seznamu (če ni skrit v nastavitvah orodne vrstice).
           ListenableBuilder(
-            listenable: Listenable.merge([Midi.aplikacija, Nastavitve.aplikacija]),
+            listenable: Nastavitve.aplikacija,
             builder: (context, _) =>
-                Midi.aplikacija.vklopljen &&
-                    Midi.aplikacija.xy.nastavljen &&
+                (baza.fx.gumbi.isNotEmpty || (baza.fx.xy?.nastavljen ?? false) || baza.jeAdministrator) &&
                     Nastavitve.aplikacija.mesto(Orodje.xyPad) != Mesto.skrito
-                ? XyPadGumb(knjiznica: baza.midi)
+                ? const FxGumb()
                 : const SizedBox.shrink(),
           ),
           SpilGumb(spil: widget.spil, baza: baza, prijava: widget.prijava),
@@ -484,35 +483,39 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 ),
               ),
       ),
-      body: Column(
-        children: [
-          ..._posodobitev(),
-          ..._pogled(),
-          if (baza.neposlano.isNotEmpty && baza.stanje == null && !baza.osvezujem)
-            MaterialBanner(
-              leading: const Icon(Icons.cloud_upload_outlined),
-              content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),
-              actions: [TextButton(onPressed: _osvezi, child: const Text('Pošlji'))],
+      body: FxOkvir(
+        baza: baza,
+        api: () => widget.prijava.prijavljen ? Api(widget.prijava.zeton) : null,
+        child: Column(
+          children: [
+            ..._posodobitev(),
+            ..._pogled(),
+            if (baza.neposlano.isNotEmpty && baza.stanje == null && !baza.osvezujem)
+              MaterialBanner(
+                leading: const Icon(Icons.cloud_upload_outlined),
+                content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),
+                actions: [TextButton(onPressed: _osvezi, child: const Text('Pošlji'))],
+              ),
+            if (baza.stanje != null || baza.napaka != null)
+              MaterialBanner(
+                content: Text(baza.napaka ?? baza.stanje!),
+                leading: Icon(baza.napaka != null ? Icons.error_outline : Icons.downloading),
+                actions: [TextButton(onPressed: baza.osvezujem ? null : _osvezi, child: const Text('Znova'))],
+              ),
+            Expanded(
+              child: !_vMapi
+                  ? _mape(context, baza)
+                  : pesmi.isEmpty
+                  ? Center(child: Text(baza.pesmi.isEmpty ? 'Ni pesmi. Osveži iz baze.' : 'Ni zadetkov.'))
+                  : IzbiraPesmi(
+                      key: _izbira,
+                      pesmi: pesmi,
+                      odpri: (p) => _odpri(p, pesmi),
+                      vrstica: (context, p, izbrana) => _vrstica(context, p, izbrana, pesmi),
+                    ),
             ),
-          if (baza.stanje != null || baza.napaka != null)
-            MaterialBanner(
-              content: Text(baza.napaka ?? baza.stanje!),
-              leading: Icon(baza.napaka != null ? Icons.error_outline : Icons.downloading),
-              actions: [TextButton(onPressed: baza.osvezujem ? null : _osvezi, child: const Text('Znova'))],
-            ),
-          Expanded(
-            child: !_vMapi
-                ? _mape(context, baza)
-                : pesmi.isEmpty
-                ? Center(child: Text(baza.pesmi.isEmpty ? 'Ni pesmi. Osveži iz baze.' : 'Ni zadetkov.'))
-                : IzbiraPesmi(
-                    key: _izbira,
-                    pesmi: pesmi,
-                    odpri: (p) => _odpri(p, pesmi),
-                    vrstica: (context, p, izbrana) => _vrstica(context, p, izbrana, pesmi),
-                  ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

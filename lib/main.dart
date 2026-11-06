@@ -10,6 +10,7 @@ import 'posodobitev.dart';
 import 'posodobitev_windows_web.dart' if (dart.library.io) 'posodobitev_windows_io.dart';
 import 'prijava.dart';
 import 'spil/spil.dart';
+import 'efekti.dart';
 import 'uvodi.dart';
 import 'zvok_spila.dart';
 import 'zasloni/ohranjevalnik.dart';
@@ -55,6 +56,34 @@ Future<void> main(List<String> argumenti) async {
       if (p != null) await Predvajanje.playback.preklopi(baza, prijava.prijavljen ? Api(prijava.zeton) : null, p);
     }
     ..povezi();
+  // FX panel: efekte predvaja naprava z vklopljenimi efekti (PC); postavitev in XY pad sta skupna vsem.
+  Api? apiZaEfekte() => prijava.prijavljen ? Api(prijava.zeton) : null;
+  Efekti.aplikacija
+    ..bajti = ((id) => baza.bajtiEfekta(apiZaEfekte(), id))
+    ..postavitev = (() => baza.fx)
+    ..midi = ((ukazi) async {
+      await Midi.aplikacija.poslji(baza.midi.razsiri(ukazi), knjiznica: baza.midi);
+    });
+  ZvokSpila.aplikacija.knjiznica = () => baza.midi;
+  Midi.aplikacija.obSpremembiXy = (n) async {
+    final api = apiZaEfekte();
+    if (api != null && baza.jeAdministrator) await baza.shraniFx(api, baza.fx.kopija(xy: n));
+  };
+  var podpisFx = '';
+  void obFx() {
+    final fx = baza.fx;
+    if (fx.xy case final xy?) Midi.aplikacija.prevzemiXy(xy);
+    final podpis = '${fx.vBesedilo()}|${baza.efekti.map((e) => '${e.id}:${e.datoteka}').join(',')}';
+    if (podpis == podpisFx) return;
+    podpisFx = podpis;
+    if (Nastavitve.aplikacija.predvajajEfekte) {
+      Efekti.aplikacija.pozabiNalozene();
+      Efekti.aplikacija.pripravi().ignore();
+    }
+  }
+
+  baza.addListener(obFx);
+  obFx();
   Nastavitve.aplikacija.addListener(_zaslonPrizgan);
   Nastavitve.aplikacija.addListener(_usmeritev);
   _usmeritev();
@@ -62,7 +91,8 @@ Future<void> main(List<String> argumenti) async {
     // iPad prek vodje MIDI nima in ga tudi ne sme pošiljati vodji (zaklenjeno za neprijavljene).
   } else {
     // MIDI naprave, če je MIDI na tej napravi vklopljen (Nastavitve → MIDI).
-    Midi.aplikacija.nalozi().ignore();
+    // Nato skupni XY pad iz baze (lokalna kopija je le rezerva).
+    Midi.aplikacija.nalozi().then((_) => obFx()).ignore();
   }
   // Risbe se pošiljajo na strežnik sproti, kadar je član prijavljen.
   // Ob prijavi preverimo tudi, ali je na voljo nova različica aplikacije.

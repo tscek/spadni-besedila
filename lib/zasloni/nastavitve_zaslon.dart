@@ -8,6 +8,7 @@ import '../nastavitve.dart';
 import '../prijava.dart';
 import '../snemanje.dart';
 import '../uvodi.dart';
+import 'efekti_zaslon.dart';
 import 'deli_aplikacijo.dart';
 import 'pdf_risanje.dart';
 import 'midi_zaslon.dart';
@@ -659,6 +660,21 @@ class _ZvokNastavitveState extends State<_ZvokNastavitve> {
           ),
           if (!kIsWeb && (izhodi == null || izhodi.isNotEmpty)) _izbiraIzhoda(v),
         ],
+        ListTile(
+          key: const ValueKey('nastavitve-efekti'),
+          leading: const Icon(Icons.graphic_eq),
+          title: const Text('Zvočni efekti (FX)'),
+          subtitle: const Text('Knjižnica efektov, predvajanje na tej napravi, hrani lokalno, izhod'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => EfektiZaslon(
+                baza: widget.baza,
+                api: () => widget.prijava?.prijavljen ?? false ? Api(widget.prijava!.zeton) : null,
+              ),
+            ),
+          ),
+        ),
         if (!kIsWeb)
           ListTile(
             title: const Text('Zvočni vhod'),

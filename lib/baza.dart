@@ -6,6 +6,7 @@ import 'api.dart';
 import 'models.dart';
 import 'nastavitve.dart';
 import 'config.dart';
+import 'efekti.dart';
 import 'midi/ukazi.dart';
 import 'risbe.dart';
 import 'shramba/shramba.dart';
@@ -434,6 +435,11 @@ class Baza extends ChangeNotifier {
         notifyListeners();
         await prenesiZvoke(api, v);
       }
+      if (Nastavitve.aplikacija.hraniEfekte) {
+        stanje = 'Prenašam: efekti …';
+        notifyListeners();
+        await prenesiEfekte(api);
+      }
 
       stanje = 'Usklajujem risbe …';
       notifyListeners();
@@ -614,6 +620,97 @@ class Baza extends ChangeNotifier {
   bool get novPogled => pogled != null && pogled != Nastavitve.aplikacija.pogledPrevzet;
 
   bool get jeAdministrator => vloge.any((v) => v.vloga == 'Administrator');
+
+  /// Skupna postavitev FX panela in XY pada.
+  PostavitevFx get fx {
+    final b = besedilo(_podatki['fx']);
+    if (b != _fxBesedilo) {
+      _fxBesedilo = b;
+      _fx = PostavitevFx.izBesedila(b);
+    }
+    return _fx;
+  }
+
+  String _fxBesedilo = '';
+  PostavitevFx _fx = const PostavitevFx();
+
+  /// Knjižnica zvočnih efektov.
+  List<Efekt> get efekti => [
+    for (final r in ((_podatki['tabele'] as Map?)?['Efekti'] as List?) ?? const [])
+      if (r is Map) Efekt.izVrstice(r.cast<String, dynamic>()),
+  ].where((e) => e.id.isNotEmpty).toList()..sort((a, b) => a.ime.toLowerCase().compareTo(b.ime.toLowerCase()));
+
+  Efekt? efekt(String id) => efekti.where((e) => e.id == id).firstOrNull;
+
+  /// Administrator shrani postavitev FX (potrebuje internet).
+  Future<void> shraniFx(Api api, PostavitevFx p) async {
+    final vsebina = p.vBesedilo();
+    await api.shraniFx(vsebina);
+    _podatki['fx'] = vsebina;
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    notifyListeners();
+  }
+
+  /// Nov efekt, preimenovanje ali zamenjava zvoka (samo administrator, potrebuje internet).
+  Future<Efekt?> shraniEfekt(Api api, {String? id, required String ime, Uint8List? bajti, String vrsta = ''}) async {
+    final odg = await api.shraniEfekt(id: id, ime: ime, bajti: bajti, vrsta: vrsta);
+    final v = (odg['vrstica'] as Map?)?.cast<String, dynamic>();
+    if (v == null) return null;
+    await _zamenjajVrstico('Efekti', v);
+    if (bajti != null) _efektiVSeji.remove(besedilo(v['Datoteka']));
+    return Efekt.izVrstice(v);
+  }
+
+  Future<void> izbrisiEfekt(Api api, String id) async {
+    await api.shraniEfekt(id: id, izbrisi: true);
+    await _zamenjajVrstico('Efekti', null, izbrisi: id);
+  }
+
+  static String _kljucEfekta(String datoteka) => 'efekti/$datoteka';
+  final _efektiVSeji = <String, Uint8List>{};
+
+  /// Zvok efekta: iz pomnilnika, z naprave ali s spleta (in ga shrani, če je »Hrani efekte lokalno«).
+  Future<({Uint8List bajti, String vrsta})?> bajtiEfekta(Api? api, String id) async {
+    final e = efekt(id);
+    if (e == null || e.datoteka.isEmpty) return null;
+    final vrsta = e.vrsta;
+    if (_efektiVSeji[e.datoteka] case final b?) return (bajti: b, vrsta: vrsta);
+    final lokalno = await shramba.beriBajte(_kljucEfekta(e.datoteka));
+    if (lokalno != null) return (bajti: _efektiVSeji[e.datoteka] = lokalno, vrsta: vrsta);
+    if (api == null) return null;
+    final b = await api.efekt(e.id);
+    if (Nastavitve.aplikacija.hraniEfekte) await shramba.pisiBajte(_kljucEfekta(e.datoteka), b.bajti);
+    _efektiVSeji[e.datoteka] = b.bajti;
+    return (bajti: b.bajti, vrsta: vrsta.isEmpty ? b.vrsta : vrsta);
+  }
+
+  /// Prenese manjkajoče efekte na napravo in pobriše tiste, ki jih ni več. Vrne število neuspelih.
+  Future<int> prenesiEfekte(Api api) async {
+    final preneseni = await shramba.kljuci('efekti/');
+    final zdaj = {
+      for (final e in efekti)
+        if (e.datoteka.isNotEmpty) _kljucEfekta(e.datoteka): e,
+    };
+    for (final k in preneseni.difference(zdaj.keys.toSet())) {
+      await shramba.izbrisi(k);
+    }
+    var neuspeli = 0;
+    for (final MapEntry(key: k, value: e) in zdaj.entries) {
+      if (preneseni.contains(k)) continue;
+      try {
+        await shramba.pisiBajte(k, _efektiVSeji[e.datoteka] ?? (await api.efekt(e.id)).bajti);
+      } catch (_) {
+        neuspeli++;
+      }
+    }
+    return neuspeli;
+  }
+
+  Future<void> izbrisiLokalneEfekte() async {
+    for (final k in await shramba.kljuci('efekti/')) {
+      await shramba.izbrisi(k);
+    }
+  }
 
   /// Zamenja prikazano zasedbo (zapomni si jo na napravi).
   Future<void> izberiZasedbo(String id) async {

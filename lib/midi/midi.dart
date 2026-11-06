@@ -182,9 +182,20 @@ class Midi extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// XY pad je skupen vsem: sprememba (administrator) gre v bazo (nastavi main).
+  Future<void> Function(NastavitveXy n)? obSpremembiXy;
+
+  /// Skupni XY pad iz baze.
+  void prevzemiXy(NastavitveXy n) {
+    if (jsonEncode(n.vJson()) == jsonEncode(xy.vJson())) return;
+    xy = n;
+    notifyListeners();
+  }
+
   Future<void> nastaviXy(NastavitveXy n) async {
     xy = n;
     notifyListeners();
+    await obSpremembiXy?.call(n);
     try {
       (await SharedPreferences.getInstance()).setString(_kljucXy, jsonEncode(n.vJson()));
     } catch (_) {}

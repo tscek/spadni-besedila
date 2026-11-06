@@ -45,6 +45,29 @@ class Api {
   /// Administrator pošlje svoje nastavitve pogleda vsem (JSON).
   Future<Map<String, dynamic>> posljiPogled(String vsebina) => _post({'akcija': 'pogled', 'vsebina': vsebina});
 
+  /// Skupna postavitev FX panela in XY pada (samo administrator). Vrne {fx}.
+  Future<Map<String, dynamic>> shraniFx(String vsebina) => _post({'akcija': 'fx', 'vsebina': vsebina});
+
+  /// Efekt v knjižnici: nov (z bajti), preimenovan ali izbrisan. Vrne {vrstica} ali {izbrisano}.
+  Future<Map<String, dynamic>> shraniEfekt({
+    String? id,
+    String ime = '',
+    Uint8List? bajti,
+    String vrsta = '',
+    bool izbrisi = false,
+  }) => _post({
+    'akcija': 'efekt',
+    'id': ?id,
+    'ime': ime,
+    if (bajti != null) ...{'vrsta': vrsta, 'base64': base64Encode(bajti)},
+    if (izbrisi) 'izbrisi': true,
+  });
+
+  Future<({Uint8List bajti, String vrsta})> efekt(String id) async {
+    final j = await _get({'akcija': 'efekt', 'id': id});
+    return (bajti: base64Decode(j['base64'] as String), vrsta: (j['vrsta'] ?? '').toString());
+  }
+
   Future<Map<String, dynamic>> verzija({String? platforma}) => _get({'akcija': 'verzija', 'platforma': ?platforma});
 
   /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.

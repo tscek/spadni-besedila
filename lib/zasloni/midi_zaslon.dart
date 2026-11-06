@@ -130,7 +130,8 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   onChanged: midi.nastaviObOdprtju,
                 ),
               if (midi.vklopljen && midi.prekoVodje == null && midi.obOdprtju) ..._takt(context, midi),
-              if (midi.vklopljen) ..._xy(context, midi),
+              // XY pad (FX) je skupen vsem napravam; ureja ga administrator.
+              if (baza.jeAdministrator) ..._xy(context, midi),
               if (midi.napaka case final n?)
                 ListTile(
                   leading: Icon(Icons.error_outline, color: tema.colorScheme.error),
@@ -201,8 +202,9 @@ class MidiNastavitveZaslon extends StatelessWidget {
       ListTile(
         title: Text('XY pad', style: Theme.of(context).textTheme.titleMedium),
         subtitle: const Text(
-          'Gumb XY pad v orodni vrstici odpre pad. Skupina ima CC za vodoravno (X) in navpično (Y) os; '
-          'skupine izbiraš z gumbi pod padom. Mesto gumba izbereš v Nastavitve > Orodni vrstici pri pesmi.',
+          'Skupen vsem napravam. Odpre se v panelu FX (orodna vrstica) ali z gumbom FX, ki odpre XY pad. '
+          'Skupina ima CC za vodoravno (X) in navpično (Y) os; skupine izbiraš z gumbi pod padom. Pošlje ga '
+          'naprava z vklopljenim MIDI, sicer gre prek špila na napravo z efekti (PC).',
         ),
       ),
       for (var i = 0; i < n.skupine.length; i++)
