@@ -19,5 +19,5 @@ for p in vhod:
     except Exception as e:  # noqa: BLE001
         zadetki, napaka = [], str(e)
     izhod.append({**p, "z": zadetki, "napaka": napaka})
-    print(p["q"], "->", zadetki[0]["t"] if zadetki else napaka, flush=True)
+    print("ZADETEK " + json.dumps(izhod[-1], ensure_ascii=False), flush=True)
 json.dump(izhod, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False, indent=1)
