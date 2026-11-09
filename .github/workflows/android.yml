@@ -87,7 +87,8 @@ jobs:
             echo "::warning::Ni skrivnosti UPLOAD_KLJUC, posodobitev ni naložena na Drive."
             exit 0
           fi
-          flutter build apk --release --target-platform android-arm64 \
+          # Simboli Dart gredo ven iz APK-ja, sicer zahteva preseže 50 MB, kolikor sprejme Apps Script.
+          flutter build apk --release --target-platform android-arm64 --split-debug-info=build/simboli \
             --build-number=${{ github.run_number }} \
             --dart-define=GOOGLE_SERVER_CLIENT_ID=${{ vars.GOOGLE_SERVER_CLIENT_ID }}
           python3 - <<'PY'
@@ -108,7 +109,7 @@ jobs:
             echo "::error::Na naslovu skripte teče stara koda. V Apps Scriptu: Uvedi > Upravljaj uvedbe > svinčnik > Nova različica > Uvedi."
             exit 1
           fi
-          echo "Velikost zahteve: $(du -h telo.json | cut -f1)"
+          echo "Velikost zahteve: $(stat -c %s telo.json) B (Apps Script sprejme do 52428800)"
           odgovor=$(curl -sS -L --max-time 300 -H "Content-Type: text/plain" --data-binary @telo.json "$url")
           echo "$odgovor" | head -c 300; echo
           echo "$odgovor" | grep -q '"verzija"' || { echo "::error::Nalaganje na Drive ni uspelo"; exit 1; }
