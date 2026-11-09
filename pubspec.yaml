@@ -58,6 +58,7 @@ dependencies:
   web: ^1.1.0
   media_kit: ^1.2.6
   media_kit_libs_windows_audio: ^1.0.9
+  youtube_player_iframe: ^6.0.2
 
 dev_dependencies:
   flutter_test:

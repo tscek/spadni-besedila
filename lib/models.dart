@@ -133,6 +133,10 @@ class Pesem {
   /// Transpozicija playbacka v poltonih (−6 do +6).
   int get playbackTranspozicija => (int.tryParse(besedilo(vrstica['Playback transpozicija'])) ?? 0).clamp(-6, 6);
 
+  /// Povezava na YouTube (stolpec »YouTube«) in ID videa iz nje; null, če povezave ni ali je ne razumemo.
+  String get youtube => besedilo(vrstica['YouTube']).trim();
+  String? get youtubeId => idYoutube(youtube);
+
   int get kodaStevilka => int.tryParse(koda) ?? 1 << 30;
 
   /// Iskanje po naslovu ali izvajalcu, brez razlike med velikimi in malimi črkami ter šumniki.
@@ -707,3 +711,24 @@ class Snemanje {
 
 /// Igranje pesmi na špilu (iz dnevnika vodje in sledilcev).
 typedef Igranje = ({String pesem, DateTime cas, int sekund});
+
+/// ID videa iz povezave na YouTube (watch?v=, youtu.be/, shorts/, embed/, live/) ali iz golega 11-znakovnega ID-ja.
+String? idYoutube(String povezava) {
+  final s = povezava.trim();
+  if (s.isEmpty) return null;
+  final id = RegExp(r'^[A-Za-z0-9_-]{11}$');
+  if (id.hasMatch(s)) return s;
+  final u = Uri.tryParse(s.contains('://') ? s : 'https://$s');
+  if (u == null) return null;
+  final host = u.host.toLowerCase().replaceFirst(RegExp(r'^(www|m|music)\.'), '');
+  String? kandidat;
+  if (host == 'youtu.be') {
+    kandidat = u.pathSegments.firstOrNull;
+  } else if (host == 'youtube.com' || host == 'youtube-nocookie.com') {
+    final seg = u.pathSegments;
+    kandidat =
+        u.queryParameters['v'] ??
+        (seg.length >= 2 && const {'shorts', 'embed', 'live', 'v'}.contains(seg[0]) ? seg[1] : null);
+  }
+  return kandidat != null && id.hasMatch(kandidat) ? kandidat : null;
+}

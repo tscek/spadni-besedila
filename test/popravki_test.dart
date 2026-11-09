@@ -23,6 +23,7 @@ import 'package:spadni_besedila/zasloni/naslednje.dart';
 import 'package:spadni_besedila/zasloni/oznake.dart' show kontrastnaBarva;
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/seznam_zaslon.dart';
+import 'package:spadni_besedila/zasloni/youtube.dart';
 
 const _tabele = {
   'Pesmi': [
@@ -47,7 +48,15 @@ const _tabele = {
       'Vrsta': 'Polka',
       'Aktivna': true,
     },
-    {'ID': 'c', 'Koda': 3, 'Naslov': 'ZABAVNA', 'Mapa': 'zab', 'Status': 'V delu', 'Aktivna': true},
+    {
+      'ID': 'c',
+      'Koda': 3,
+      'Naslov': 'ZABAVNA',
+      'Mapa': 'zab',
+      'Status': 'V delu',
+      'Aktivna': true,
+      'YouTube': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s',
+    },
     {'ID': 'd', 'Koda': 4, 'Naslov': 'STARA', 'Mapa': 'nz', 'Status': 'Arhiv', 'Aktivna': true},
     {'ID': 'e', 'Koda': 5, 'Naslov': '0 PAVZA', 'Mapa': 'nz', 'Aktivna': true},
   ],
@@ -556,6 +565,44 @@ void main() {
     await tester.tap(find.byTooltip('Išči pesem'));
     await tester.pumpAndSettle();
     expect(find.descendant(of: find.byType(IskalnikPesmi), matching: find.text('BELO OBLEKO')), findsOneWidget);
+  });
+
+  test('YouTube: ID iz različnih povezav', () {
+    expect(idYoutube('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10s'), 'dQw4w9WgXcQ');
+    expect(idYoutube('youtu.be/dQw4w9WgXcQ?si=abc'), 'dQw4w9WgXcQ');
+    expect(idYoutube('https://m.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+    expect(idYoutube('https://music.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+    expect(idYoutube(' dQw4w9WgXcQ '), 'dQw4w9WgXcQ');
+    expect(idYoutube('https://www.youtube.com/@spadnifantje'), isNull);
+    expect(idYoutube('https://example.com/watch?v=dQw4w9WgXcQ'), isNull);
+    expect(idYoutube(''), isNull);
+  });
+
+  testWidgets('YouTube: gumb samo pri pesmi s povezavo, okno se odpre in zapre', (tester) async {
+    YoutubePesmi.predvajalnikZaTest = (id) => Text('video $id');
+    addTearDown(() => YoutubePesmi.predvajalnikZaTest = null);
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(key: UniqueKey(), pesem: baza.pesem('b')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('youtube')), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PesemZaslon(key: UniqueKey(), pesem: baza.pesem('c')!, baza: baza, prijava: Prijava()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('youtube')));
+    await tester.pumpAndSettle();
+    expect(find.text('video dQw4w9WgXcQ'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('youtube-zapri')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('youtube-okno')), findsNothing);
   });
 }
 

@@ -119,6 +119,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     ('Tempo (BPM)', _Vnos.stevilo),
     ('Trajanje', _Vnos.trajanje),
     ('Oznaka', _Vnos.predlogi),
+    ('YouTube', _Vnos.besedilo),
     ('Opombe', _Vnos.besedilo),
   ];
   static const _poljaMidi = [
@@ -532,14 +533,27 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
         keyboardType: switch (vnos) {
           _Vnos.stevilo => TextInputType.number,
           _Vnos.trajanje => TextInputType.datetime,
+          _ when stolpec == 'YouTube' => TextInputType.url,
           _ => TextInputType.text,
         },
-        textCapitalization: stolpec == 'Naslov' ? TextCapitalization.characters : TextCapitalization.sentences,
+        textCapitalization: stolpec == 'Naslov'
+            ? TextCapitalization.characters
+            : stolpec == 'YouTube'
+            ? TextCapitalization.none
+            : TextCapitalization.sentences,
         maxLines: stolpec == 'Opombe' ? null : 1,
-        onChanged: vnos == _Vnos.trajanje ? (_) => setState(() {}) : null,
+        onChanged: vnos == _Vnos.trajanje || stolpec == 'YouTube' ? (_) => setState(() {}) : null,
         decoration: okvir.copyWith(
-          hintText: vnos == _Vnos.trajanje ? 'npr. 3:45' : null,
-          errorText: vnos == _Vnos.trajanje ? _napakaTrajanja() : null,
+          hintText: vnos == _Vnos.trajanje
+              ? 'npr. 3:45'
+              : stolpec == 'YouTube'
+              ? 'https://youtu.be/…'
+              : null,
+          errorText: vnos == _Vnos.trajanje
+              ? _napakaTrajanja()
+              : stolpec == 'YouTube' && c.text.trim().isNotEmpty && idYoutube(c.text) == null
+              ? 'To ni povezava na YouTube video'
+              : null,
           suffixIcon: stolpec == 'Tempo (BPM)'
               ? IconButton(
                   key: const ValueKey('tap-tempo'),

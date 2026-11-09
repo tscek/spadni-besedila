@@ -17,7 +17,8 @@ enum Orodje {
   ura('Ura', Mesto.skrito),
   uvodi('Uvodi ob odprtju pesmi: MIDI in zvok (vklop in izklop)', Mesto.zgoraj),
   xyPad('FX: zvočni efekti in XY pad', Mesto.zgoraj),
-  playback('Playback ▶/■ (če ga ima pesem)', Mesto.zgoraj);
+  playback('Playback ▶/■ (če ga ima pesem)', Mesto.zgoraj),
+  youtube('YouTube (če ima pesem povezavo)', Mesto.zgoraj);
 
   const Orodje(this.opis, this.privzeto);
   final String opis;

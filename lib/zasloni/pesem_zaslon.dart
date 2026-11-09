@@ -32,6 +32,7 @@ import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
+import 'youtube.dart';
 
 class PesemZaslon extends StatefulWidget {
   const PesemZaslon({
@@ -146,6 +147,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
   }
 
   bool _prikaziBesedilo = true;
+
+  /// Pesem, pri kateri je odprto okno YouTube (ob menjavi pesmi se skrije).
+  String? _youtube;
   Uint8List? _pdf;
   bool _pdfPrebran = false;
   bool _iskalnik = false;
@@ -814,6 +818,23 @@ class _PesemZaslonState extends State<PesemZaslon> {
               },
             ),
           ],
+          Orodje.youtube when _pesem.youtubeId != null => [
+            IconButton(
+              key: const ValueKey('youtube'),
+              tooltip: YoutubePesmi.vAplikaciji ? 'YouTube' : 'Odpri v YouTube',
+              isSelected: _youtube == widget.pesem.id,
+              icon: const Icon(Icons.smart_display_outlined),
+              selectedIcon: const Icon(Icons.smart_display, color: Colors.blue),
+              onPressed: () {
+                final p = _pesem;
+                if (!YoutubePesmi.vAplikaciji && YoutubePesmi.predvajalnikZaTest == null) {
+                  YoutubePesmi.odpriZunaj(p.youtube, p.youtubeId!);
+                  return;
+                }
+                setState(() => _youtube = _youtube == p.id ? null : p.id);
+              },
+            ),
+          ],
           _ => const <Widget>[],
         },
     ];
@@ -1123,7 +1144,24 @@ class _PesemZaslonState extends State<PesemZaslon> {
         ],
         bottom: _zgornjaVrstica(context),
       ),
-      body: FxOkvir(baza: widget.baza, api: () => _apiZaBranje, pesem: widget.pesem.id, child: _telo(context)),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: FxOkvir(baza: widget.baza, api: () => _apiZaBranje, pesem: widget.pesem.id, child: _telo(context)),
+          ),
+          if (_youtube == widget.pesem.id && _pesem.youtubeId != null)
+            Positioned(
+              right: 8,
+              bottom: 8,
+              child: YoutubeOkno(
+                key: ValueKey('youtube-${_pesem.youtubeId}'),
+                id: _pesem.youtubeId!,
+                povezava: _pesem.youtube,
+                zapri: () => setState(() => _youtube = null),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
