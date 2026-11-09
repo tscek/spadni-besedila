@@ -1,0 +1,30 @@
+name: YouTube iskanje
+
+# Ročno: poišče YouTube videe za seznam pesmi (tool/youtube/isci.py) in priloži rezultat gradnji.
+on:
+  workflow_dispatch:
+    inputs:
+      pesmi:
+        description: JSON [{"id","q"}]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  isci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - run: pip install -q yt-dlp
+      - name: Iskanje
+        env:
+          PESMI: ${{ inputs.pesmi }}
+        run: |
+          printf '%s' "$PESMI" > vhod.json
+          python3 tool/youtube/isci.py vhod.json zadetki.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zadetki
+          path: zadetki.json
