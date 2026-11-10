@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../baza.dart';
+import '../filtri.dart';
 import '../models.dart';
 import '../nastavitve.dart';
 import '../prijava.dart';
@@ -45,7 +48,7 @@ class NastavitveZaslon extends StatelessWidget {
                 subtitle: const Text(
                   'Vrstice, barve, pisava, seznam, iskalnik, orodja. Ostali jih ob osvežitvi lahko prevzamejo.',
                 ),
-                onTap: () => _posljiPogled(context, Api(prijava.zeton)),
+                onTap: () => _posljiPogled(context, Api(prijava.zeton), baza),
               ),
               _ObracanjeZaVse(baza: baza, api: Api(prijava.zeton)),
               _Tyros(baza: baza, api: Api(prijava.zeton)),
@@ -393,7 +396,7 @@ class _GumbRundeNastavitevState extends State<_GumbRundeNastavitev> {
 }
 
 /// Administrator pošlje svoje nastavitve pogleda; drugi jih ob osvežitvi lahko prevzamejo.
-Future<void> _posljiPogled(BuildContext context, Api api) async {
+Future<void> _posljiPogled(BuildContext context, Api api, Baza baza) async {
   final messenger = ScaffoldMessenger.of(context);
   final da = await showDialog<bool>(
     context: context,
@@ -401,7 +404,7 @@ Future<void> _posljiPogled(BuildContext context, Api api) async {
       title: const Text('Pošlji nastavitve pogleda?'),
       content: const Text(
         'Vsi člani bodo ob naslednji osvežitvi vprašani, ali prevzamejo tvoje nastavitve pogleda. '
-        'Povečave posameznih pesmi, zasedba in MIDI ostanejo njihovi.',
+        'Zraven so tvoji hitri filtri po mapah. Povečave posameznih pesmi, zasedba in MIDI ostanejo njihovi.',
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Prekliči')),
@@ -412,7 +415,11 @@ Future<void> _posljiPogled(BuildContext context, Api api) async {
   if (da != true) return;
   try {
     final n = Nastavitve.aplikacija;
-    final vsebina = await n.izvoziPogled();
+    // Zraven gredo tudi moji hitri filtri po mapah (prejemnik jih ob prevzemu shrani k sebi).
+    final filtri = baza.mojeNastavitve[FiltriClana.kljuc];
+    final vsebina = filtri == null
+        ? await n.izvoziPogled()
+        : jsonEncode({...(jsonDecode(await n.izvoziPogled()) as Map), 'filtri': filtri});
     await api.posljiPogled(vsebina);
     await n.oznaciPogled(vsebina);
     messenger.showSnackBar(const SnackBar(content: Text('Nastavitve pogleda so poslane.')));

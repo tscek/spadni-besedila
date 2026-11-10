@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../baza.dart';
+import '../filtri.dart';
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
 import '../models.dart';
@@ -47,8 +50,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   final _iskanje = TextEditingController();
   final _iskanjeFokus = FocusNode();
   final _izbira = GlobalKey<IzbiraPesmiState>();
-  String _vrsta = '';
-  String _harmonika = '';
+  IzbraniFiltri _izbrani = const {};
 
   /// Ali je odprta mapa (sicer je na zaslonu izbira mape).
   bool _vMapi = false;
@@ -91,8 +93,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     _mapa = mapa;
     _arhiv = arhiv;
     _klicaji = klicaji;
-    _vrsta = '';
-    _harmonika = '';
+    _izbrani = const {};
     _iskanje.clear();
   });
 
@@ -197,16 +198,8 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
         : baza.pesmiMape(_mapa);
     final n = Nastavitve.aplikacija;
     final (polje, padajoce) = n.razvrscanjeMape(_kljucMape);
-    final pesmi =
-        vMapi
-            .where(
-              (p) =>
-                  (_vrsta.isEmpty || p.vrsta == _vrsta) &&
-                  (_harmonika.isEmpty || p.harmonika == _harmonika) &&
-                  p.ustreza(_iskanje.text),
-            )
-            .toList()
-          ..sort((a, b) => padajoce ? polje.primerjaj(b, a) : polje.primerjaj(a, b));
+    final pesmi = vMapi.where((p) => ustrezaFiltrom(p, _izbrani, baza) && p.ustreza(_iskanje.text)).toList()
+      ..sort((a, b) => padajoce ? polje.primerjaj(b, a) : polje.primerjaj(a, b));
 
     return PopScope(
       canPop: !_vMapi,
@@ -325,17 +318,14 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
     final filtri = HitriFiltri(
       baza: baza,
       pesmi: vMapi,
-      vrsta: _vrsta,
-      harmonika: _harmonika,
+      mapa: _kljucMape,
+      api: () => widget.prijava.prijavljen ? Api(widget.prijava.zeton) : null,
+      izbrani: _izbrani,
       vse: true,
-      spremeni: (v, h) => setState(() {
-        _vrsta = v;
-        _harmonika = h;
-      }),
+      spremeni: (i) => setState(() => _izbrani = i),
     );
-    final imaFiltre =
-        vMapi.map((p) => p.vrsta).where((v) => v.isNotEmpty).toSet().length > 1 ||
-        vMapi.map((p) => p.harmonika).where((v) => v.isNotEmpty).toSet().length > 1;
+    // Vrstica z gumbom za nastavitev filtrov je vedno, razen na iPadu prek vodje brez pesmi.
+    final imaFiltre = vMapi.isNotEmpty;
     return Scaffold(
       bottomNavigationBar: ListenableBuilder(
         listenable: widget.spil,
@@ -632,6 +622,15 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
             onPressed: () async {
               await n.uvoziPogled(pogled);
               await n.oznaciPogled(pogled);
+              try {
+                if ((jsonDecode(pogled) as Map)['filtri'] case final String f) {
+                  await baza.shraniMojoNastavitev(
+                    widget.prijava.prijavljen ? Api(widget.prijava.zeton) : null,
+                    FiltriClana.kljuc,
+                    f,
+                  );
+                }
+              } catch (_) {}
               if (mounted) setState(() {});
             },
             child: const Text('Uporabi'),

@@ -711,6 +711,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
               key: _iskalnikKljuc,
               baza: widget.baza,
               pesmi: _pesmiIskalnika,
+              mapa: widget.mapa ?? _pesem.mapa,
+              api: () => _apiZaBranje,
               playlista: widget.playlista == null
                   ? null
                   : {

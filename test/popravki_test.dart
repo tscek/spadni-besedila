@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spadni_besedila/api.dart';
 import 'package:spadni_besedila/baza.dart';
+import 'package:spadni_besedila/filtri.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/odigrane.dart';
@@ -603,6 +604,72 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('youtube-zapri')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('youtube-okno')), findsNothing);
+  });
+
+  test('hitri filtri: vrednosti polj, razredi in zapis po mapah', () async {
+    final baza = (await _baza()).$1;
+    final a = baza.pesem('a')!;
+    expect(PoljeFiltra.tonaliteta.vrednosti(a, baza), ['F']);
+    expect(PoljeFiltra.ocena.vrednosti(a, baza), ['★★★★']);
+    expect(PoljeFiltra.ima.vrednosti(a, baza), ['Besedilo']);
+    final hitra = Pesem.izVrstice({'ID': 'x', 'Naslov': 'X', 'Tempo (BPM)': 140, 'Trajanje': '3:30'});
+    expect(PoljeFiltra.tempo.vrednosti(hitra, baza), ['Hitre (nad 130)']);
+    expect(PoljeFiltra.trajanje.vrednosti(hitra, baza), ['3–4 min']);
+    expect(PoljeFiltra.vrsta.cipi([a, baza.pesem('b')!], baza), containsAll(['Valček', 'Polka']));
+
+    const f = FiltriMape(
+      polja: [PoljeFiltra.tonaliteta],
+      skriti: {
+        PoljeFiltra.tonaliteta: {'B'},
+      },
+    );
+    final c = FiltriClana.izBesedila(const FiltriClana().z('nz', f).vBesedilo());
+    expect(c.za('nz').polja, [PoljeFiltra.tonaliteta]);
+    expect(c.za('nz').skrit(PoljeFiltra.tonaliteta, 'B'), isTrue);
+    expect(c.za('zab').polja, FiltriMape.privzeta);
+    expect(ustrezaFiltrom(a, {PoljeFiltra.tonaliteta: 'F'}, baza), isTrue);
+    expect(ustrezaFiltrom(a, {PoljeFiltra.tonaliteta: 'B', PoljeFiltra.vrsta: ''}, baza), isFalse);
+  });
+
+  testWidgets('hitri filtri: član izbere polja in čipe za mapo, shrani se pri članu', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SeznamZaslon(
+          prijava: Prijava(),
+          baza: baza,
+          posodobitev: Posodobitev(),
+          spil: Spil(streznik: () => null, iskalec: () => const Stream.empty()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Narodno-zabavne'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilterChip, 'B-Es-As'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('filtri-nastavi')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filtri-polje-harmonika')));
+    await tester.tap(find.byKey(const ValueKey('filtri-polje-tonaliteta')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filtri-cip-tonaliteta-B')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('filtri-shrani')));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilterChip, 'B-Es-As'), findsNothing);
+    expect(find.byKey(const ValueKey('filter-tonaliteta-F')), findsOneWidget);
+    expect(find.byKey(const ValueKey('filter-tonaliteta-B')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('filter-tonaliteta-F')));
+    await tester.pumpAndSettle();
+    expect(find.text('BELO OBLEKO'), findsOneWidget);
+    expect(find.text('AVSENIK'), findsNothing);
+
+    expect(baza.filtri.za('nz').polja, [PoljeFiltra.vrsta, PoljeFiltra.tonaliteta]);
+    // Brez prijave čaka na pošiljanje.
+    expect(baza.neposlano.where((n) => n['akcija'] == 'nastavitev'), hasLength(1));
   });
 }
 

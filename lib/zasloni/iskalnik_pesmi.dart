@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart' show mergeSort;
 import 'package:flutter/material.dart';
 
+import '../api.dart';
 import '../baza.dart';
+import '../filtri.dart';
 import '../models.dart';
 import '../nastavitve.dart';
 import '../odigrane.dart';
@@ -143,53 +145,74 @@ class IzbiraPesmiState extends State<IzbiraPesmi> {
   }
 }
 
-/// Hitri filtri po vrsti in harmoniki (izbran filter ponoven dotik izklopi); [spredaj] so gumbi pred njimi.
+/// Izbrani hitri filtri: en čip na polje (prazno = brez filtra).
+typedef IzbraniFiltri = Map<PoljeFiltra, String>;
+
+/// Hitri filtri izbrane mape (izbran filter ponoven dotik izklopi); [spredaj] so gumbi pred njimi.
+/// Katera polja in čipi so prikazani, si član nastavi z gumbom na koncu vrstice, za vsako mapo posebej.
 class HitriFiltri extends StatelessWidget {
   const HitriFiltri({
     super.key,
     required this.baza,
     required this.pesmi,
-    required this.vrsta,
-    required this.harmonika,
+    required this.mapa,
+    required this.izbrani,
     required this.spremeni,
+    this.api,
     this.spredaj = const [],
     this.vse = false,
+    this.vednoGumb = true,
   });
 
   final Baza baza;
 
-  /// Pesmi, iz katerih se naberejo vrste in harmonike.
+  /// Gumb za nastavitev je tudi, ko ni nobenega čipa (sicer se prazna vrstica skrije).
+  final bool vednoGumb;
+
+  /// Pesmi, iz katerih se naberejo čipi.
   final List<Pesem> pesmi;
-  final String vrsta;
-  final String harmonika;
-  final void Function(String vrsta, String harmonika) spremeni;
+
+  /// Ključ mape (kot pri razvrščanju), pod katerim je shranjena izbira filtrov.
+  final String mapa;
+  final IzbraniFiltri izbrani;
+  final void Function(IzbraniFiltri izbrani) spremeni;
+
+  /// Za shranjevanje izbire pri članu (null = brez povezave, shrani se kasneje).
+  final Api? Function()? api;
   final List<Widget> spredaj;
 
-  /// Čip »Vse« na začetku (izklopi oba filtra).
+  /// Čip »Vse« na začetku (izklopi vse filtre).
   final bool vse;
+
+  /// Prikazane skupine čipov: polje in njegovi vidni čipi.
+  static List<(PoljeFiltra, List<String>)> skupine(Baza baza, List<Pesem> pesmi, String mapa) {
+    final f = baza.filtri.za(mapa);
+    return [
+      for (final polje in f.polja)
+        if ([
+              for (final c in polje.cipi(pesmi, baza))
+                if (!f.skrit(polje, c)) c,
+            ]
+            case final cipi
+            when cipi.length > 1 ||
+                (cipi.length == 1 && pesmi.any((p) => !polje.vrednosti(p, baza).contains(cipi.first))))
+          (polje, cipi),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final vrste = pesmi.map((p) => p.vrsta).where((v) => v.isNotEmpty).toSet().toList()..sort();
-    final imena = pesmi.map((p) => p.harmonika).where((v) => v.isNotEmpty).toSet();
-    // Harmonike v vrstnem redu s seznama harmonik, neznane na koncu.
-    final harmonike = [
-      for (final h in baza.harmonike)
-        if (imena.contains(h.ime)) h.ime,
-      ...imena.where((i) => baza.harmonika(i) == null),
-    ];
-    final poVrsti = vrste.length > 1;
-    final poHarmoniki = harmonike.length > 1;
-    if (!poVrsti && !poHarmoniki && spredaj.isEmpty) return const SizedBox.shrink();
-    // Skupine gumbov izmenično svetle in temne, da se vidi, kje se začne naslednja.
+    final skupine = HitriFiltri.skupine(baza, pesmi, mapa);
+    if (!vednoGumb && skupine.isEmpty && spredaj.isEmpty) return const SizedBox.shrink();
     final barve = Theme.of(context).colorScheme;
-    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob, {required int skupina}) {
+    // Skupine gumbov izmenično svetle in temne, da se vidi, kje se začne naslednja.
+    Widget cip(String ime, Color? barva, bool izbran, VoidCallback ob, {required int skupina, String kljuc = ''}) {
       final temna = skupina.isOdd;
       final crke = izbran ? barve.onPrimary : (temna ? barve.onInverseSurface : barve.onSurface);
       return Padding(
         padding: const EdgeInsets.only(right: 6),
         child: FilterChip(
-          key: ValueKey('filter-$skupina-$ime'),
+          key: ValueKey('filter-$kljuc$ime'),
           visualDensity: VisualDensity.compact,
           avatar: barva == null ? null : CircleAvatar(backgroundColor: barva, radius: 6),
           label: Text(ime, style: TextStyle(color: crke)),
@@ -203,30 +226,167 @@ class HitriFiltri extends StatelessWidget {
       );
     }
 
-    final skupinaHarmonik = poVrsti ? 1 : 0;
+    final nicIzbranih = izbrani.values.every((v) => v.isEmpty);
     return SizedBox(
       height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
         children: [
-          ...spredaj,
-          if (vse && (poVrsti || poHarmoniki))
-            cip('Vse', null, vrsta.isEmpty && harmonika.isEmpty, () => spremeni('', ''), skupina: 0),
-          if (poVrsti)
-            for (final v in vrste)
-              cip(v, barvaVrste(baza, v), vrsta == v, () => spremeni(vrsta == v ? '' : v, harmonika), skupina: 0),
-          if (poVrsti && poHarmoniki) const SizedBox(width: 8),
-          if (poHarmoniki)
-            for (final h in harmonike)
-              cip(
-                h,
-                barvaHarmonike(baza, h),
-                harmonika == h,
-                () => spremeni(vrsta, harmonika == h ? '' : h),
-                skupina: skupinaHarmonik,
-              ),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              children: [
+                ...spredaj,
+                if (vse && skupine.isNotEmpty) cip('Vse', null, nicIzbranih, () => spremeni(const {}), skupina: 0),
+                for (final (i, (polje, cipi)) in skupine.indexed) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  for (final c in cipi)
+                    cip(
+                      c,
+                      switch (polje) {
+                        PoljeFiltra.vrsta => barvaVrste(baza, c),
+                        PoljeFiltra.harmonika => barvaHarmonike(baza, c),
+                        _ => null,
+                      },
+                      izbrani[polje] == c,
+                      () => spremeni({...izbrani, polje: izbrani[polje] == c ? '' : c}),
+                      skupina: i,
+                      kljuc: switch (polje) {
+                        PoljeFiltra.vrsta => '0-',
+                        PoljeFiltra.harmonika => '1-',
+                        _ => '${polje.name}-',
+                      },
+                    ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('filtri-nastavi'),
+            tooltip: 'Hitri filtri te mape',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.tune, size: 20),
+            onPressed: () => _nastavi(context),
+          ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _nastavi(BuildContext context) async {
+    final f = await showModalBottomSheet<FiltriMape>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => NastavitveFiltrov(baza: baza, pesmi: pesmi, zacetni: baza.filtri.za(mapa)),
+    );
+    if (f == null) return;
+    await baza.shraniFiltre(api?.call(), mapa, f);
+    // Izbran čip, ki ni več prikazan, se izklopi.
+    final vidni = {for (final (p, c) in HitriFiltri.skupine(baza, pesmi, mapa)) p: c};
+    spremeni({
+      for (final e in izbrani.entries)
+        if (vidni[e.key]?.contains(e.value) ?? false) e.key: e.value,
+    });
+  }
+}
+
+/// Izbira polj in čipov hitrih filtrov za eno mapo.
+class NastavitveFiltrov extends StatefulWidget {
+  const NastavitveFiltrov({super.key, required this.baza, required this.pesmi, required this.zacetni});
+
+  final Baza baza;
+  final List<Pesem> pesmi;
+  final FiltriMape zacetni;
+
+  @override
+  State<NastavitveFiltrov> createState() => _NastavitveFiltrovState();
+}
+
+class _NastavitveFiltrovState extends State<NastavitveFiltrov> {
+  late final List<PoljeFiltra> _polja = [...widget.zacetni.polja];
+  late final Map<PoljeFiltra, Set<String>> _skriti = {
+    for (final e in widget.zacetni.skriti.entries) e.key: {...e.value},
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('Hitri filtri te mape. Velja zate na vseh napravah.', style: tema.textTheme.bodySmall),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final polje in PoljeFiltra.values) ...[
+                    CheckboxListTile(
+                      key: ValueKey('filtri-polje-${polje.name}'),
+                      dense: true,
+                      title: Text(polje.ime),
+                      value: _polja.contains(polje),
+                      onChanged: (da) => setState(() {
+                        if (da == true) {
+                          _polja.add(polje);
+                          _polja.sort((a, b) => a.index.compareTo(b.index));
+                        } else {
+                          _polja.remove(polje);
+                        }
+                      }),
+                    ),
+                    if (_polja.contains(polje))
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(56, 0, 16, 8),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            for (final c in polje.cipi(widget.pesmi, widget.baza))
+                              FilterChip(
+                                key: ValueKey('filtri-cip-${polje.name}-$c'),
+                                visualDensity: VisualDensity.compact,
+                                label: Text(c),
+                                selected: !(_skriti[polje]?.contains(c) ?? false),
+                                onSelected: (vidno) => setState(() {
+                                  final s = _skriti.putIfAbsent(polje, () => {});
+                                  vidno ? s.remove(c) : s.add(c);
+                                }),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  TextButton(
+                    key: const ValueKey('filtri-privzeto'),
+                    onPressed: () => Navigator.pop(context, const FiltriMape()),
+                    child: const Text('Privzeto'),
+                  ),
+                  const Spacer(),
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+                  FilledButton(
+                    key: const ValueKey('filtri-shrani'),
+                    onPressed: () => Navigator.pop(context, FiltriMape(polja: _polja, skriti: _skriti)),
+                    child: const Text('Shrani'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -250,10 +410,16 @@ class IskalnikPesmi extends StatefulWidget {
     this.pavza,
     this.playlista,
     this.vVrsti = const {},
+    this.mapa = '',
+    this.api,
   });
 
   final Baza baza;
   final List<Pesem> pesmi;
+
+  /// Ključ mape, katere hitre filtre uporablja iskalnik.
+  final String mapa;
+  final Api? Function()? api;
   final void Function(Pesem) odpri;
   final void Function(Pesem)? pridrzi;
   final VoidCallback zapri;
@@ -276,8 +442,7 @@ class IskalnikPesmi extends StatefulWidget {
 class IskalnikPesmiState extends State<IskalnikPesmi> {
   final _iskanje = TextEditingController();
   final _izbira = GlobalKey<IzbiraPesmiState>();
-  String _vrsta = '';
-  String _harmonika = '';
+  IzbraniFiltri _izbrani = const {};
 
   void premakni(int koraki) => _izbira.currentState?.premakni(koraki);
   bool potrdi() => _izbira.currentState?.potrdi() ?? false;
@@ -297,8 +462,7 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
         .where(
           (p) =>
               p.id != pavza?.id &&
-              (_vrsta.isEmpty || p.vrsta == _vrsta) &&
-              (_harmonika.isEmpty || p.harmonika == _harmonika) &&
+              ustrezaFiltrom(p, _izbrani, widget.baza) &&
               p.ustreza(_iskanje.text) &&
               // Igrane se ob listanju skrijejo (nastavitev); z vpisano besedo se najdejo.
               !(n.skrijIgrane &&
@@ -384,12 +548,11 @@ class IskalnikPesmiState extends State<IskalnikPesmi> {
     return HitriFiltri(
       baza: widget.baza,
       pesmi: widget.pesmi,
-      vrsta: _vrsta,
-      harmonika: _harmonika,
-      spremeni: (v, h) => setState(() {
-        _vrsta = v;
-        _harmonika = h;
-      }),
+      mapa: widget.mapa,
+      api: widget.api,
+      vednoGumb: false,
+      izbrani: _izbrani,
+      spremeni: (i) => setState(() => _izbrani = i),
       spredaj: [
         if (pavza != null)
           Padding(

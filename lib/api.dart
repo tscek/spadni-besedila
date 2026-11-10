@@ -48,6 +48,10 @@ class Api {
   /// Nastavitve špila (samo administrator). Vrne {spil}.
   Future<Map<String, dynamic>> shraniSpil(String vsebina) => _post({'akcija': 'spil', 'vsebina': vsebina});
 
+  /// Osebna nastavitev prijavljenega člana (npr. hitri filtri). Vrne {kljuc, vrednost}.
+  Future<Map<String, dynamic>> mojaNastavitev(String kljuc, String vrednost) =>
+      _post({'akcija': 'mojaNastavitev', 'kljuc': kljuc, 'vrednost': vrednost});
+
   /// Skupna postavitev FX panela in XY pada (samo administrator). Vrne {fx}.
   Future<Map<String, dynamic>> shraniFx(String vsebina) => _post({'akcija': 'fx', 'vsebina': vsebina});
 

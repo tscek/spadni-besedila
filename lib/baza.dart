@@ -7,6 +7,7 @@ import 'models.dart';
 import 'nastavitve.dart';
 import 'config.dart';
 import 'efekti.dart';
+import 'filtri.dart';
 import 'midi/ukazi.dart';
 import 'risbe.dart';
 import 'shramba/shramba.dart';
@@ -220,6 +221,8 @@ class Baza extends ChangeNotifier {
           await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
         } else if (n['akcija'] == 'posnetek') {
           await _posljiPosnetek(api, n, podatki);
+        } else if (n['akcija'] == 'nastavitev') {
+          await api.mojaNastavitev(besedilo(podatki['Ključ']), besedilo(podatki['Vrednost']));
         } else if (n['akcija'] == 'klicaj') {
           final odg = await api.klicaj(podatki, izbrisi: n['izbrisi'] == true);
           if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Klicaji', v.cast<String, dynamic>());
@@ -235,7 +238,7 @@ class Baza extends ChangeNotifier {
       } on ApiNapaka catch (e) {
         if (e is NiPovezave) break;
         // Stara skripta posnetkov še ne pozna: posnetek ostane na napravi, dokler ni nove različice.
-        if (n['akcija'] == 'posnetek' && e.sporocilo.contains('Neznana akcija')) {
+        if ((n['akcija'] == 'posnetek' || n['akcija'] == 'nastavitev') && e.sporocilo.contains('Neznana akcija')) {
           n['cakaSkripto'] = true;
           i++;
           continue;
@@ -245,6 +248,7 @@ class Baza extends ChangeNotifier {
             'besedilo' => 'Besedilo',
             'klicaj' => 'Klicaj',
             'posnetek' => 'Posnetek',
+            'nastavitev' => 'Nastavitev',
             _ => 'Pesem',
           }}: $e',
         );
@@ -258,7 +262,7 @@ class Baza extends ChangeNotifier {
     await _shraniNeposlano();
     if (_cakaInternet) return '${neposlano.length} sprememb še čaka na internet.';
     if (neposlano.isNotEmpty) {
-      zavrnjene.add('Posnetki: skripta jih še ne pozna (uvedi novo različico skripte), ostanejo na napravi');
+      zavrnjene.add('Skripta teh sprememb še ne pozna (uvedi novo različico skripte), ostanejo na napravi');
     }
     return zavrnjene.isEmpty ? null : 'Strežnik ni sprejel: ${zavrnjene.join('; ')}';
   }
@@ -661,6 +665,42 @@ class Baza extends ChangeNotifier {
 
   Future<void> shraniObracanje(Api api, {required bool vsi, required bool neprijavljeni}) =>
       _shraniSpil(api, {..._spil, 'vsi': vsi, 'neprijavljeni': neprijavljeni});
+
+  /// Osebne nastavitve člana iz baze, z neposlanimi spremembami s te naprave.
+  Map<String, String> get mojeNastavitve => {
+    for (final e in ((_podatki['moje'] as Map?) ?? const {}).entries) e.key.toString(): besedilo(e.value),
+    for (final n in neposlano)
+      if (n['akcija'] == 'nastavitev')
+        besedilo((n['podatki'] as Map)['Ključ']): besedilo((n['podatki'] as Map)['Vrednost']),
+  };
+
+  /// Hitri filtri člana po mapah.
+  FiltriClana get filtri => FiltriClana.izBesedila(mojeNastavitve[FiltriClana.kljuc] ?? '');
+
+  Future<void> shraniFiltre(Api? api, String mapa, FiltriMape f) =>
+      shraniMojoNastavitev(api, FiltriClana.kljuc, filtri.z(mapa, f).vBesedilo());
+
+  /// Shrani osebno nastavitev: takoj na napravi, nato na strežnik (brez interneta počaka v neposlanih).
+  Future<void> shraniMojoNastavitev(Api? api, String kljuc, String vrednost) async {
+    _podatki['moje'] = {...((_podatki['moje'] as Map?) ?? const {}), kljuc: vrednost};
+    neposlano.removeWhere((n) => n['akcija'] == 'nastavitev' && besedilo((n['podatki'] as Map)['Ključ']) == kljuc);
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    notifyListeners();
+    try {
+      if (api == null) throw NiPovezave();
+      await api.mojaNastavitev(kljuc, vrednost);
+      await _shraniNeposlano();
+    } catch (e) {
+      // Neprijavljena naprava (iPad prek vodje) nastavitev ohrani le pri sebi.
+      if (Config.samoKlicaji) return;
+      neposlano.add({
+        'akcija': 'nastavitev',
+        'podatki': {'Ključ': kljuc, 'Vrednost': vrednost},
+        if (e is ApiNapaka && e is! NiPovezave && e.sporocilo.contains('Neznana akcija')) 'cakaSkripto': true,
+      });
+      await _shraniNeposlano();
+    }
+  }
 
   /// Skupna postavitev FX panela in XY pada.
   PostavitevFx get fx {
