@@ -108,6 +108,34 @@ void main() {
     expect(k.obOdprtju(u).map((u) => u.ukaz.zapis), ['CC 15 0 7', 'PC 1 23', 'CC 9 12 127']);
   });
 
+  test('Tyros: zapis povezave, banka in program ob odprtju le z vklopljeno kljukico', () async {
+    expect(povezavaTyros('1 41'), (banka: 1, program: 41));
+    expect(povezavaTyros('41'), (banka: 0, program: 41));
+    expect(povezavaTyros('0/127'), (banka: 0, program: 127));
+    expect(povezavaTyros('1 128'), isNull);
+    expect(povezavaTyros('abc'), isNull);
+    expect(povezavaTyros(''), isNull);
+
+    SharedPreferences.setMockInitialValues({'midi_vklop': true});
+    final prenos = _Prenos();
+    final midi = Midi(prenos)..nastavitveTyros = () => (kanal: 3, banka: true);
+    await midi.nalozi();
+    await midi.osveziNaprave();
+    final k = _knjiznica();
+    final a = Pesem.izVrstice({'ID': 'a', 'Koda': 1, 'Naslov': 'A', 'Povezava Tyros': '1 41'});
+    final b = Pesem.izVrstice({'ID': 'b', 'Koda': 2, 'Naslov': 'B', 'Povezava Tyros': '7'});
+    await midi.odprta(a, k);
+    expect(prenos.poslano, isEmpty); // privzeto izklopljeno
+    await midi.nastaviTyros(true);
+    await midi.odprta(b, k);
+    // CC 0 = 0 in PC 7 na kanalu 3 (0xB2, 0xC2) na vse povezane naprave.
+    expect(prenos.poslano, ['a 178 0 0', 'b 178 0 0', 'a 194 7', 'b 194 7']);
+    prenos.poslano.clear();
+    midi.nastavitveTyros = () => (kanal: 3, banka: false);
+    await midi.odprta(a, k);
+    expect(prenos.poslano, ['a 194 41', 'b 194 41']);
+  });
+
   test('pošiljanje na naprave po izhodih in zaprtje prejšnje pesmi', () async {
     SharedPreferences.setMockInitialValues({'midi_vklop': true});
     final prenos = _Prenos();

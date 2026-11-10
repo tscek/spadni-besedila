@@ -48,6 +48,7 @@ class NastavitveZaslon extends StatelessWidget {
                 onTap: () => _posljiPogled(context, Api(prijava.zeton)),
               ),
               _ObracanjeZaVse(baza: baza, api: Api(prijava.zeton)),
+              _Tyros(baza: baza, api: Api(prijava.zeton)),
             ],
             const ListTile(title: Text('Velja samo za to napravo.')),
             ListTile(
@@ -758,6 +759,64 @@ class _ObracanjeZaVseState extends State<_ObracanjeZaVse> {
             value: o.neprijavljeni,
             onChanged: _shranjujem ? null : (v) => _shrani(vsi: true, neprijavljeni: v),
           ),
+      ],
+    );
+  }
+}
+
+/// Klaviatura Tyros (administrator, skupno vsem): kanal in ali gre pred Program Change banka (CC 0).
+class _Tyros extends StatefulWidget {
+  const _Tyros({required this.baza, required this.api});
+
+  final Baza baza;
+  final Api api;
+
+  @override
+  State<_Tyros> createState() => _TyrosState();
+}
+
+class _TyrosState extends State<_Tyros> {
+  bool _shranjujem = false;
+
+  Future<void> _shrani({required int kanal, required bool banka}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _shranjujem = true);
+    try {
+      await widget.baza.shraniTyros(widget.api, kanal: kanal, banka: banka);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
+    } finally {
+      if (mounted) setState(() => _shranjujem = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.baza.tyros;
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.piano_outlined),
+          title: const Text('Tyros: MIDI kanal'),
+          subtitle: const Text(
+            'Za preset ob odprtju pesmi (polje Povezava Tyros). Pošilja le naprava, ki ima to vklopljeno '
+            'v Nastavitvah MIDI.',
+          ),
+          trailing: DropdownButton<int>(
+            key: const ValueKey('tyros-kanal'),
+            value: t.kanal,
+            onChanged: _shranjujem ? null : (v) => _shrani(kanal: v ?? 1, banka: t.banka),
+            items: [for (var k = 1; k <= 16; k++) DropdownMenuItem(value: k, child: Text('$k'))],
+          ),
+        ),
+        SwitchListTile(
+          key: const ValueKey('tyros-banka'),
+          secondary: const SizedBox(width: 24),
+          title: const Text('Tyros: pred programom pošlji banko (CC 0)'),
+          subtitle: const Text('Izklopi, če klaviatura izbere napačen preset.'),
+          value: t.banka,
+          onChanged: _shranjujem ? null : (v) => _shrani(kanal: t.kanal, banka: v),
+        ),
       ],
     );
   }

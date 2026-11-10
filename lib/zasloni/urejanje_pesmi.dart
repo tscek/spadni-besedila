@@ -120,6 +120,7 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
     ('Trajanje', _Vnos.trajanje),
     ('Oznaka', _Vnos.predlogi),
     ('YouTube', _Vnos.besedilo),
+    ('Povezava Tyros', _Vnos.besedilo),
     ('Opombe', _Vnos.besedilo),
   ];
   static const _poljaMidi = [
@@ -542,17 +543,23 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
             ? TextCapitalization.none
             : TextCapitalization.sentences,
         maxLines: stolpec == 'Opombe' ? null : 1,
-        onChanged: vnos == _Vnos.trajanje || stolpec == 'YouTube' ? (_) => setState(() {}) : null,
+        onChanged: vnos == _Vnos.trajanje || stolpec == 'YouTube' || stolpec == 'Povezava Tyros'
+            ? (_) => setState(() {})
+            : null,
         decoration: okvir.copyWith(
           hintText: vnos == _Vnos.trajanje
               ? 'npr. 3:45'
               : stolpec == 'YouTube'
               ? 'https://youtu.be/…'
+              : stolpec == 'Povezava Tyros'
+              ? 'banka program, npr. 1 41'
               : null,
           errorText: vnos == _Vnos.trajanje
               ? _napakaTrajanja()
               : stolpec == 'YouTube' && c.text.trim().isNotEmpty && idYoutube(c.text) == null
               ? 'To ni povezava na YouTube video'
+              : stolpec == 'Povezava Tyros' && c.text.trim().isNotEmpty && povezavaTyros(c.text) == null
+              ? 'Vpiši banko in program (0–127), npr. 1 41'
               : null,
           suffixIcon: stolpec == 'Tempo (BPM)'
               ? IconButton(

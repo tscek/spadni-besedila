@@ -129,6 +129,17 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   value: midi.obOdprtju,
                   onChanged: midi.nastaviObOdprtju,
                 ),
+              if (midi.vklopljen && midi.prekoVodje == null)
+                SwitchListTile(
+                  key: const ValueKey('midi-tyros'),
+                  title: const Text('Preset za Tyros ob odprtju pesmi'),
+                  subtitle: Text(
+                    'Pošlje banko in program iz polja Povezava Tyros na privzeti izhod (kanal ${baza.tyros.kanal}). '
+                    'Vklopi le na napravi, ki je povezana s klaviaturo. Kanal nastavi administrator v Nastavitvah.',
+                  ),
+                  value: midi.tyros,
+                  onChanged: midi.nastaviTyros,
+                ),
               if (midi.vklopljen && midi.prekoVodje == null && midi.obOdprtju) ..._takt(context, midi),
               // XY pad (FX) je skupen vsem napravam; ureja ga administrator.
               if (baza.jeAdministrator) ..._xy(context, midi),

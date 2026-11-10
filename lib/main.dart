@@ -66,6 +66,7 @@ Future<void> main(List<String> argumenti) async {
       await Midi.aplikacija.poslji(baza.midi.razsiri(ukazi), knjiznica: baza.midi);
     });
   ZvokSpila.aplikacija.knjiznica = () => baza.midi;
+  Midi.aplikacija.nastavitveTyros = () => baza.tyros;
   Midi.aplikacija.obSpremembiXy = (n) async {
     final api = apiZaEfekte();
     if (api != null && baza.jeAdministrator) await baza.shraniFx(api, baza.fx.kopija(xy: n));

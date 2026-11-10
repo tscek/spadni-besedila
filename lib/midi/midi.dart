@@ -57,6 +57,7 @@ class Midi extends ChangeNotifier {
   static const _kljucNaprav = 'midi_naprave';
   static const _kljucVhoda = 'midi_vhod';
   static const _kljucOdprtja = 'midi_ob_odprtju';
+  static const _kljucTyros = 'midi_tyros';
   static const _kljucTakta = 'midi_takt';
   static const _kljucXy = 'midi_xy';
 
@@ -65,6 +66,13 @@ class Midi extends ChangeNotifier {
   /// Ukazi ob odprtju in zaprtju pesmi (pesmi in splošna makra) s te naprave; privzeto izklopljeno,
   /// da jih ne pošilja vsaka naprava, ampak le tista, ki upravlja MIDI.
   bool obOdprtju = false;
+
+  /// Ob odprtju pesmi pošlji preset za klaviaturo Tyros (stolpec »Povezava Tyros«). Na vsaki napravi posebej,
+  /// privzeto izklopljeno.
+  bool tyros = false;
+
+  /// Skupne nastavitve Tyrosa (administrator): kanal in ali gre pred programom banka (CC 0).
+  ({int kanal, bool banka}) Function() nastavitveTyros = () => (kanal: 1, banka: true);
 
   /// MIDI clock ali ukaz na dobo v tempu pesmi (pošilja ga naprava, ki pošilja ukaze ob odprtju).
   NastavitveTakta takt = const NastavitveTakta();
@@ -135,6 +143,7 @@ class Midi extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     vklopljen = p.getBool(_kljucVklopa) ?? false;
     obOdprtju = p.getBool(_kljucOdprtja) ?? false;
+    tyros = p.getBool(_kljucTyros) ?? false;
     try {
       takt = NastavitveTakta.izJson((jsonDecode(p.getString(_kljucTakta) ?? '{}') as Map).cast<String, dynamic>());
     } catch (_) {
@@ -166,6 +175,20 @@ class Midi extends ChangeNotifier {
     (await SharedPreferences.getInstance()).setBool(_kljucVklopa, da);
     notifyListeners();
     if (da) await _zazeni();
+  }
+
+  Future<void> nastaviTyros(bool da) async {
+    tyros = da;
+    notifyListeners();
+    (await SharedPreferences.getInstance()).setBool(_kljucTyros, da);
+  }
+
+  /// Ukazi Tyros za pesem (prazno, če pesem nima povezave).
+  List<PoslaniUkaz> ukaziTyrosZa(Pesem p) {
+    final t = p.tyros;
+    if (t == null) return const [];
+    final n = nastavitveTyros();
+    return ukaziTyros(t, kanal: n.kanal, banka: n.banka);
   }
 
   Future<void> nastaviObOdprtju(bool da) async {
@@ -475,10 +498,13 @@ class Midi extends ChangeNotifier {
     final prejsnjaKnjiznica = _knjiznicaOdprte;
     _odprta = p;
     _knjiznicaOdprte = k;
-    if (!obOdprtju) return;
+    if (!obOdprtju) {
+      if (tyros) await poslji(ukaziTyrosZa(p), knjiznica: k);
+      return;
+    }
     ustaviTakt();
     if (prejsnja != null) await poslji(prejsnjaKnjiznica!.obZaprtju(prejsnja), knjiznica: prejsnjaKnjiznica);
-    await poslji(k.obOdprtju(p, uvod: uvod), knjiznica: k);
+    await poslji([...k.obOdprtju(p, uvod: uvod), if (tyros) ...ukaziTyrosZa(p)], knjiznica: k);
     if (_odprta?.id == p.id) zacniTakt(p, k);
   }
 

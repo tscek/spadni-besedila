@@ -133,6 +133,9 @@ class Pesem {
   /// Transpozicija playbacka v poltonih (−6 do +6).
   int get playbackTranspozicija => (int.tryParse(besedilo(vrstica['Playback transpozicija'])) ?? 0).clamp(-6, 6);
 
+  /// Preset na klaviaturi Yamaha Tyros (stolpec »Povezava Tyros«): banka in program, npr. »1 41« ali samo »41«.
+  ({int banka, int program})? get tyros => povezavaTyros(besedilo(vrstica['Povezava Tyros']));
+
   /// Povezava na YouTube (stolpec »YouTube«) in ID videa iz nje; null, če povezave ni ali je ne razumemo.
   String get youtube => besedilo(vrstica['YouTube']).trim();
   String? get youtubeId => idYoutube(youtube);
@@ -731,4 +734,13 @@ String? idYoutube(String povezava) {
         (seg.length >= 2 && const {'shorts', 'embed', 'live', 'v'}.contains(seg[0]) ? seg[1] : null);
   }
   return kandidat != null && id.hasMatch(kandidat) ? kandidat : null;
+}
+
+/// »banka program« ali samo »program« (banka 0); null, če zapis ni veljaven.
+({int banka, int program})? povezavaTyros(String zapis) {
+  final d = zapis.trim().split(RegExp(r'[\s/:.,-]+')).where((x) => x.isNotEmpty).toList();
+  if (d.isEmpty || d.length > 2) return null;
+  final st = [for (final x in d) int.tryParse(x)];
+  if (st.any((x) => x == null || x < 0 || x > 127)) return null;
+  return d.length == 1 ? (banka: 0, program: st[0]!) : (banka: st[0]!, program: st[1]!);
 }

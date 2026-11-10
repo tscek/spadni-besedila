@@ -44,6 +44,7 @@ const stolpciHitrega = [
   StolpecHitrega('Makro ob zaprtju', VrstaStolpca.predlogi, 130, privzeto: false),
   StolpecHitrega('Pisava', VrstaStolpca.stevilo, 70, privzeto: false),
   StolpecHitrega('YouTube', VrstaStolpca.besedilo, 200, privzeto: false),
+  StolpecHitrega('Povezava Tyros', VrstaStolpca.besedilo, 90, privzeto: false),
   StolpecHitrega('Opombe', VrstaStolpca.besedilo, 220),
 ];
 

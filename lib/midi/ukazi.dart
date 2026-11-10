@@ -182,6 +182,16 @@ class MidiGumb {
   };
 }
 
+/// Ukazi za preset na klaviaturi Tyros: Bank Select (CC 0) in Program Change na izbranem kanalu.
+List<PoslaniUkaz> ukaziTyros(({int banka, int program}) t, {required int kanal, bool banka = true}) => [
+  if (banka)
+    PoslaniUkaz(
+      MidiUkaz(ime: 'Tyros banka', vrsta: VrstaUkaza.cc, kanal: kanal, stevilka: 0, vrednost: t.banka),
+      privzetiIzhod,
+    ),
+  PoslaniUkaz(MidiUkaz(ime: 'Tyros program', vrsta: VrstaUkaza.pc, kanal: kanal, stevilka: t.program), privzetiIzhod),
+];
+
 /// Ukaz, pripravljen za pošiljanje, z izhodom, na katerega gre.
 class PoslaniUkaz {
   const PoslaniUkaz(this.ukaz, this.izhod);
