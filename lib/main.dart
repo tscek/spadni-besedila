@@ -72,9 +72,19 @@ Future<void> main(List<String> argumenti) async {
     if (api != null && baza.jeAdministrator) await baza.shraniFx(api, baza.fx.kopija(xy: n));
   };
   var podpisFx = '';
+  var xyPoslan = false;
   void obFx() {
     final fx = baza.fx;
-    if (fx.xy case final xy?) Midi.aplikacija.prevzemiXy(xy);
+    if (fx.xy case final xy?) {
+      Midi.aplikacija.prevzemiXy(xy);
+    } else if (baza.jeAdministrator && Midi.aplikacija.xy.nastavljen && !xyPoslan) {
+      // XY pad, nastavljen še pred skupnim FX (samo na napravi administratorja), se enkrat pošlje vsem.
+      final api = apiZaEfekte();
+      if (api != null) {
+        xyPoslan = true;
+        baza.shraniFx(api, fx.kopija(xy: Midi.aplikacija.xy)).catchError((_) => xyPoslan = false).ignore();
+      }
+    }
     final podpis = '${fx.vBesedilo()}|${baza.efekti.map((e) => '${e.id}:${e.datoteka}').join(',')}';
     if (podpis == podpisFx) return;
     podpisFx = podpis;
