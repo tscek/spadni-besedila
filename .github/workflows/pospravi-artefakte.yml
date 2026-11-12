@@ -1,8 +1,8 @@
 name: Pospravljanje artefaktov
 
-# Na GitHubu (Actions storage, 0,5 GB) hranimo le zadnji 2 gradnji za Android in zadnji 2 za Windows.
-# Starejše artefakte pobriše. Vse gradnje ostanejo na strani Releases (ne šteje v Actions storage)
-# in na Drivu (posodobitev v aplikaciji), zato se z brisanjem nič ne izgubi.
+# Gradnje ne nalagajo več artefaktov; ta workflow pobriše morebitne ostanke (APK in Windows ZIP).
+# Vse gradnje ostanejo na strani Releases (ne šteje v Actions storage) in na Drivu (posodobitev v aplikaciji).
+# Actions storage se obračuna sproti (GB na uro), zato vsak dan hranjenja artefakta šteje.
 on:
   workflow_run:
     workflows: [Android APK, Windows]
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            const OBDRZI = 2;
+            const OBDRZI = 0;
             const skupine = {
               android: /^spadni-besedila-\d+$/,
               windows: /^spadni-besedila-windows-\d+$/,

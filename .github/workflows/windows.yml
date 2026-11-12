@@ -55,11 +55,7 @@ jobs:
           mv build/windows/x64/runner/Release spadni-besedila
           7z a -tzip "spadni-besedila-windows-${{ github.run_number }}.zip" spadni-besedila
 
-      - uses: actions/upload-artifact@v5
-        with:
-          name: spadni-besedila-windows-${{ github.run_number }}
-          path: spadni-besedila-windows-${{ github.run_number }}.zip
-
+      # Brez artefakta: datoteka gre na Releases in Drive, Actions storage (0,5 GB/mesec) ostane prost.
       - name: Objava na strani Releases
         uses: softprops/action-gh-release@v2
         with:
