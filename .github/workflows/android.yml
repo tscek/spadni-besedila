@@ -64,11 +64,7 @@ jobs:
       - name: Ime datoteke
         run: cp build/app/outputs/flutter-apk/app-release.apk "spadni-besedila-${{ github.run_number }}.apk"
 
-      - uses: actions/upload-artifact@v5
-        with:
-          name: spadni-besedila-${{ github.run_number }}
-          path: spadni-besedila-${{ github.run_number }}.apk
-
+      # Brez artefakta: datoteka gre na Releases in Drive, Actions storage (0,5 GB/mesec) ostane prost.
       - name: Objava na strani Releases
         uses: softprops/action-gh-release@v2
         with:

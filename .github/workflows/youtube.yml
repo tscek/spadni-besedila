@@ -59,6 +59,8 @@ jobs:
       # Brez YouTube skrivnosti: video za ogled med artefakti gradnje (7 dni).
       - name: Video za ogled
         if: steps.seznam.outputs.dela == '1' && always()
+        # Če je Actions storage poln, naj gradnja ne pade.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: video
