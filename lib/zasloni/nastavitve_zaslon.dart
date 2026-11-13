@@ -819,7 +819,7 @@ class _TyrosState extends State<_Tyros> {
         SwitchListTile(
           key: const ValueKey('tyros-banka'),
           secondary: const SizedBox(width: 24),
-          title: const Text('Tyros: pred programom pošlji banko (CC 0)'),
+          title: const Text('Tyros: pred programom pošlji banko (CC 0 in CC 32)'),
           subtitle: const Text('Izklopi, če klaviatura izbere napačen preset.'),
           value: t.banka,
           onChanged: _shranjujem ? null : (v) => _shrani(kanal: t.kanal, banka: v),

@@ -109,9 +109,11 @@ void main() {
   });
 
   test('Tyros: zapis povezave, banka in program ob odprtju le z vklopljeno kljukico', () async {
-    expect(povezavaTyros('1 41'), (banka: 1, program: 41));
-    expect(povezavaTyros('41'), (banka: 0, program: 41));
-    expect(povezavaTyros('0/127'), (banka: 0, program: 127));
+    expect(povezavaTyros('1 41'), (banka: 1, lsb: null, program: 41));
+    expect(povezavaTyros('41'), (banka: 0, lsb: null, program: 41));
+    expect(povezavaTyros('0/127'), (banka: 0, lsb: null, program: 127));
+    expect(povezavaTyros('1 15 7'), (banka: 1, lsb: 15, program: 7));
+    expect(povezavaTyros('1 15 7 3'), isNull);
     expect(povezavaTyros('1 128'), isNull);
     expect(povezavaTyros('abc'), isNull);
     expect(povezavaTyros(''), isNull);
@@ -134,6 +136,13 @@ void main() {
     midi.nastavitveTyros = () => (kanal: 3, banka: false);
     await midi.odprta(a, k);
     expect(prenos.poslano, ['a 194 41', 'b 194 41']);
+
+    // Zapis kot v SongBooku: MSB, LSB in program -> CC 0, CC 32 in PC.
+    prenos.poslano.clear();
+    midi.nastavitveTyros = () => (kanal: 1, banka: true);
+    final c = Pesem.izVrstice({'ID': 'c', 'Koda': 3, 'Naslov': 'C', 'Povezava Tyros': '1 15 7'});
+    await midi.odprta(c, k);
+    expect(prenos.poslano, ['a 176 0 1', 'b 176 0 1', 'a 176 32 15', 'b 176 32 15', 'a 192 7', 'b 192 7']);
   });
 
   test('pošiljanje na naprave po izhodih in zaprtje prejšnje pesmi', () async {

@@ -134,7 +134,7 @@ class MidiNastavitveZaslon extends StatelessWidget {
                   key: const ValueKey('midi-tyros'),
                   title: const Text('Preset za Tyros ob odprtju pesmi'),
                   subtitle: Text(
-                    'Pošlje banko in program iz polja Povezava Tyros na privzeti izhod (kanal ${baza.tyros.kanal}). '
+                    'Pošlje banko (MSB, LSB) in program iz polja Povezava Tyros na privzeti izhod (kanal ${baza.tyros.kanal}). '
                     'Vklopi le na napravi, ki je povezana s klaviaturo. Kanal nastavi administrator v Nastavitvah.',
                   ),
                   value: midi.tyros,
