@@ -182,11 +182,17 @@ class MidiGumb {
   };
 }
 
-/// Ukazi za preset na klaviaturi Tyros: Bank Select (CC 0) in Program Change na izbranem kanalu.
-List<PoslaniUkaz> ukaziTyros(({int banka, int program}) t, {required int kanal, bool banka = true}) => [
+/// Ukazi za preset na klaviaturi Tyros: Bank Select MSB (CC 0), LSB (CC 32, če je zapisan) in Program Change
+/// na izbranem kanalu.
+List<PoslaniUkaz> ukaziTyros(({int banka, int? lsb, int program}) t, {required int kanal, bool banka = true}) => [
   if (banka)
     PoslaniUkaz(
-      MidiUkaz(ime: 'Tyros banka', vrsta: VrstaUkaza.cc, kanal: kanal, stevilka: 0, vrednost: t.banka),
+      MidiUkaz(ime: 'Tyros banka MSB', vrsta: VrstaUkaza.cc, kanal: kanal, stevilka: 0, vrednost: t.banka),
+      privzetiIzhod,
+    ),
+  if (banka && t.lsb != null)
+    PoslaniUkaz(
+      MidiUkaz(ime: 'Tyros banka LSB', vrsta: VrstaUkaza.cc, kanal: kanal, stevilka: 32, vrednost: t.lsb!),
       privzetiIzhod,
     ),
   PoslaniUkaz(MidiUkaz(ime: 'Tyros program', vrsta: VrstaUkaza.pc, kanal: kanal, stevilka: t.program), privzetiIzhod),

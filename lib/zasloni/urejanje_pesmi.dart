@@ -552,14 +552,14 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
               : stolpec == 'YouTube'
               ? 'https://youtu.be/…'
               : stolpec == 'Povezava Tyros'
-              ? 'banka program, npr. 1 41'
+              ? 'MSB LSB program, npr. 1 15 7'
               : null,
           errorText: vnos == _Vnos.trajanje
               ? _napakaTrajanja()
               : stolpec == 'YouTube' && c.text.trim().isNotEmpty && idYoutube(c.text) == null
               ? 'To ni povezava na YouTube video'
               : stolpec == 'Povezava Tyros' && c.text.trim().isNotEmpty && povezavaTyros(c.text) == null
-              ? 'Vpiši banko in program (0–127), npr. 1 41'
+              ? 'Vpiši MSB, LSB in program (0–127), npr. 1 15 7'
               : null,
           suffixIcon: stolpec == 'Tempo (BPM)'
               ? IconButton(
