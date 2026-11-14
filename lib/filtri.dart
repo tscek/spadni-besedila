@@ -88,10 +88,32 @@ int? sekundeTrajanja(String s) {
   return int.parse(m[1]!) * 60 + int.parse(m[2]!);
 }
 
-/// Hitri filtri ene mape: katera polja so prikazana in kateri čipi so skriti.
+/// Kaj se ob odprtju pesmi v mapi pokaže najprej, ko ima pesem besedilo in PDF.
+enum PrikazMape {
+  samodejno('Kot na napravi'),
+  pdf('PDF'),
+  besedilo('Besedilo');
+
+  const PrikazMape(this.ime);
+  final String ime;
+}
+
+/// Prikaz pesmi ob odprtju: stolpec Prikaz pri pesmi, nato izbira člana za mapo, nato nastavitev naprave.
+bool pdfNajprej(Pesem p, PrikazMape mapa, {required bool naprava}) =>
+    switch (besedilo(p.vrstica['Prikaz']).toLowerCase()) {
+      'pdf' => true,
+      'besedilo' => false,
+      _ => switch (mapa) {
+        PrikazMape.pdf => true,
+        PrikazMape.besedilo => false,
+        PrikazMape.samodejno => naprava,
+      },
+    };
+
+/// Hitri filtri ene mape: katera polja so prikazana in kateri čipi so skriti, ter prikaz PDF ali besedila.
 /// Brez shranjene nastavitve sta prikazana Vrsta in Harmonika (kot prej).
 class FiltriMape {
-  const FiltriMape({this.polja = privzeta, this.skriti = const {}});
+  const FiltriMape({this.polja = privzeta, this.skriti = const {}, this.prikaz = PrikazMape.samodejno});
 
   static const privzeta = [PoljeFiltra.vrsta, PoljeFiltra.harmonika];
 
@@ -103,7 +125,11 @@ class FiltriMape {
           for (final v in (e.value as List? ?? const [])) v.toString(),
         },
     },
+    prikaz: PrikazMape.values.asNameMap()[j['x']?.toString()] ?? PrikazMape.samodejno,
   );
+
+  /// Prikaz PDF ali besedila ob odprtju pesmi v tej mapi.
+  final PrikazMape prikaz;
 
   final List<PoljeFiltra> polja;
 
@@ -116,6 +142,7 @@ class FiltriMape {
       for (final e in skriti.entries)
         if (e.value.isNotEmpty) e.key.name: e.value.toList()..sort(),
     },
+    if (prikaz != PrikazMape.samodejno) 'x': prikaz.name,
   };
 
   bool skrit(PoljeFiltra p, String v) => skriti[p]?.contains(v) ?? false;

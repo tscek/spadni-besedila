@@ -1094,6 +1094,19 @@ class Baza extends ChangeNotifier {
     await shramba.izbrisi(_kljucPdf(pdf.driveId));
   }
 
+  /// Več PDF-jev naenkrat (hitro urejanje).
+  Future<void> izbrisiPdfje(Api api, List<PdfDatoteka> pdfji) async {
+    final odg = await api.izbrisiPdfje([for (final p in pdfji) p.id]);
+    final izbrisani = {for (final id in (odg['izbrisani'] as List? ?? const [])) id.toString()};
+    await _zamenjajVrstice('PDF', odstrani: (r) => izbrisani.contains(besedilo(r['ID'])));
+    for (final p in pdfji) {
+      if (izbrisani.contains(p.id)) await shramba.izbrisi(_kljucPdf(p.driveId));
+    }
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    _uporabi(_podatki);
+    notifyListeners();
+  }
+
   /// Ime prijavljenega člana (npr. za oglašanje vodje na omrežju).
   String get imeClana => ((_podatki['clan'] as Map?)?['Ime'] ?? '').toString();
 

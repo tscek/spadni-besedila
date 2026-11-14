@@ -218,6 +218,9 @@ class Api {
   /// Odstrani PDF pesmi (datoteka gre v koš na Drivu).
   Future<Map<String, dynamic>> izbrisiPdf(String id) => _post({'akcija': 'pdfIzbrisi', 'id': id});
 
+  /// Več PDF-jev naenkrat; vrne {izbrisani: [ID]}.
+  Future<Map<String, dynamic>> izbrisiPdfje(List<String> ids) => _post({'akcija': 'pdfIzbrisi', 'ids': ids});
+
   /// iPad na špilu: vodja pošlje ukaze na svoje MIDI naprave. Vrne število ukazov, ki niso imeli naprave.
   Future<int> posljiMidi(List<Map<String, dynamic>> ukazi) async {
     final odg = await _post({'akcija': 'posljiMidi', 'ukazi': ukazi});

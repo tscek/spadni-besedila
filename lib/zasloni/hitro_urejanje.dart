@@ -45,6 +45,7 @@ const stolpciHitrega = [
   StolpecHitrega('Pisava', VrstaStolpca.stevilo, 70, privzeto: false),
   StolpecHitrega('YouTube', VrstaStolpca.besedilo, 200, privzeto: false),
   StolpecHitrega('Povezava Tyros', VrstaStolpca.besedilo, 90, privzeto: false),
+  StolpecHitrega('Prikaz', VrstaStolpca.izbira, 96),
   StolpecHitrega('Opombe', VrstaStolpca.besedilo, 220),
 ];
 
@@ -173,6 +174,7 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
     'Status' => [for (final s in StatusPesmi.values) (s.ime, s.ime)],
     'Ocena' => [('', '–'), for (var i = 1; i <= 5; i++) ('$i', '★' * i)],
     'Mapa' => [for (final m in _baza.mape) (m.id, m.ime)],
+    'Prikaz' => [('', 'Samodejno'), ('PDF', 'PDF'), ('Besedilo', 'Besedilo')],
     _ => const [],
   };
 
@@ -347,6 +349,42 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
         if (p != null) _nastavi(p, stolpec.ime, v);
       }
     });
+  }
+
+  /// Izbriše vse PDF-je izbranih pesmi (po potrditvi). Datoteke gredo na Drivu v koš.
+  Future<void> _izbrisiPdfje() async {
+    final pdfji = [for (final id in _izbrane) ...?_baza.pdfjiPesmi[id]];
+    final messenger = ScaffoldMessenger.of(context);
+    if (pdfji.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Izbrane pesmi nimajo PDF-jev')));
+      return;
+    }
+    final pesmi = {for (final p in pdfji) p.pesem}.length;
+    final da = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Izbriši PDF-je?'),
+        content: Text('${pdfji.length} PDF pri $pesmi ${_pesmi(pesmi)}. Datoteke gredo na Drivu v koš (30 dni).'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Prekliči')),
+          FilledButton(
+            key: const ValueKey('hitro-izbrisi-pdf-potrdi'),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Izbriši'),
+          ),
+        ],
+      ),
+    );
+    if (da != true || !mounted) return;
+    final api = apiZaUrejanje(context, widget.prijava, baza: _baza);
+    if (api == null) return;
+    try {
+      await _baza.izbrisiPdfje(api, pdfji);
+      messenger.showSnackBar(SnackBar(content: Text('Izbrisanih PDF: ${pdfji.length}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Brisanje ni uspelo: $e')));
+    }
   }
 
   static String _pesmi(int n) => n % 100 == 1 ? 'pesem' : 'pesmi';
@@ -561,6 +599,11 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
                       key: const ValueKey('hitro-nastavi'),
                       onPressed: _nastaviZaIzbrane,
                       child: const Text('Nastavi za izbrane'),
+                    ),
+                    TextButton(
+                      key: const ValueKey('hitro-izbrisi-pdf'),
+                      onPressed: _izbrisiPdfje,
+                      child: const Text('Izbriši PDF'),
                     ),
                     TextButton(onPressed: () => setState(_izbrane.clear), child: const Text('Počisti izbiro')),
                   ],

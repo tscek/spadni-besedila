@@ -15,6 +15,7 @@ import '../tipkovnica.dart' show Listanje;
 import '../models.dart';
 import '../nastavitve.dart';
 import '../efekti.dart';
+import '../filtri.dart';
 import '../uvodi.dart';
 import '../zvok_spila.dart';
 import '../odigrane.dart';
@@ -211,7 +212,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _risanje.addListener(() {
       if (mounted) setState(() {});
     });
-    _prikaziBesedilo = _besedila.isNotEmpty && !(Nastavitve.aplikacija.pdfNajprej && _pdfji.isNotEmpty);
+    final prikaz = widget.baza.filtri.za(widget.mapa ?? _pesem.mapa).prikaz;
+    final pdf = pdfNajprej(_pesem, prikaz, naprava: Nastavitve.aplikacija.pdfNajprej);
+    _prikaziBesedilo = _besedila.isNotEmpty && !(pdf && _pdfji.isNotEmpty);
     // Po prvem izrisu, da obvestilo ne pride sredi gradnje zaslonov.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

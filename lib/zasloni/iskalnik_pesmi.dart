@@ -308,6 +308,7 @@ class _NastavitveFiltrovState extends State<NastavitveFiltrov> {
   late final Map<PoljeFiltra, Set<String>> _skriti = {
     for (final e in widget.zacetni.skriti.entries) e.key: {...e.value},
   };
+  late var _prikaz = widget.zacetni.prikaz;
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +321,41 @@ class _NastavitveFiltrovState extends State<NastavitveFiltrov> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Hitri filtri te mape. Velja zate na vseh napravah.', style: tema.textTheme.bodySmall),
+              child: Text('Nastavitve te mape. Veljajo zate na vseh napravah.', style: tema.textTheme.bodySmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Row(
+                children: [
+                  const Text('Najprej pokaži'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SegmentedButton<PrikazMape>(
+                        key: const ValueKey('filtri-prikaz'),
+                        showSelectedIcon: false,
+                        segments: [
+                          for (final p in PrikazMape.values)
+                            ButtonSegment(
+                              value: p,
+                              label: Text(p.ime, key: ValueKey('filtri-prikaz-${p.name}')),
+                            ),
+                        ],
+                        selected: {_prikaz},
+                        onSelectionChanged: (v) => setState(() => _prikaz = v.first),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Hitri filtri', style: tema.textTheme.titleSmall),
+              ),
             ),
             Flexible(
               child: ListView(
@@ -379,7 +414,8 @@ class _NastavitveFiltrovState extends State<NastavitveFiltrov> {
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
                   FilledButton(
                     key: const ValueKey('filtri-shrani'),
-                    onPressed: () => Navigator.pop(context, FiltriMape(polja: _polja, skriti: _skriti)),
+                    onPressed: () =>
+                        Navigator.pop(context, FiltriMape(polja: _polja, skriti: _skriti, prikaz: _prikaz)),
                     child: const Text('Shrani'),
                   ),
                 ],
