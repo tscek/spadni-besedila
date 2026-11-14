@@ -85,8 +85,9 @@ class Api {
   Future<void> risba(String pesem, String vsebina, {bool skupna = false}) =>
       _post({'akcija': 'risba', 'pesem': pesem, 'vsebina': vsebina, if (skupna) 'skupna': true});
 
-  /// Vodja: risbe vseh članov njegovih skupin {član: {pesem: {vsebina, spremenjeno}}}.
-  Future<Map<String, dynamic>> risbeClanov() => _get({'akcija': 'risbeClanov'});
+  /// Vodja: risbe članov njegovih skupin {član: {pesem: {vsebina, spremenjeno}}}.
+  /// Z [od] nova skripta vrne samo spremenjene: {_od: true, cas, risbe: {...}}.
+  Future<Map<String, dynamic>> risbeClanov({String? od}) => _get({'akcija': 'risbeClanov', 'od': ?od});
 
   /// Vodja: shrani risbo, ki jo je član naredil na špilu (na iPadu prek vodje).
   Future<void> risbaZa(String clan, String pesem, String vsebina) =>
