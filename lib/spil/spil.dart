@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../baza.dart';
@@ -89,6 +90,9 @@ class Spil extends ChangeNotifier {
   String? naslov;
   int sledilcev = 0;
 
+  /// Vodja: povezane naprave (član, vrsta naprave).
+  List<String> povezani = const [];
+
   /// Sledilec: ali je povezava z vodjo trenutno vzpostavljena.
   bool povezan = false;
 
@@ -139,6 +143,7 @@ class Spil extends ChangeNotifier {
           ZvokSpila.aplikacija.objavi();
         }
         sledilcev = n;
+        povezani = List.unmodifiable(s.povezani);
         notifyListeners();
       }, obSporocilu: _odSledilca);
       _streznik = s;
@@ -239,6 +244,27 @@ class Spil extends ChangeNotifier {
     } else {
       _izvedi(ukaz);
     }
+  }
+
+  /// Sledilec vodji pove, kdo je (za seznam povezanih naprav pri vodji).
+  Future<void> _predstaviSe() async {
+    var ime = baza?.imeClana ?? '';
+    if (ime.isEmpty) {
+      try {
+        final id = (await SharedPreferences.getInstance()).getString('jaz_clan');
+        if (id != null) ime = baza?.imeClanaZ(id) ?? '';
+      } catch (_) {}
+    }
+    final naprava = kIsWeb
+        ? 'brskalnik'
+        : switch (defaultTargetPlatform) {
+            TargetPlatform.android => 'Android',
+            TargetPlatform.iOS => 'iOS',
+            TargetPlatform.windows => 'Windows',
+            TargetPlatform.macOS => 'Mac',
+            _ => defaultTargetPlatform.name,
+          };
+    _posljiVodji({'vrsta': 'kdo', 'ime': ime, 'naprava': naprava});
   }
 
   void _posljiVodji(Map<String, dynamic> sporocilo) {
@@ -409,6 +435,7 @@ class Spil extends ChangeNotifier {
         SnemanjeSpila.aplikacija.vodji = (u) =>
             _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'snemanje', 'admin': baza?.jeAdministrator ?? false, ...u});
         ZvokSpila.aplikacija.vodji = (u) => _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'zvok', ...u});
+        _predstaviSe();
         // Klicaj iz aplikacije gre tudi vodji (iPad ga vodji pošlje sam prek /api).
         if (!Config.prekoVodje) {
           baza?.obKlicaju = (v, izbrisi) =>
@@ -511,6 +538,7 @@ class Spil extends ChangeNotifier {
     vloga = VlogaSpila.nic;
     naslov = null;
     sledilcev = 0;
+    povezani = const [];
     notifyListeners();
   }
 }

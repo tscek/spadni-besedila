@@ -232,6 +232,15 @@ class SpilGumb extends StatelessWidget {
         }),
         subtitle: spil.napaka == null ? null : Text(spil.napaka!),
       ),
+      // Vodja takoj vidi, katere naprave so povezane.
+      if (spil.vloga == VlogaSpila.vodja)
+        for (final (i, kdo) in spil.povezani.indexed)
+          ListTile(
+            key: ValueKey('povezan-$i'),
+            dense: true,
+            leading: const Icon(Icons.tablet_android),
+            title: Text(kdo),
+          ),
       if (Config.prekoVodje)
         FutureBuilder(
           future: clanNaSpilu(),

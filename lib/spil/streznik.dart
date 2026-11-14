@@ -13,6 +13,9 @@ abstract class StreznikVodje {
 
   /// Pošlje sporočilo vsem sledilcem; zadnje sporočilo vsake vrste dobi tudi sledilec, ki se poveže kasneje.
   void poslji(String sporocilo);
+
+  /// Povezane naprave: član in vrsta naprave (sledilec se predstavi ob povezavi).
+  List<String> get povezani;
   Future<void> ustavi();
 }
 

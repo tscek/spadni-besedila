@@ -65,6 +65,9 @@ class _Streznik implements StreznikVodje {
   void poslji(String sporocilo) => poslano.add(jsonDecode(sporocilo) as Map<String, dynamic>);
 
   @override
+  List<String> get povezani => const [];
+
+  @override
   Future<void> ustavi() async {}
 }
 

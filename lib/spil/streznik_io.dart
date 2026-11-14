@@ -97,6 +97,12 @@ class StreznikIo implements StreznikVodje {
     }
   }
 
+  /// Kdo je na kateri povezavi (iz sporočila »kdo«); brez njega le vrsta odjemalca.
+  final _kdo = <WebSocket, String>{};
+
+  @override
+  List<String> get povezani => [for (final ws in _odjemalci) _kdo[ws] ?? 'Neznana naprava'];
+
   @override
   void poslji(String sporocilo) {
     try {
@@ -121,6 +127,7 @@ class StreznikIo implements StreznikVodje {
       await ws.close();
     }
     _odjemalci.clear();
+    _kdo.clear();
     await _streznik?.close(force: true);
     _streznik = null;
   }
@@ -133,6 +140,7 @@ class StreznikIo implements StreznikVodje {
       final ws = await WebSocketTransformer.upgrade(z);
       ws.pingInterval = const Duration(seconds: 5);
       _odjemalci.add(ws);
+      if (brskalnik) _kdo[ws] = 'iPad (brskalnik)';
       _obSpremembi?.call(_odjemalci.length);
       for (final m in _zadnje.values) {
         ws.add(m);
@@ -142,6 +150,14 @@ class StreznikIo implements StreznikVodje {
           try {
             final j = jsonDecode(m as String);
             if (j is! Map<String, dynamic>) return;
+            if (j['vrsta'] == 'kdo') {
+              final ime = (j['ime'] ?? '').toString().trim();
+              final naprava = (j['naprava'] ?? '').toString().trim();
+              _kdo[ws] = [if (ime.isNotEmpty) ime, if (naprava.isNotEmpty) naprava].join(', ');
+              if (_kdo[ws]!.isEmpty) _kdo.remove(ws);
+              _obSpremembi?.call(_odjemalci.length);
+              return;
+            }
             if (!brskalnik || dovoljenoNeprijavljenemu(j, obracajo: baza.obracanje.neprijavljeni)) {
               _obSporocilu?.call(j);
             }
@@ -149,6 +165,7 @@ class StreznikIo implements StreznikVodje {
         },
         onDone: () {
           _odjemalci.remove(ws);
+          _kdo.remove(ws);
           _obSpremembi?.call(_odjemalci.length);
         },
         onError: (Object _) {},
