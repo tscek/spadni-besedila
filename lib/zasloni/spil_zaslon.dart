@@ -232,6 +232,15 @@ class SpilGumb extends StatelessWidget {
         }),
         subtitle: spil.napaka == null ? null : Text(spil.napaka!),
       ),
+      if (spil.lahkoPomikaVsem && !Config.prekoVodje)
+        SwitchListTile(
+          key: const ValueKey('pomikam-vsem'),
+          secondary: const Icon(Icons.swap_vert),
+          title: const Text('Pomikam besedilo vsem'),
+          subtitle: const Text('Kdor ima odprto isto pesem, vidi isti del besedila ali PDF-ja'),
+          value: spil.pomikamVsem,
+          onChanged: spil.nastaviPomikamVsem,
+        ),
       // Vodja takoj vidi, katere naprave so povezane.
       if (spil.vloga == VlogaSpila.vodja)
         for (final (i, kdo) in spil.povezani.indexed)

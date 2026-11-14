@@ -43,6 +43,10 @@ class StanjeSpila {
   int get hashCode => Object.hash(pesem, setlista, indeks);
 }
 
+/// Skupno pomikanje: kje v pesmi je naprava, ki pomika vsem. Pri besedilu je [polozaj] vrstica na vrhu
+/// zaslona (indeks in delež vrstice), pri PDF-ju delež višine dokumenta; tako velja na vsakem zaslonu.
+typedef PomikPesmi = ({String pesem, bool pdf, double polozaj});
+
 /// Pesem v seznamčku naslednjih: kdo jo je dodal in ali gre (v setlisti) na konec.
 @immutable
 class Naslednja {
@@ -92,6 +96,39 @@ class Spil extends ChangeNotifier {
 
   /// Vodja: povezane naprave (član, vrsta naprave).
   List<String> povezani = const [];
+
+  /// Ta naprava pomika besedilo vsem na špilu (stikalo v meniju Špil, samo na tej napravi).
+  bool pomikamVsem = false;
+
+  /// Zadnji pomik naprave, ki pomika vsem (zaslon pesmi mu sledi, če je odprta ista pesem).
+  final pomik = ValueNotifier<PomikPesmi?>(null);
+
+  /// Pomika lahko vodja ali povezan sledilec, ki sme obračati pesmi za vse.
+  bool get lahkoPomikaVsem =>
+      vloga == VlogaSpila.vodja || (vloga == VlogaSpila.sledilec && povezan && (baza?.obracaZaVse ?? false));
+
+  void nastaviPomikamVsem(bool da) {
+    pomikamVsem = da;
+    notifyListeners();
+  }
+
+  /// Zaslon pesmi sporoči, kje je; gre vsem, če ta naprava pomika vsem.
+  void posljiPomik(PomikPesmi p) {
+    if (!pomikamVsem || !lahkoPomikaVsem) return;
+    final j = {'pesem': p.pesem, 'pdf': p.pdf, 'polozaj': p.polozaj};
+    if (vloga == VlogaSpila.sledilec) {
+      _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'pomik', ...j});
+    } else {
+      _streznik?.poslji(jsonEncode({'vrsta': 'pomik', ...j}));
+    }
+  }
+
+  static PomikPesmi? _pomikIz(Map<String, dynamic> j) {
+    final pesem = j['pesem']?.toString() ?? '';
+    final polozaj = (j['polozaj'] as num?)?.toDouble();
+    if (pesem.isEmpty || polozaj == null) return null;
+    return (pesem: pesem, pdf: j['pdf'] == true, polozaj: polozaj);
+  }
 
   /// Sledilec: ali je povezava z vodjo trenutno vzpostavljena.
   bool povezan = false;
@@ -276,6 +313,13 @@ class Spil extends ChangeNotifier {
   /// Vodja: sporočilo sledilca.
   void _odSledilca(Map<String, dynamic> j) {
     if (j['vrsta'] != 'ukaz') return;
+    if (j['ukaz'] == 'pomik') {
+      final p = _pomikIz(j);
+      if (p == null) return;
+      _streznik?.poslji(jsonEncode({'vrsta': 'pomik', 'pesem': p.pesem, 'pdf': p.pdf, 'polozaj': p.polozaj}));
+      if (!pomikamVsem) pomik.value = p;
+      return;
+    }
     if (j['ukaz'] == 'prikazi' && j['stanje'] is Map) {
       zahtevanaPesem.value = StanjeSpila.izJson((j['stanje'] as Map).cast<String, dynamic>());
       return;
@@ -449,6 +493,8 @@ class Spil extends ChangeNotifier {
           if (j['vrsta'] == 'stanje') {
             stanje = StanjeSpila.izJson(j);
             notifyListeners();
+          } else if (j['vrsta'] == 'pomik') {
+            if (!pomikamVsem) pomik.value = _pomikIz(j);
           } else if (j['vrsta'] == 'runda') {
             Runda.aplikacija.prevzemi(j);
           } else if (j['vrsta'] == 'odigrane') {
@@ -539,6 +585,8 @@ class Spil extends ChangeNotifier {
     naslov = null;
     sledilcev = 0;
     povezani = const [];
+    pomikamVsem = false;
+    pomik.value = null;
     notifyListeners();
   }
 }

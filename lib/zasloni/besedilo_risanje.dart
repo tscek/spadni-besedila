@@ -33,6 +33,8 @@ class BesediloZRisanjem extends StatefulWidget {
     this.zacniSkupno = false,
     this.posnetki,
     this.vrsticaPlaybacka,
+    this.sledi,
+    this.obPomiku,
   });
 
   /// Širina strani v enotah strani in privzeta pisava pesmi na njej.
@@ -69,6 +71,12 @@ class BesediloZRisanjem extends StatefulWidget {
 
   /// Vrstica, ki jo med playbackom pravkar pojemo (poudarjena, besedilo se samo pomika k njej).
   final ValueListenable<int?>? vrsticaPlaybacka;
+
+  /// Skupno pomikanje na špilu: vrstica (indeks in delež), ki naj bo na vrhu zaslona.
+  final ValueListenable<double?>? sledi;
+
+  /// Ko član sam pomakne besedilo: vrstica na vrhu zaslona (indeks in delež).
+  final void Function(double vrstica)? obPomiku;
 
   @override
   State<BesediloZRisanjem> createState() => _BesediloZRisanjemState();
@@ -141,6 +149,9 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     super.initState();
     _listanje = Listanje.tok.listen(_listaj);
     widget.vrsticaPlaybacka?.addListener(_slediPlaybacku);
+    widget.sledi?.addListener(_sledi);
+    // Ob odprtju pesmi skoči tja, kjer je naprava, ki pomika vsem.
+    if (widget.sledi?.value != null) WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _sledi() : null);
   }
 
   @override
@@ -149,6 +160,10 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
     if (stari.vrsticaPlaybacka != widget.vrsticaPlaybacka) {
       stari.vrsticaPlaybacka?.removeListener(_slediPlaybacku);
       widget.vrsticaPlaybacka?.addListener(_slediPlaybacku);
+    }
+    if (stari.sledi != widget.sledi) {
+      stari.sledi?.removeListener(_sledi);
+      widget.sledi?.addListener(_sledi);
     }
   }
 
@@ -175,6 +190,8 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   @override
   void dispose() {
     widget.vrsticaPlaybacka?.removeListener(_slediPlaybacku);
+    widget.sledi?.removeListener(_sledi);
+    _odlozenPomik?.cancel();
     _listanje?.cancel();
     _navpicno.dispose();
     _vodoravno.dispose();
@@ -298,7 +315,80 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
   bool _obSkrolu(ScrollNotification n) {
     if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
     _osveziNadaljevanje(n.metrics);
+    if (!_sledim && widget.obPomiku != null && (n is ScrollEndNotification || n is ScrollUpdateNotification)) {
+      _javiPomik(koncno: n is ScrollEndNotification);
+    }
     return false;
+  }
+
+  // ---------- Skupno pomikanje (špil) ----------
+
+  /// Med premikom po tuji napravi ne javljamo svojega pomika nazaj.
+  bool _sledim = false;
+  DateTime _zadnjiPomik = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _odlozenPomik;
+
+  /// Zgornji in spodnji rob vrstice [i] v točkah vidnega dela (0 = vrh zaslona).
+  (double, double)? _robovaVrstice(int i, RenderBox okno) {
+    final b = _kljuci[i].currentContext?.findRenderObject() as RenderBox?;
+    if (b == null || !b.hasSize || !b.attached) return null;
+    final zg = b.localToGlobal(Offset.zero, ancestor: okno).dy;
+    final sp = b.localToGlobal(Offset(0, b.size.height), ancestor: okno).dy;
+    return (zg, sp);
+  }
+
+  RenderBox? get _okno {
+    final c = _navpicno.hasClients ? _navpicno.position.context.notificationContext : null;
+    final r = c?.findRenderObject();
+    return r is RenderBox && r.hasSize ? r : null;
+  }
+
+  /// Vrstica na vrhu zaslona: indeks in delež vrstice, ki je že zgoraj.
+  double? _vrsticaNaVrhu() {
+    final okno = _okno;
+    if (okno == null) return null;
+    for (var i = 0; i < _kljuci.length; i++) {
+      final r = _robovaVrstice(i, okno);
+      if (r == null) continue;
+      final (zg, sp) = r;
+      if (sp > 0) return i + (sp > zg ? ((-zg) / (sp - zg)).clamp(0.0, 1.0) : 0.0);
+    }
+    return null;
+  }
+
+  void _javiPomik({bool koncno = false}) {
+    final zdaj = DateTime.now();
+    const razmik = Duration(milliseconds: 150);
+    if (!koncno && zdaj.difference(_zadnjiPomik) < razmik) {
+      _odlozenPomik ??= Timer(razmik, () {
+        _odlozenPomik = null;
+        _javiPomik(koncno: true);
+      });
+      return;
+    }
+    _odlozenPomik?.cancel();
+    _odlozenPomik = null;
+    _zadnjiPomik = zdaj;
+    final v = _vrsticaNaVrhu();
+    if (v != null) widget.obPomiku?.call(v);
+  }
+
+  /// Tuja naprava je pomaknila: ista vrstica gre na vrh tega zaslona.
+  void _sledi() {
+    final v = widget.sledi?.value;
+    final okno = _okno;
+    if (v == null || okno == null || risem || !_navpicno.hasClients) return;
+    final i = v.floor().clamp(0, _kljuci.length - 1);
+    final r = _robovaVrstice(i, okno);
+    if (r == null) return;
+    final (zg, sp) = r;
+    final p = _navpicno.position;
+    final cilj = (p.pixels + zg + (v - i).clamp(0.0, 1.0) * (sp - zg)).clamp(0.0, p.maxScrollExtent);
+    if ((cilj - p.pixels).abs() < 2) return;
+    _sledim = true;
+    _navpicno
+        .animateTo(cilj, duration: const Duration(milliseconds: 250), curve: Curves.easeOut)
+        .whenComplete(() => _sledim = false);
   }
 
   void _osveziNadaljevanje(ScrollMetrics m) {

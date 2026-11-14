@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -37,6 +38,8 @@ class PdfZRisanjem extends StatefulWidget {
     this.smeSkupno = false,
     this.zacniSkupno = false,
     this.posnetki,
+    this.sledi,
+    this.obPomiku,
   });
 
   /// Skupne risbe pesmi in ali jih član sme risati.
@@ -65,6 +68,12 @@ class PdfZRisanjem extends StatefulWidget {
 
   /// Klicaji pesmi (na straneh PDF-ja so tisti s stranjo 1 in več).
   final List<KlicajPesmi> klicaji;
+
+  /// Skupno pomikanje na špilu: delež višine dokumenta, ki naj bo na vrhu zaslona.
+  final ValueListenable<double?>? sledi;
+
+  /// Ko član sam pomakne PDF: delež višine dokumenta na vrhu zaslona.
+  final void Function(double delez)? obPomiku;
 
   @override
   State<PdfZRisanjem> createState() => _PdfZRisanjemState();
@@ -130,7 +139,58 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
   @override
   void dispose() {
     _listanje?.cancel();
+    widget.sledi?.removeListener(_sledi);
+    _kontroler.removeListener(_obPremiku);
+    _odlozenPomik?.cancel();
     super.dispose();
+  }
+
+  // ---------- Skupno pomikanje (špil) ----------
+
+  bool _sledim = false;
+  double? _zadnjiDelez;
+  DateTime _zadnjiPomik = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _odlozenPomik;
+
+  double? get _delez {
+    if (!_kontroler.isReady) return null;
+    final h = _kontroler.documentSize.height;
+    return h <= 0 ? null : (_kontroler.visibleRect.top / h).clamp(0.0, 1.0);
+  }
+
+  void _obPremiku() {
+    if (_sledim || widget.obPomiku == null) return;
+    final d = _delez;
+    if (d == null || (d - (_zadnjiDelez ?? -1)).abs() < 0.002) return;
+    final zdaj = DateTime.now();
+    const razmik = Duration(milliseconds: 150);
+    if (zdaj.difference(_zadnjiPomik) < razmik) {
+      _odlozenPomik ??= Timer(razmik, () {
+        _odlozenPomik = null;
+        _obPremiku();
+      });
+      return;
+    }
+    _zadnjiPomik = zdaj;
+    _zadnjiDelez = d;
+    widget.obPomiku?.call(d);
+  }
+
+  /// Tuja naprava je pomaknila: isti del dokumenta gre na vrh zaslona (povečava ostane).
+  void _sledi() {
+    final v = widget.sledi?.value;
+    final d = _delez;
+    if (!mounted || v == null || d == null || risem) return;
+    final dy = (v - d) * _kontroler.documentSize.height * _kontroler.currentZoom;
+    if (dy.abs() < 2) return;
+    _sledim = true;
+    final cilj = Matrix4.translationValues(0, -dy, 0)..multiply(_kontroler.value);
+    _kontroler
+        .goTo(_kontroler.makeMatrixInSafeRange(cilj, forceClamp: true), duration: const Duration(milliseconds: 250))
+        .whenComplete(() {
+          _zadnjiDelez = _delez;
+          _sledim = false;
+        });
   }
 
   /// Tipka gor ali dol: premik za tretjino zaslona.
@@ -145,6 +205,8 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
   void initState() {
     super.initState();
     _listanje = Listanje.tok.listen(_listaj);
+    widget.sledi?.addListener(_sledi);
+    _kontroler.addListener(_obPremiku);
     Nastavitve.aplikacija.povecavaPdf(widget.pesem).then((zoom) {
       if (!mounted) return;
       setState(
@@ -181,6 +243,8 @@ class _PdfZRisanjemState extends State<PdfZRisanjem> with RisanjeNaStrani {
             // Pridržanje vklopi risanje, zato izbiranje besedila v PDF-ju ni vklopljeno.
             textSelectionParams: const PdfTextSelectionParams(enabled: false),
             onInteractionEnd: (_) => _shraniPovecavo(),
+            // Ob odprtju pesmi skoči tja, kjer je naprava, ki pomika vsem.
+            onViewerReady: (_, _) => _sledi(),
             pageOverlaysBuilder: (context, rect, page) => [slojStrani(page.pageNumber, rect.size)],
           ),
         ),

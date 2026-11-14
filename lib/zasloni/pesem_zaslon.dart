@@ -166,6 +166,20 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Med playbackom te pesmi (na katerikoli napravi špila) vrstica, ki se poje.
   final _vrsticaPlaybacka = ValueNotifier<int?>(null);
+
+  /// Skupno pomikanje: kje je naprava, ki pomika vsem (vrstica besedila ali delež PDF-ja).
+  final _sledi = ValueNotifier<double?>(null);
+
+  bool get _naBesedilu => _prikaziBesedilo && _besedila.isNotEmpty;
+
+  void _obPomiku() {
+    final p = widget.spil?.pomik.value;
+    if (p == null || p.pesem != widget.pesem.id || p.pdf == _naBesedilu) return;
+    _sledi.value = p.polozaj;
+  }
+
+  void _javiPomik(double polozaj, {required bool pdf}) =>
+      widget.spil?.posljiPomik((pesem: widget.pesem.id, pdf: pdf, polozaj: polozaj));
   Timer? _slediPlaybacku;
 
   void _obZvoku() {
@@ -215,6 +229,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
     final prikaz = widget.baza.filtri.za(widget.mapa ?? _pesem.mapa).prikaz;
     final pdf = pdfNajprej(_pesem, prikaz, naprava: Nastavitve.aplikacija.pdfNajprej);
     _prikaziBesedilo = _besedila.isNotEmpty && !(pdf && _pdfji.isNotEmpty);
+    widget.spil?.pomik.addListener(_obPomiku);
+    _obPomiku();
     // Po prvem izrisu, da obvestilo ne pride sredi gradnje zaslonov.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -250,6 +266,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
     ZvokSpila.aplikacija.removeListener(_obZvoku);
     _slediPlaybacku?.cancel();
     _vrsticaPlaybacka.dispose();
+    widget.spil?.pomik.removeListener(_obPomiku);
+    _sledi.dispose();
     _risanje.dispose();
     Midi.aplikacija.zaprta(_pesem);
     Predvajanje.uvodi.obZaprtju(_pesem);
@@ -1213,6 +1231,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
         zacniSkupno: widget.hitroUrejanje,
         posnetki: _posnetki,
         vrsticaPlaybacka: _vrsticaPlaybacka,
+        sledi: widget.spil == null ? null : _sledi,
+        obPomiku: widget.spil == null ? null : (v) => _javiPomik(v, pdf: false),
       );
     }
     if (_pdfji.isNotEmpty) {
@@ -1235,6 +1255,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
         zacniSkupno: widget.hitroUrejanje,
         posnetki: _posnetki,
         obPovecavi: (z) => setState(() => _novaPdf = (z,)),
+        sledi: widget.spil == null ? null : _sledi,
+        obPomiku: widget.spil == null ? null : (v) => _javiPomik(v, pdf: true),
       );
     }
     if (widget.baza.smeUrejatiPesem(_pesem)) {

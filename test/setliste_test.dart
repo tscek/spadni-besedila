@@ -227,6 +227,26 @@ void main() {
     await vodja.ustavi();
   });
 
+  test('skupno pomikanje: vodja pošlje svoj pomik vsem, pomik sledilca pa naprej in mu sledi', () async {
+    final baza = (await _baza()).$1;
+    final streznik = _Streznik();
+    final vodja = Spil(streznik: () => streznik);
+    await vodja.zacniVoditi(baza);
+    // Brez stikala se pomik ne pošlje.
+    vodja.posljiPomik((pesem: 'a', pdf: false, polozaj: 3.5));
+    expect(streznik.poslano.where((m) => m['vrsta'] == 'pomik'), isEmpty);
+    vodja.nastaviPomikamVsem(true);
+    vodja.posljiPomik((pesem: 'a', pdf: false, polozaj: 3.5));
+    expect(streznik.poslano.last, {'vrsta': 'pomik', 'pesem': 'a', 'pdf': false, 'polozaj': 3.5});
+    // Pomika sledilec: vodja ga pošlje vsem in mu sledi, ko sam ne pomika.
+    vodja.nastaviPomikamVsem(false);
+    streznik.odSledilca!({'vrsta': 'ukaz', 'ukaz': 'pomik', 'pesem': 'b', 'pdf': true, 'polozaj': 0.4});
+    expect(streznik.poslano.last, {'vrsta': 'pomik', 'pesem': 'b', 'pdf': true, 'polozaj': 0.4});
+    expect(vodja.pomik.value, (pesem: 'b', pdf: true, polozaj: 0.4));
+    await vodja.ustavi();
+    expect(vodja.pomik.value, isNull);
+  });
+
   testWidgets('playlista postane čakalna vrsta, pesem se odpre kot vsaka druga', (tester) async {
     late Baza baza;
     await tester.runAsync(() async => baza = (await _baza()).$1);
