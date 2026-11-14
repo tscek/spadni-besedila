@@ -62,9 +62,8 @@ Future<void> main(List<String> argumenti) async {
     ..bajti = ((id) => baza.bajtiEfekta(apiZaEfekte(), id))
     ..postavitev = (() => baza.fx)
     ..knjiznica = (() => baza.efekti)
-    ..midi = ((ukazi) async {
-      await Midi.aplikacija.poslji(baza.midi.razsiri(ukazi), knjiznica: baza.midi);
-    });
+    // MIDI gumbov FX gre na špilu na napravo »FX MIDI iz te naprave«.
+    ..midi = ((ukazi) => ZvokSpila.aplikacija.posljiMidiZapis(ukazi, baza.midi));
   ZvokSpila.aplikacija.knjiznica = () => baza.midi;
   Midi.aplikacija.nastavitveTyros = () => baza.tyros;
   Midi.aplikacija.obSpremembiXy = (n) async {

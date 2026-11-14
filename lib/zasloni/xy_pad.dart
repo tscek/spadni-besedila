@@ -29,12 +29,16 @@ class _XyPadState extends State<XyPad> {
     return s.isEmpty ? null : s[_skupina.clamp(0, s.length - 1)];
   }
 
-  late final _posiljalec = PosiljalecVrednosti(() {
-    final s = _izbrana;
-    final k = widget.knjiznica;
-    if (s == null) return const <PoslaniUkaz>[];
-    return [?ukazDrsnika(k, s.x, (_v.dx * 127).round()), ?ukazDrsnika(k, s.y, ((1 - _v.dy) * 127).round())];
-  }, widget.knjiznica);
+  late final _posiljalec = PosiljalecVrednosti(
+    () {
+      final s = _izbrana;
+      final k = widget.knjiznica;
+      if (s == null) return const <PoslaniUkaz>[];
+      return [?ukazDrsnika(k, s.x, (_v.dx * 127).round()), ?ukazDrsnika(k, s.y, ((1 - _v.dy) * 127).round())];
+    },
+    widget.knjiznica,
+    fx: true,
+  );
 
   @override
   void dispose() {

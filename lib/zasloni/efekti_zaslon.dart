@@ -240,6 +240,19 @@ class _EfektiZaslonState extends State<EfektiZaslon> {
             },
           ),
           SwitchListTile(
+            key: const ValueKey('efekti-fx-midi'),
+            title: const Text('FX MIDI iz te naprave'),
+            subtitle: const Text(
+              'Na špilu gre ves MIDI s FX (gumbi FX, XY pad in njegovi gumbi) z vseh naprav sem in ga pošlje ta naprava. '
+              'Vklopi na eni napravi (privzeto računalnik).',
+            ),
+            value: n.fxMidiTu,
+            onChanged: (da) async {
+              await n.nastaviFxMidiTu(da);
+              setState(() {});
+            },
+          ),
+          SwitchListTile(
             key: const ValueKey('efekti-hrani'),
             title: const Text('Hrani efekte lokalno'),
             subtitle: Text(

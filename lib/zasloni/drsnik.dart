@@ -31,7 +31,10 @@ PoslaniUkaz? ukazDrsnika(KnjiznicaMidi k, String zapis, int vrednost) {
 /// Pošiljanje vrednosti med vlečenjem (drsnik, XY pad): največ ~30-krat na sekundo (prek vodje 10-krat),
 /// brez zapisa v dnevnik; ob spustu še končna vrednost z zapisom.
 class PosiljalecVrednosti {
-  PosiljalecVrednosti(this.ukazi, this.knjiznica);
+  PosiljalecVrednosti(this.ukazi, this.knjiznica, {this.fx = false});
+
+  /// MIDI s FX (XY pad): na špilu gre na napravo »FX MIDI iz te naprave«.
+  final bool fx;
 
   /// Ukazi s trenutnimi vrednostmi.
   final List<PoslaniUkaz> Function() ukazi;
@@ -41,7 +44,9 @@ class PosiljalecVrednosti {
   Timer? _odlozeno;
 
   void premik() {
-    final razmik = Duration(milliseconds: Midi.aplikacija.prekoVodje != null || !Midi.aplikacija.vklopljen ? 100 : 33);
+    final prekoMreze =
+        Midi.aplikacija.prekoVodje != null || !Midi.aplikacija.vklopljen || (fx && ZvokSpila.aplikacija.fxMidiDrugje);
+    final razmik = Duration(milliseconds: prekoMreze ? 100 : 33);
     final zdaj = DateTime.now();
     if (zdaj.difference(_zadnje) >= razmik) {
       _poslji();
@@ -59,8 +64,8 @@ class PosiljalecVrednosti {
     final midi = Midi.aplikacija;
     final s = ukazi();
     if (s.isEmpty) return;
-    // Brez MIDI na tej napravi gre prek špila na napravo z efekti (PC).
-    if (!midi.vklopljen) {
+    // XY pad na špilu gre na napravo za FX MIDI; brez MIDI na tej napravi gre prek špila na napravo z efekti.
+    if (!midi.vklopljen || (fx && ZvokSpila.aplikacija.fxMidiDrugje)) {
       ZvokSpila.aplikacija.posljiMidi(s, knjiznica: knjiznica, surovo: !koncno);
       return;
     }

@@ -154,6 +154,7 @@ class Nastavitve extends ChangeNotifier {
   static const _izhodPlaybacka = 'izhod_playbacka';
   static const _hraniEfekte = 'hrani_efekte';
   static const _predvajajEfekte = 'predvajaj_efekte';
+  static const _fxMidiTu = 'fx_midi_tu';
   static const _izhodEfektov = 'izhod_efektov';
   static const _poljaSeznama = 'polja_seznama';
   static const _ikoneSeznama = 'ikone_seznama';
@@ -250,6 +251,11 @@ class Nastavitve extends ChangeNotifier {
   bool predvajajEfekte = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
   String izhodEfektov = '';
 
+  /// Na špilu gre ves MIDI s FX (gumbi FX, XY pad in njegovi gumbi) z vseh naprav na to napravo (privzeto PC).
+  bool fxMidiTu = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  Future<void> nastaviFxMidiTu(bool da) => _nastavi(() => fxMidiTu = da, (p) => p.setBool(_fxMidiTu, da));
+
   Future<void> nastaviHraniEfekte(bool da) => _nastavi(() => hraniEfekte = da, (p) => p.setBool(_hraniEfekte, da));
   Future<void> nastaviPredvajajEfekte(bool da) =>
       _nastavi(() => predvajajEfekte = da, (p) => p.setBool(_predvajajEfekte, da));
@@ -344,6 +350,7 @@ class Nastavitve extends ChangeNotifier {
     izhodPlaybacka = p.getString(_izhodPlaybacka) ?? d.izhodPlaybacka;
     hraniEfekte = p.getBool(_hraniEfekte) ?? d.hraniEfekte;
     predvajajEfekte = p.getBool(_predvajajEfekte) ?? d.predvajajEfekte;
+    fxMidiTu = p.getBool(_fxMidiTu) ?? d.fxMidiTu;
     izhodEfektov = p.getString(_izhodEfektov) ?? d.izhodEfektov;
     List<T>? seznam<T extends Enum>(String kljuc, List<T> vrednosti) {
       final s = p.getStringList(kljuc);

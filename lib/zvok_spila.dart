@@ -77,10 +77,15 @@ class ZvokSpila extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// MIDI (XY pad): s te naprave, če ima vklopljen MIDI, sicer prek špila na napravo z efekti.
+  bool get _naSpilu => vodji != null || vsem != null;
+
+  /// Na špilu MIDI s FX pošlje druga naprava (s stikalom »FX MIDI iz te naprave«); brez špila vedno ta.
+  bool get fxMidiDrugje => _naSpilu && !Nastavitve.aplikacija.fxMidiTu;
+
+  /// MIDI s FX (XY pad): na špilu z naprave »FX MIDI iz te naprave«, sicer s te naprave.
   Future<void> posljiMidi(List<PoslaniUkaz> ukazi, {KnjiznicaMidi? knjiznica, bool surovo = false}) async {
     final midi = Midi.aplikacija;
-    if (midi.vklopljen || (vodji == null && vsem == null)) {
+    if (!fxMidiDrugje) {
       if (surovo) {
         for (final u in ukazi) {
           midi.posljiSurovo(u.ukaz.bajti, u.izhod);
@@ -99,9 +104,9 @@ class ZvokSpila extends ChangeNotifier {
     });
   }
 
-  /// MIDI ukazi ali makri po imenu (gumbi nad XY padom).
+  /// MIDI ukazi ali makri po imenu (gumbi nad XY padom in gumbi FX).
   Future<void> posljiMidiZapis(String zapis, KnjiznicaMidi k) async {
-    if (Midi.aplikacija.vklopljen || (vodji == null && vsem == null)) {
+    if (!fxMidiDrugje) {
       await Midi.aplikacija.poslji(k.razsiri(zapis), knjiznica: k);
       return;
     }
@@ -109,7 +114,9 @@ class ZvokSpila extends ChangeNotifier {
   }
 
   void _ukazFx(Map<String, dynamic> u) {
-    if (_efektiTu) {
+    // MIDI gre na napravo »FX MIDI iz te naprave«, zvok efektov na napravo z efekti.
+    final tu = u['akcija'] == 'midi' ? !fxMidiDrugje : _efektiTu;
+    if (tu) {
       _izvediFx(u);
     } else if (vodji case final f?) {
       f(u);
@@ -283,7 +290,7 @@ class ZvokSpila extends ChangeNotifier {
   /// Vodja: ukaz sledilca (uho, playback, stanje predvajanja).
   Future<void> odSledilca(Map<String, dynamic> u) async {
     if (_akcijeFx.contains(u['akcija'])) {
-      if (Nastavitve.aplikacija.predvajajEfekte) {
+      if (u['akcija'] == 'midi' ? Nastavitve.aplikacija.fxMidiTu : Nastavitve.aplikacija.predvajajEfekte) {
         await _izvediFx(u);
       } else {
         vsem?.call({'vrsta': 'zvokUkaz', ...u});
@@ -318,7 +325,8 @@ class ZvokSpila extends ChangeNotifier {
       if (j['akcija'] == 'playback' && Nastavitve.aplikacija.predvajajPlayback) {
         await predvajajTu?.call(j['pesem']?.toString() ?? '');
       }
-      if (_akcijeFx.contains(j['akcija']) && Nastavitve.aplikacija.predvajajEfekte) await _izvediFx(j);
+      final tu = j['akcija'] == 'midi' ? Nastavitve.aplikacija.fxMidiTu : Nastavitve.aplikacija.predvajajEfekte;
+      if (_akcijeFx.contains(j['akcija']) && tu) await _izvediFx(j);
       return;
     }
     if (j['uho'] is bool && j['uho'] != Nastavitve.aplikacija.uvodi) await _uho(j['uho'] as bool);
