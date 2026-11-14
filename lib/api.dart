@@ -82,7 +82,7 @@ class Api {
   /// Z [od] samo risbe, spremenjene od tega časa (nova skripta vrne {_od, cas, risbe}).
   /// Z [zeton] nadaljuje branje, ki ga je strežnik prekinil (odgovor ima zeton, dokler ni vsega).
   Future<Map<String, dynamic>> risbe({bool skupne = false, String? od, String? zeton}) =>
-      _get({'akcija': 'risbe', if (skupne) 'skupne': '1', 'od': ?od, 'zeton': ?zeton});
+      _get({'akcija': 'risbe', if (skupne) 'skupne': '1', 'od': ?od, 'nadaljuj': ?zeton});
 
   /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
   Future<void> risba(String pesem, String vsebina, {bool skupna = false}) =>
