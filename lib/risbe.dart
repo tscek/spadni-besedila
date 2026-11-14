@@ -488,7 +488,16 @@ class Risbe {
     final novaSkripta = odgovor['_od'] == true;
     // Starejša skripta ne pozna skupnih risb in vrne osebne: teh ne prepišemo med skupne.
     if (skupne && odgovor['_skupne'] != true) return;
-    final streznik = skupne || novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
+    final streznik = {
+      ...(skupne || novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor),
+    };
+    // Veliko risb: strežnik jih vrača po delih.
+    var zeton = odgovor['zeton'];
+    for (var i = 0; zeton is String && zeton.isNotEmpty && i < 200; i++) {
+      final del = await a.risbe(skupne: skupne, od: od, zeton: zeton);
+      streznik.addAll(((del['risbe'] as Map?) ?? const {}).cast<String, dynamic>());
+      zeton = del['zeton'];
+    }
     for (final e in streznik.entries) {
       if (neposlano.contains(e.key) || e.value is! Map) continue;
       final vsebina = (e.value as Map)['vsebina']?.toString() ?? '';
