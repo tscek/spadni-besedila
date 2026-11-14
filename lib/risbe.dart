@@ -511,6 +511,7 @@ class RisbeClanov {
   Timer? _odlozenoPosiljanje;
 
   static const _kljuc = 'risbe/_clani.json';
+  static const _kljucOd = 'risbe/_clani_od.txt';
 
   Future<Map<String, Map<String, dynamic>>> _nalozi() async {
     if (_vse != null) return _vse!;
@@ -527,7 +528,12 @@ class RisbeClanov {
   Future<void> _zapisi() async => _shramba.pisiBesedilo(_kljuc, jsonEncode(await _nalozi()));
 
   /// Risbe enega člana v obliki, kot jo vrne skripta za akcijo risbe.
-  Future<Map<String, dynamic>> zaClana(String clan) async => {
+  /// Vodja svojih risb ne prenaša med risbe članov: za [svoje] jih vzamemo iz njegovih osebnih
+  /// risb, kar je isti član narisal na iPadu na tem špilu, pa ima prednost.
+  Future<Map<String, dynamic>> zaClana(String clan, {Risbe? svoje, Iterable<String> pesmi = const []}) async => {
+    if (svoje != null)
+      for (final p in pesmi)
+        if (await svoje._shramba.beriBesedilo(svoje._kljuc(p)) case final v? when v.isNotEmpty) p: {'vsebina': v, 'spremenjeno': ''},
     for (final e in ((await _nalozi())[clan] ?? const {}).entries)
       e.key: {'vsebina': (e.value as Map)['vsebina'], 'spremenjeno': (e.value as Map)['spremenjeno']},
   };
@@ -570,7 +576,11 @@ class RisbeClanov {
   Future<void> sinhroniziraj(Api a) async {
     api = a;
     await posljiNeposlane();
-    final streznik = await a.risbeClanov();
+    // Prenesemo le risbe, spremenjene od zadnje uskladitve; prvič vse (od začetka časa).
+    final od = await _shramba.beriBesedilo(_kljucOd);
+    final odgovor = await a.risbeClanov(od: (od == null || od.isEmpty) ? '1970-01-01T00:00:00.000Z' : od);
+    final novaSkripta = odgovor['_od'] == true;
+    final streznik = novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
     final vse = await _nalozi();
     for (final clan in streznik.entries) {
       final lokalno = vse.putIfAbsent(clan.key, () => {});
@@ -582,6 +592,7 @@ class RisbeClanov {
       }
     }
     await _zapisi();
+    if (novaSkripta && odgovor['cas'] is String) await _shramba.pisiBesedilo(_kljucOd, odgovor['cas'] as String);
   }
 }
 
