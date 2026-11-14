@@ -490,13 +490,14 @@ class Risbe {
     if (skupne && odgovor['_skupne'] != true) return;
     final streznik = skupne || novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
     for (final e in streznik.entries) {
-      if (neposlano.contains(e.key)) continue;
+      if (neposlano.contains(e.key) || e.value is! Map) continue;
       final vsebina = (e.value as Map)['vsebina']?.toString() ?? '';
       if (vsebina.isEmpty) continue;
       final Risba nova;
       try {
         nova = Risba.izBesedila(vsebina);
-      } on FormatException {
+      } catch (_) {
+        // pokvarjena ali tuja datoteka v mapi risb: preskočimo jo, ostale se prenesejo
         continue;
       }
       final lokalna = await nalozi(e.key);

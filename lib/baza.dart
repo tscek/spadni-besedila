@@ -384,6 +384,12 @@ class Baza extends ChangeNotifier {
   }
 
   /// Prenese podatke in manjkajoče PDF-je. Že preneseni PDF-ji ostanejo.
+  /// Napaka za obvestilo: največ 120 znakov.
+  static String _kratko(Object e) {
+    final s = e.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return s.length > 120 ? '${s.substring(0, 120)} …' : s;
+  }
+
   Future<void> osvezi(Api api) async {
     if (osvezujem) return;
     osvezujem = true;
@@ -452,12 +458,16 @@ class Baza extends ChangeNotifier {
 
       stanje = 'Usklajujem risbe …';
       notifyListeners();
-      var risbeNapaka = false;
+      String? risbeNapaka;
       try {
         await risbe.sinhroniziraj(api, clan: clanId);
+      } catch (e) {
+        risbeNapaka = 'Tvojih risb ni bilo mogoče uskladiti (${_kratko(e)}).';
+      }
+      try {
         await risbeSkupne.sinhroniziraj(api);
       } catch (e) {
-        risbeNapaka = true;
+        risbeNapaka = '${risbeNapaka ?? ''} Skupnih risb ni bilo mogoče uskladiti (${_kratko(e)}).'.trim();
       }
       String? risbeClanovNapaka;
       if (smeVoditi && !Config.prekoVodje) {
@@ -476,7 +486,7 @@ class Baza extends ChangeNotifier {
       stanje = [
         ?zavrnjene,
         if (neuspeli.isNotEmpty) '${neuspeli.length} PDF-jev ni bilo mogoče prenesti.',
-        if (risbeNapaka) 'Risb ni bilo mogoče uskladiti.',
+        ?risbeNapaka,
         ?risbeClanovNapaka,
       ].join(' ');
       if (stanje!.isEmpty) {
