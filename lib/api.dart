@@ -120,6 +120,10 @@ class Api {
   });
 
   /// Shrani ali izbriše vrstico na listu MIDI ukazi, Makri, MIDI gumbi ali MIDI kanali.
+  /// Ukaz nad mapo (samo administrator): premakni, kopiraj (v [zasedba]), izprazni, izbrisi.
+  Future<Map<String, dynamic>> mapaUkaz(String ukaz, String mapa, {String? zasedba, bool trajno = false}) =>
+      _post({'akcija': 'mapaUkaz', 'ukaz': ukaz, 'mapa': mapa, 'zasedba': ?zasedba, if (trajno) 'trajno': true});
+
   Future<Map<String, dynamic>> shraniMidi(String tabela, Map<String, dynamic> vrstica, {bool izbrisi = false}) =>
       _post({'akcija': 'midi', 'tabela': tabela, 'vrstica': vrstica, 'izbrisi': izbrisi});
 

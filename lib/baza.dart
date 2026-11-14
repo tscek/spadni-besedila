@@ -368,8 +368,13 @@ class Baza extends ChangeNotifier {
     }
 
     skupine = t('Skupine').map(Skupina.izVrstice).toList();
-    mape = t('Mape').map(Mapa.izVrstice).where((m) => m.id.isNotEmpty).toList()
-      ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
+    // Član vidi mape zasedbe, ki jo gleda (mapa brez zasedbe je skupna).
+    mape =
+        t('Mape')
+            .map(Mapa.izVrstice)
+            .where((m) => m.id.isNotEmpty && zaZasedbo([if (m.zasedba.isNotEmpty) m.zasedba]))
+            .toList()
+          ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     harmonike = t('Harmonike').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
       ..sort((a, b) => a.vrstniRed.compareTo(b.vrstniRed));
     vrste = t('Vrste').map(Harmonika.izVrstice).where((h) => h.id.isNotEmpty && h.ime.isNotEmpty).toList()
@@ -1218,6 +1223,14 @@ class Baza extends ChangeNotifier {
   }
 
   /// Shrani (ali izbriše) ukaz, makro, gumb, ime kanala ali harmoniko. Kanali imajo za ID številko kanala.
+  /// Mapa v drugo zasedbo ([ukaz] premakni ali kopiraj), izpraznitev ali izbris (pesmi v Arhiv ali [trajno]).
+  /// Spremeni veliko vrstic, zato nato osveži vse podatke.
+  Future<void> mapaUkaz(Api api, String ukaz, String mapa, {String? zasedba, bool trajno = false}) async {
+    if (_cakaInternet) await posljiNeposlano(api);
+    await api.mapaUkaz(ukaz, mapa, zasedba: zasedba, trajno: trajno);
+    await osvezi(api);
+  }
+
   Future<void> shraniMidi(Api api, String tabela, Zapis vrstica, {bool izbrisi = false}) async {
     final odg = await api.shraniMidi(tabela, vrstica, izbrisi: izbrisi);
     final kljuc = tabela == 'MIDI kanali' ? 'Kanal' : 'ID';

@@ -44,7 +44,7 @@ IconData ikonaMape(Mapa m) => ikoneMap[m.ikona] ?? Icons.folder_outlined;
 /// Pesmi v mapi, tudi arhivirane (mape s pesmimi se ne sme izbrisati).
 int steviloVMapi(Baza baza, String id) => baza.pesmi.where((p) => p.mapa == id).length;
 
-enum _Dejanje { shrani, izbrisi, gor, dol }
+enum _Dejanje { shrani, izbrisi, izprazni, zasedba, gor, dol }
 
 /// Okno za novo mapo ali urejanje obstoječe; shrani v list Mape.
 Future<void> urediMapo(BuildContext context, Baza baza, Api api, {Mapa? mapa}) async {
@@ -146,24 +146,41 @@ Future<void> urediMapo(BuildContext context, Baza baza, Api api, {Mapa? mapa}) a
                       onChanged: (v) => pavza = v ?? '',
                     ),
                   ],
-                  if (mapa != null && polne > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        'Mapo lahko izbrišeš, ko je prazna (zdaj ima $polne pesmi, tudi arhivirane).',
-                        style: tema.textTheme.bodySmall,
-                      ),
+                  if (mapa != null) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (baza.skupine.length > 1)
+                          OutlinedButton.icon(
+                            key: const ValueKey('mapa-zasedba'),
+                            onPressed: () => Navigator.pop(context, _Dejanje.zasedba),
+                            icon: const Icon(Icons.drive_file_move_outline),
+                            label: const Text('V drugo zasedbo'),
+                          ),
+                        if (polne > 0)
+                          OutlinedButton.icon(
+                            key: const ValueKey('mapa-izprazni'),
+                            onPressed: () => Navigator.pop(context, _Dejanje.izprazni),
+                            icon: const Icon(Icons.cleaning_services_outlined),
+                            label: const Text('Izprazni'),
+                          ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('mapa-izbrisi'),
+                          style: OutlinedButton.styleFrom(foregroundColor: tema.colorScheme.error),
+                          onPressed: () => Navigator.pop(context, _Dejanje.izbrisi),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Izbriši mapo'),
+                        ),
+                      ],
                     ),
+                  ],
                 ],
               ),
             ),
           ),
           actions: [
-            if (mapa != null)
-              TextButton(
-                onPressed: polne == 0 ? () => Navigator.pop(context, _Dejanje.izbrisi) : null,
-                child: const Text('Izbriši'),
-              ),
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
             FilledButton(
               key: const ValueKey('shrani-mapo'),
@@ -194,11 +211,37 @@ Future<void> urediMapo(BuildContext context, Baza baza, Api api, {Mapa? mapa}) a
             opis: opis.text.trim(),
             barva: hexBarva(barva),
             ikona: ikona,
+            zasedba: mapa?.zasedba ?? baza.zasedba,
           ).vVrstico(),
         );
-      case _Dejanje.izbrisi:
-        await baza.shraniMidi(api, 'Mape', {'ID': mapa!.id}, izbrisi: true);
-        messenger.showSnackBar(SnackBar(content: Text('Mapa ${mapa.ime} izbrisana')));
+      case _Dejanje.izbrisi || _Dejanje.izprazni:
+        if (!context.mounted) return;
+        final izbris = dejanje == _Dejanje.izbrisi;
+        final trajno = await _potrdiBrisanje(context, mapa!, polne, izbris: izbris);
+        if (trajno == null) return;
+        if (izbris && polne == 0) {
+          await baza.shraniMidi(api, 'Mape', {'ID': mapa.id}, izbrisi: true);
+        } else {
+          messenger.showSnackBar(const SnackBar(content: Text('Delam …')));
+          await baza.mapaUkaz(api, izbris ? 'izbrisi' : 'izprazni', mapa.id, trajno: trajno);
+        }
+        messenger.showSnackBar(
+          SnackBar(content: Text(izbris ? 'Mapa ${mapa.ime} izbrisana' : 'Mapa ${mapa.ime} izpraznjena')),
+        );
+      case _Dejanje.zasedba:
+        if (!context.mounted) return;
+        final izbira = await _izberiZasedbo(context, baza, mapa!);
+        if (izbira == null) return;
+        messenger.showSnackBar(const SnackBar(content: Text('Delam …')));
+        await baza.mapaUkaz(api, izbira.kopija ? 'kopiraj' : 'premakni', mapa.id, zasedba: izbira.zasedba);
+        final ime = baza.skupine.where((s) => s.id == izbira.zasedba).firstOrNull?.ime ?? izbira.zasedba;
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              izbira.kopija ? 'Kopija mape ${mapa.ime} je v zasedbi $ime' : 'Mapa ${mapa.ime} je zdaj v zasedbi $ime',
+            ),
+          ),
+        );
       case _Dejanje.gor || _Dejanje.dol:
         final vrsta = List.of(baza.mape);
         final m = vrsta.removeAt(i);
@@ -212,4 +255,123 @@ Future<void> urediMapo(BuildContext context, Baza baza, Api api, {Mapa? mapa}) a
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
   }
+}
+
+/// Varovalka pred brisanjem: vpisati je treba ime mape. Vrne null (prekliči) ali ali naj pesmi izginejo za vedno.
+Future<bool?> _potrdiBrisanje(BuildContext context, Mapa mapa, int pesmi, {required bool izbris}) {
+  final vnos = TextEditingController();
+  var trajno = false;
+  return showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, nastavi) {
+        final tema = Theme.of(context);
+        final ujema = vnos.text.trim().toLowerCase() == mapa.ime.trim().toLowerCase();
+        return AlertDialog(
+          icon: Icon(Icons.warning_amber_rounded, color: tema.colorScheme.error),
+          title: Text(izbris ? 'Izbriši mapo ${mapa.ime}?' : 'Izprazni mapo ${mapa.ime}?'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (pesmi > 0)
+                  Text(
+                    trajno
+                        ? 'Vseh $pesmi pesmi (tudi arhiviranih) bo izbrisanih za vedno, z besedili, PDF-ji in skupnimi risbami.'
+                        : 'Vseh $pesmi pesmi gre v Arhiv, od koder jih lahko vrneš.',
+                  ),
+                if (pesmi > 0)
+                  CheckboxListTile(
+                    key: const ValueKey('mapa-trajno'),
+                    contentPadding: EdgeInsets.zero,
+                    value: trajno,
+                    onChanged: (v) => nastavi(() => trajno = v ?? false),
+                    title: const Text('Pesmi izbriši za vedno'),
+                  ),
+                const SizedBox(height: 8),
+                Text('Za potrditev vpiši ime mape: ${mapa.ime}'),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('mapa-potrdi-ime'),
+                  controller: vnos,
+                  autofocus: true,
+                  onChanged: (_) => nastavi(() {}),
+                  decoration: InputDecoration(border: const OutlineInputBorder(), hintText: mapa.ime),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+            FilledButton(
+              key: const ValueKey('mapa-potrdi'),
+              style: FilledButton.styleFrom(backgroundColor: tema.colorScheme.error),
+              onPressed: ujema ? () => Navigator.pop(context, trajno) : null,
+              child: Text(izbris ? 'Izbriši' : 'Izprazni'),
+            ),
+          ],
+        );
+      },
+    ),
+  ).whenComplete(vnos.dispose);
+}
+
+/// Izbira zasedbe za premik ali kopijo mape.
+Future<({String zasedba, bool kopija})?> _izberiZasedbo(BuildContext context, Baza baza, Mapa mapa) {
+  final druge = [
+    for (final s in baza.skupine)
+      if (s.id != mapa.zasedba) s,
+  ];
+  var zasedba = druge.isEmpty ? '' : druge.first.id;
+  var kopija = false;
+  return showDialog<({String zasedba, bool kopija})>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, nastavi) => AlertDialog(
+        title: Text('Mapa ${mapa.ime} v drugo zasedbo'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                key: const ValueKey('mapa-nova-zasedba'),
+                initialValue: zasedba.isEmpty ? null : zasedba,
+                decoration: const InputDecoration(labelText: 'Zasedba', border: OutlineInputBorder()),
+                items: [for (final s in druge) DropdownMenuItem(value: s.id, child: Text(s.ime))],
+                onChanged: (v) => nastavi(() => zasedba = v ?? zasedba),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Premakni'), icon: Icon(Icons.drive_file_move_outline)),
+                  ButtonSegment(value: true, label: Text('Kopiraj'), icon: Icon(Icons.copy)),
+                ],
+                selected: {kopija},
+                onSelectionChanged: (v) => nastavi(() => kopija = v.first),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                kopija
+                    ? 'Nova mapa s kopijami pesmi (besedila, PDF in skupne risbe). Ta mapa ostane, kot je.'
+                    : 'Mapa in njene pesmi gredo v izbrano zasedbo; v tej je ne bo več.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+          FilledButton(
+            key: const ValueKey('mapa-zasedba-potrdi'),
+            onPressed: zasedba.isEmpty ? null : () => Navigator.pop(context, (zasedba: zasedba, kopija: kopija)),
+            child: Text(kopija ? 'Kopiraj' : 'Premakni'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

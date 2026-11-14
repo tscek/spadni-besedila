@@ -304,6 +304,7 @@ class Mapa {
     this.opis = '',
     this.barva = '',
     this.ikona = '',
+    this.zasedba = '',
   });
 
   factory Mapa.izVrstice(Zapis r) => Mapa(
@@ -314,11 +315,15 @@ class Mapa {
     opis: besedilo(r['Opis']),
     barva: besedilo(r['Barva']),
     ikona: besedilo(r['Ikona']),
+    zasedba: besedilo(r['Zasedba']),
   );
 
   final String id;
   final String ime;
   final int vrstniRed;
+
+  /// ID zasedbe, ki ji mapa pripada (prazno: vsem).
+  final String zasedba;
 
   /// ID pesmi, ki se odpre z izbiro »Pavza« v iskalniku.
   final String pavza;
@@ -345,6 +350,7 @@ class Mapa {
     'Opis': opis,
     'Barva': barva,
     'Ikona': ikona,
+    'Zasedba': zasedba,
   };
 }
 
