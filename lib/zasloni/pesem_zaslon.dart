@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -770,7 +771,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
           Orodje.uredi when widget.baza.smeUrejatiPesem(p) => [
             IconButton(
               tooltip: 'Uredi pesem',
-              icon: const Icon(Icons.edit_note),
+              icon: const Icon(Icons.edit_outlined),
               // Ko je na zaslonu besedilo, se urejanje odpre pri besedilu.
               onPressed: () => _uredi(zavihek: besedilo ? UrejanjePesmiZaslon.zavihekBesedila : 0),
             ),
@@ -1110,6 +1111,21 @@ class _PesemZaslonState extends State<PesemZaslon> {
     );
   }
 
+  /// Orodja v vrhnji vrstici: če jih je preveč za širino (telefon), se vrstica pomika vodoravno,
+  /// naslovu pa ostane vsaj malo prostora.
+  Widget _pomicnaOrodja(BuildContext context, List<Widget> gumbi) {
+    final sirina = MediaQuery.sizeOf(context).width;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: math.max(sirina - 56 - 96, 48)),
+      child: SingleChildScrollView(
+        key: const ValueKey('orodja-zgoraj'),
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: Row(mainAxisSize: MainAxisSize.min, children: gumbi),
+      ),
+    );
+  }
+
   Widget _zaslon(BuildContext context) {
     final p = _pesem;
     return Scaffold(
@@ -1123,26 +1139,28 @@ class _PesemZaslonState extends State<PesemZaslon> {
           ],
         ),
         actions: [
-          if (_neshranjenZoom)
-            IconButton(
-              tooltip: _novaPisava != null ? 'Shrani pisavo pesmi za vse' : 'Shrani povečavo za to pesem',
-              icon: const Icon(Icons.save_outlined),
-              onPressed: _shraniZoom,
-            ),
-          // Pesem ima posnetke ali je bila igrana na špilih: do njih tudi brez risanja.
-          if (_posnetki != null &&
-              ((widget.baza.posnetki[p.id]?.isNotEmpty ?? false) || (widget.baza.igranja[p.id]?.isNotEmpty ?? false)))
-            IconButton(
-              tooltip: 'Posnetki',
-              icon: Badge.count(
-                count: widget.baza.posnetki[p.id]?.length ?? 0,
-                isLabelVisible: widget.baza.posnetki[p.id]?.isNotEmpty ?? false,
-                child: const Icon(Icons.mic_none),
+          _pomicnaOrodja(context, [
+            if (_neshranjenZoom)
+              IconButton(
+                tooltip: _novaPisava != null ? 'Shrani pisavo pesmi za vse' : 'Shrani povečavo za to pesem',
+                icon: const Icon(Icons.save_outlined),
+                onPressed: _shraniZoom,
               ),
-              onPressed: () => _posnetki!(false),
-            ),
-          ..._orodja(context, Mesto.zgoraj),
-          const SizedBox(width: 4),
+            // Pesem ima posnetke ali je bila igrana na špilih: do njih tudi brez risanja.
+            if (_posnetki != null &&
+                ((widget.baza.posnetki[p.id]?.isNotEmpty ?? false) || (widget.baza.igranja[p.id]?.isNotEmpty ?? false)))
+              IconButton(
+                tooltip: 'Posnetki',
+                icon: Badge.count(
+                  count: widget.baza.posnetki[p.id]?.length ?? 0,
+                  isLabelVisible: widget.baza.posnetki[p.id]?.isNotEmpty ?? false,
+                  child: const Icon(Icons.mic_none),
+                ),
+                onPressed: () => _posnetki!(false),
+              ),
+            ..._orodja(context, Mesto.zgoraj),
+            const SizedBox(width: 4),
+          ]),
         ],
         bottom: _zgornjaVrstica(context),
       ),

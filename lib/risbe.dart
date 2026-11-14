@@ -533,7 +533,8 @@ class RisbeClanov {
   Future<Map<String, dynamic>> zaClana(String clan, {Risbe? svoje, Iterable<String> pesmi = const []}) async => {
     if (svoje != null)
       for (final p in pesmi)
-        if (await svoje._shramba.beriBesedilo(svoje._kljuc(p)) case final v? when v.isNotEmpty) p: {'vsebina': v, 'spremenjeno': ''},
+        if (await svoje._shramba.beriBesedilo(svoje._kljuc(p)) case final v? when v.isNotEmpty)
+          p: {'vsebina': v, 'spremenjeno': ''},
     for (final e in ((await _nalozi())[clan] ?? const {}).entries)
       e.key: {'vsebina': (e.value as Map)['vsebina'], 'spremenjeno': (e.value as Map)['spremenjeno']},
   };

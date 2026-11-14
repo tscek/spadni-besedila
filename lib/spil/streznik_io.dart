@@ -205,11 +205,13 @@ class StreznikIo implements StreznikVodje {
         final clan = p['clan'] ?? '';
         if (clan.isEmpty) return jsonEncode({});
         final jaz = clan == baza.clanId;
-        return jsonEncode(await baza.risbeClanov.zaClana(
-          clan,
-          svoje: jaz ? baza.risbe : null,
-          pesmi: jaz ? baza.pesmi.map((x) => x.id) : const [],
-        ));
+        return jsonEncode(
+          await baza.risbeClanov.zaClana(
+            clan,
+            svoje: jaz ? baza.risbe : null,
+            pesmi: jaz ? baza.pesmi.map((x) => x.id) : const [],
+          ),
+        );
       default:
         return jsonEncode({'napaka': 'Neznana akcija'});
     }

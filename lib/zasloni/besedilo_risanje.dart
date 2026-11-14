@@ -386,14 +386,21 @@ class _BesediloZRisanjemState extends State<BesediloZRisanjem> with RisanjeNaStr
                               width: enota,
                               child: _Stran(
                                 kljuc: _stranKljuc,
-                                podlaga: (velikost) =>
+                                risem: risem,
+                                // Gumbi so pod besedilom: črke gredo čeznje, dotik pa pride do gumba.
+                                podlaga: (velikost) => Stack(
+                                  children: [
                                     podlagaStrani(BesediloZRisanjem.stran, velikost, enotaX: enota, enotaY: enota),
+                                    gumbiPodStranjo(BesediloZRisanjem.stran, velikost, enotaX: enota, enotaY: enota),
+                                  ],
+                                ),
                                 sloj: (velikost) => slojStrani(
                                   BesediloZRisanjem.stran,
                                   velikost,
                                   enotaX: enota,
                                   enotaY: enota,
                                   zOznakami: false,
+                                  gumbiPod: true,
                                 ),
                                 // Malo prostora pod besedilom za opombe.
                                 child: Padding(
@@ -502,9 +509,18 @@ class _PuscicaNaprejState extends State<PuscicaNaprej> with SingleTickerProvider
 
 /// Besedilo z oznakami pod njim in slojem risb čez celo stran (velikost slojev = velikost besedila).
 class _Stran extends StatelessWidget {
-  const _Stran({required this.kljuc, required this.podlaga, required this.sloj, required this.child});
+  const _Stran({
+    required this.kljuc,
+    required this.risem,
+    required this.podlaga,
+    required this.sloj,
+    required this.child,
+  });
 
   final Key kljuc;
+
+  /// Med risanjem gre dotik v sloj; sicer besedilo dotikov ne lovi (do gumbov pod njim).
+  final bool risem;
   final Widget Function(Size velikost) podlaga;
   final Widget Function(Size velikost) sloj;
   final Widget child;
@@ -515,7 +531,7 @@ class _Stran extends StatelessWidget {
       key: kljuc,
       children: [
         Positioned.fill(child: LayoutBuilder(builder: (context, o) => podlaga(Size(o.maxWidth, o.maxHeight)))),
-        child,
+        IgnorePointer(ignoring: !risem, child: child),
         Positioned.fill(child: LayoutBuilder(builder: (context, o) => sloj(Size(o.maxWidth, o.maxHeight)))),
       ],
     );

@@ -761,16 +761,49 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
 
   /// Sloj risb nad stranjo velikosti [velikost]; [enotaX] in [enotaY] sta dolžini, s katerima se množita
   /// x in y (privzeto širina in višina). Z [zOznakami] false so oznake narisane posebej pod besedilom ([podlagaStrani]).
-  Widget slojStrani(int stran, Size velikost, {double? enotaX, double? enotaY, bool zOznakami = true}) {
+  /// Z [gumbiPod] so gumbi (razen med risanjem) narisani posebej pod besedilom ([gumbiPodStranjo]).
+  Widget slojStrani(
+    int stran,
+    Size velikost, {
+    double? enotaX,
+    double? enotaY,
+    bool zOznakami = true,
+    bool gumbiPod = false,
+  }) {
     final enota = Size(enotaX ?? velikost.width, enotaY ?? velikost.height);
     _enoteStrani[stran] = enota;
     return KeyedSubtree(
       key: _kljuciStrani.putIfAbsent(stran, GlobalKey.new),
-      child: _sloj(stran, velikost, enota, zOznakami),
+      child: _sloj(stran, velikost, enota, zOznakami, gumbiPod: gumbiPod && !risem),
     );
   }
 
-  Widget _sloj(int stran, Size velikost, Size enota, bool zOznakami) {
+  /// Gumbi strani pod besedilom (besedilo gre čeznje); med risanjem so v sloju nad besedilom.
+  Widget gumbiPodStranjo(int stran, Size velikost, {double? enotaX, double? enotaY}) {
+    if (risem) return const SizedBox.shrink();
+    final enota = Size(enotaX ?? velikost.width, enotaY ?? velikost.height);
+    return SizedBox.fromSize(
+      size: velikost,
+      child: Stack(clipBehavior: Clip.none, children: _gumbi(stran, enota)),
+    );
+  }
+
+  List<Widget> _gumbi(int stran, Size enota) => [
+    for (final r in _obe)
+      for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[])
+        Positioned(
+          left: g.polozaj.dx * enota.width,
+          top: g.polozaj.dy * enota.height,
+          child: IgnorePointer(
+            ignoring: risem,
+            child: g.prikaz.oblika.jeDrsnik
+                ? DrsnikVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica)
+                : GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
+          ),
+        ),
+  ];
+
+  Widget _sloj(int stran, Size velikost, Size enota, bool zOznakami, {bool gumbiPod = false}) {
     Offset rel(Offset l) => Offset(l.dx / enota.width, l.dy / enota.height);
     final risba = CustomPaint(
       size: velikost,
@@ -783,18 +816,7 @@ mixin RisanjeNaStrani<T extends StatefulWidget> on State<T> {
       ),
     );
     final gumbi = [
-      for (final r in _obe)
-        for (final g in r.gumbi[stran] ?? const <GumbNaStrani>[])
-          Positioned(
-            left: g.polozaj.dx * enota.width,
-            top: g.polozaj.dy * enota.height,
-            child: IgnorePointer(
-              ignoring: risem,
-              child: g.prikaz.oblika.jeDrsnik
-                  ? DrsnikVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica)
-                  : GumbVOpombah(gumb: g.prikaz, velikost: enota.width * 0.03 * g.velikost, knjiznica: knjiznica),
-            ),
-          ),
+      if (!gumbiPod) ..._gumbi(stran, enota),
       // Klicaj: točka je pod klicajem, klicaj stoji nad njo.
       for (final k in klicaji)
         if (k.stran == stran)
