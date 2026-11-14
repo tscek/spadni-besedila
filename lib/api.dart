@@ -79,7 +79,9 @@ class Api {
 
   /// Vse risbe prijavljenega člana: {pesem: {vsebina, spremenjeno}}.
   /// Z [skupne] skupne risbe pesmi: {_skupne: true, risbe: {pesem: {vsebina, spremenjeno}}}.
-  Future<Map<String, dynamic>> risbe({bool skupne = false}) => _get({'akcija': 'risbe', if (skupne) 'skupne': '1'});
+  /// Z [od] samo risbe, spremenjene od tega časa (nova skripta vrne {_od, cas, risbe}).
+  Future<Map<String, dynamic>> risbe({bool skupne = false, String? od}) =>
+      _get({'akcija': 'risbe', if (skupne) 'skupne': '1', 'od': ?od});
 
   /// Shrani risbo pesmi na strežnik; prazna vsebina jo izbriše.
   Future<void> risba(String pesem, String vsebina, {bool skupna = false}) =>

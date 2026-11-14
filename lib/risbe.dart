@@ -473,14 +473,22 @@ class Risbe {
 
   /// Najprej pošlje svoje spremembe, nato prenese risbe s strežnika, ki so novejše od lokalnih
   /// (npr. narisane na drugi tablici istega člana).
-  Future<void> sinhroniziraj(Api a) async {
+  String get _kljucOd => '$_mapa/_od.txt';
+
+  /// Prenese risbe s strežnika: le spremenjene od zadnje uskladitve istega člana ([clan]), prvič vse.
+  Future<void> sinhroniziraj(Api a, {String clan = ''}) async {
     api = a;
     await posljiNeposlane();
     final neposlano = await _neposlane();
-    final odgovor = await a.risbe(skupne: skupne);
+    // Zapis »član|čas«: drug član na isti napravi dobi vse svoje risbe znova.
+    final zapis = (await _shramba.beriBesedilo(_kljucOd)) ?? '';
+    final i = zapis.lastIndexOf('|');
+    final od = i >= 0 && zapis.substring(0, i) == clan ? zapis.substring(i + 1) : '1970-01-01T00:00:00.000Z';
+    final odgovor = await a.risbe(skupne: skupne, od: od);
+    final novaSkripta = odgovor['_od'] == true;
     // Starejša skripta ne pozna skupnih risb in vrne osebne: teh ne prepišemo med skupne.
     if (skupne && odgovor['_skupne'] != true) return;
-    final streznik = skupne ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
+    final streznik = skupne || novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor;
     for (final e in streznik.entries) {
       if (neposlano.contains(e.key)) continue;
       final vsebina = (e.value as Map)['vsebina']?.toString() ?? '';
@@ -496,6 +504,7 @@ class Risbe {
         await _shramba.pisiBesedilo(_kljuc(e.key), vsebina);
       }
     }
+    if (novaSkripta && odgovor['cas'] is String) await _shramba.pisiBesedilo(_kljucOd, '$clan|${odgovor['cas']}');
   }
 }
 

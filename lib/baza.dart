@@ -454,7 +454,7 @@ class Baza extends ChangeNotifier {
       notifyListeners();
       var risbeNapaka = false;
       try {
-        await risbe.sinhroniziraj(api);
+        await risbe.sinhroniziraj(api, clan: clanId);
         await risbeSkupne.sinhroniziraj(api);
       } catch (e) {
         risbeNapaka = true;
