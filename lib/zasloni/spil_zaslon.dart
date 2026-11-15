@@ -10,6 +10,7 @@ import '../config.dart';
 import '../nastavitve.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
+import 'nadzorna_plosca.dart';
 import 'naslednje.dart';
 import 'pesem_zaslon.dart';
 import 'urejanje_pesmi.dart';
@@ -231,6 +232,17 @@ class SpilGumb extends StatelessWidget {
           VlogaSpila.nic => 'Ni povezave z drugimi napravami',
         }),
         subtitle: spil.napaka == null ? null : Text(spil.napaka!),
+      ),
+      // Namesto besedila: velik naslov, stanje špila in statistika večera (vsak član na svoji napravi).
+      ListTile(
+        key: const ValueKey('nadzorna-plosca'),
+        leading: const Icon(Icons.dashboard_outlined),
+        title: const Text('Nadzorna plošča'),
+        subtitle: const Text('Brez besedila: naslov, runda, snemanje in statistika špila'),
+        onTap: () {
+          zapri();
+          NadzornaPlosca.odpri(Navigator.of(zaslon), spil: spil, baza: baza);
+        },
       ),
       if (spil.lahkoPomikaVsem && !Config.prekoVodje)
         SwitchListTile(
@@ -480,7 +492,13 @@ class SamodejnoSledenje {
     if (s == null || s == _zadnje) return;
     _zadnje = s;
     final nav = navigator.currentState;
-    if (nav == null || OdprtoUrejanje.odprtih > 0 || !Nastavitve.aplikacija.samodejnoSledenje) return;
+    // Odprta nadzorna plošča sama kaže pesem vodje, zato je sledenje ne zapre.
+    if (nav == null ||
+        OdprtoUrejanje.odprtih > 0 ||
+        NadzornaPlosca.odprtih.value > 0 ||
+        !Nastavitve.aplikacija.samodejnoSledenje) {
+      return;
+    }
     pokaziSledenje(nav, spil: spil, baza: baza, prijava: prijava);
   }
 }

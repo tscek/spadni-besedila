@@ -289,44 +289,55 @@ Widget? vrsticaNaslednjih(BuildContext context, Spil? spil, Baza baza, void Func
     '${p == null ? prva.pesem : napisVrste(p)}${ostalih > 0 ? '  (+$ostalih)' : ''}',
     overflow: TextOverflow.ellipsis,
   );
-  return Material(
-    color: tema.colorScheme.secondaryContainer,
-    child: InkWell(
-      onTap: () => pokaziNaslednje(context, spil, baza, odpri),
-      child: SizedBox(
-        height: 40,
-        child: Row(
-          children: [
-            const SizedBox(width: 12),
-            if (p != null) OznakePesmi(pesem: p),
-            Icon(utripa ? Icons.swap_horiz : Icons.queue_music, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: utripa
-                  ? Utripanje(barva: barvaHarmonike(baza, p!.harmonika) ?? Colors.orange, child: napis)
-                  : napis,
-            ),
-            const Icon(Icons.expand_less),
-            const SizedBox(width: 8),
-          ],
-        ),
+  final vsebina = InkWell(
+    onTap: () => pokaziNaslednje(context, spil, baza, odpri),
+    child: SizedBox(
+      height: 40,
+      child: Row(
+        children: [
+          const SizedBox(width: 12),
+          if (p != null) OznakePesmi(pesem: p),
+          Icon(utripa ? Icons.swap_horiz : Icons.queue_music, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: utripa
+                ? DefaultTextStyle.merge(
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    child: napis,
+                  )
+                : napis,
+          ),
+          const Icon(Icons.expand_less),
+          const SizedBox(width: 8),
+        ],
       ),
     ),
   );
+  // Menjava harmonike: utripa celo ozadje vrstice v barvi harmonike, da se opazi tudi od daleč.
+  if (utripa) {
+    return UtripajocaVrstica(
+      key: const ValueKey('utripa-menjava'),
+      osnovna: tema.colorScheme.secondaryContainer,
+      barva: barvaHarmonike(baza, p!.harmonika) ?? Colors.orange,
+      child: vsebina,
+    );
+  }
+  return Material(color: tema.colorScheme.secondaryContainer, child: vsebina);
 }
 
-/// Besedilo, ki utripa v [barva] (npr. menjava harmonike).
-class Utripanje extends StatefulWidget {
-  const Utripanje({super.key, required this.barva, required this.child});
+/// Vrstica, katere ozadje utripa med [osnovna] in [barva]; besedilo in ikone ostanejo berljivi.
+class UtripajocaVrstica extends StatefulWidget {
+  const UtripajocaVrstica({super.key, required this.osnovna, required this.barva, required this.child});
 
+  final Color osnovna;
   final Color barva;
   final Widget child;
 
   @override
-  State<Utripanje> createState() => _UtripanjeState();
+  State<UtripajocaVrstica> createState() => _UtripajocaVrsticaState();
 }
 
-class _UtripanjeState extends State<Utripanje> with SingleTickerProviderStateMixin {
+class _UtripajocaVrsticaState extends State<UtripajocaVrstica> with SingleTickerProviderStateMixin {
   late final _animacija = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
     ..repeat(reverse: true);
 
@@ -337,17 +348,24 @@ class _UtripanjeState extends State<Utripanje> with SingleTickerProviderStateMix
   }
 
   @override
-  Widget build(BuildContext context) {
-    final osnovna = DefaultTextStyle.of(context).style.color ?? Theme.of(context).colorScheme.onSurface;
-    return AnimatedBuilder(
-      animation: _animacija,
-      builder: (context, child) => DefaultTextStyle.merge(
-        style: TextStyle(color: Color.lerp(osnovna, widget.barva, _animacija.value), fontWeight: FontWeight.bold),
-        child: child!,
-      ),
-      child: widget.child,
-    );
-  }
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _animacija,
+    builder: (context, child) {
+      final ozadje = Color.lerp(widget.osnovna, widget.barva, Curves.easeInOut.transform(_animacija.value))!;
+      final crke = ThemeData.estimateBrightnessForColor(ozadje) == Brightness.dark ? Colors.white : Colors.black;
+      return Material(
+        color: ozadje,
+        child: IconTheme.merge(
+          data: IconThemeData(color: crke),
+          child: DefaultTextStyle.merge(
+            style: TextStyle(color: crke),
+            child: child!,
+          ),
+        ),
+      );
+    },
+    child: widget.child,
+  );
 }
 
 /// Seznamček naslednjih pesmi: dotik odpre pesem, X jo odstrani (vsak).

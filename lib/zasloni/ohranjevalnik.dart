@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../baza.dart';
 import '../models.dart' show besedilo;
 import '../runda.dart';
+import 'nadzorna_plosca.dart';
 
 const _dnevi = ['ponedeljek', 'torek', 'sreda', 'četrtek', 'petek', 'sobota', 'nedelja'];
 
@@ -46,19 +47,26 @@ class _OhranjevalnikState extends State<Ohranjevalnik> {
 
   bool get _prikazan {
     final r = _runda;
-    return r.pavza == true && r.zacetek != null && r.zacetek != _zaprtaPavza && r.trenutno() < Ohranjevalnik.najdlje;
+    // Nadzorna plošča pavzo kaže sama.
+    return r.pavza == true &&
+        r.zacetek != null &&
+        r.zacetek != _zaprtaPavza &&
+        r.trenutno() < Ohranjevalnik.najdlje &&
+        NadzornaPlosca.odprtih.value == 0;
   }
 
   @override
   void initState() {
     super.initState();
     _runda.addListener(_obRundi);
+    NadzornaPlosca.odprtih.addListener(_obRundi);
     _obRundi();
   }
 
   @override
   void dispose() {
     _runda.removeListener(_obRundi);
+    NadzornaPlosca.odprtih.removeListener(_obRundi);
     _ura?.cancel();
     super.dispose();
   }

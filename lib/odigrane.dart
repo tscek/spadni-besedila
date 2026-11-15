@@ -37,6 +37,12 @@ class Odigrane extends ChangeNotifier {
 
   int get stevilo => _kdaj.keys.where(je).length;
 
+  /// Odigrane pesmi tega večera in kdaj so bile označene (za nadzorno ploščo).
+  Map<String, DateTime> get casi => {
+    for (final e in _kdaj.entries)
+      if (je(e.key)) e.key: e.value,
+  };
+
   Future<void> oznaci(String pesem) async {
     vodji?.call({'akcija': 'oznaci', 'pesem': pesem});
     _kdaj[pesem] = DateTime.now();
