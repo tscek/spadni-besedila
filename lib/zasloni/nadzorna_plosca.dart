@@ -12,7 +12,8 @@ import '../odigrane.dart';
 import '../runda.dart';
 import '../snemanje.dart';
 import '../spil/spil.dart';
-import 'naslednje.dart' show menjaHarmoniko, UtripajocaVrstica;
+import 'iskalnik_pesmi.dart';
+import 'naslednje.dart' show menjaHarmoniko, UtripajocaVrstica, pokaziNaslednje, vCakalnoVrsto;
 import 'ohranjevalnik.dart' show nastopZaOhranjevalnik;
 import 'oznake.dart' show barvaHarmonike, barvaVrste;
 
@@ -21,6 +22,40 @@ typedef OdsekSpila = ({bool pavza, DateTime od, DateTime doo});
 
 /// Odigrana pesem na časovnici (od kdaj do kdaj približno).
 typedef PesemSpila = ({String id, Pesem? pesem, DateTime od, DateTime doo});
+
+/// Na nadzorni plošči pesem [id] postane trenutna za vse, ne da bi se odprlo besedilo:
+/// vodja (ali naprava brez špila) jo pokaže sam, sledilec s pravico jo zamenja vsem prek vodje.
+void pokaziNaPlosci(Spil spil, Baza baza, String id) {
+  if (baza.pesem(id) == null) return;
+  final s = StanjeSpila(pesem: id);
+  if (spil.vloga == VlogaSpila.sledilec) {
+    if (lahkoZamenjaVsem(spil, baza)) spil.zamenjajVsem(s);
+    return;
+  }
+  spil.prikazujem(s);
+}
+
+/// Ali ta naprava sme pesem zamenjati (vodja, sama zase ali sledilec, ki sme obračati za vse).
+bool lahkoZamenjaVsem(Spil spil, Baza baza) => spil.vloga != VlogaSpila.sledilec || baza.obracaZaVse;
+
+const _nz = 'Narodno-zabavna';
+
+/// Zvrst pesmi poenotena na glavni dve (Narodno-zabavna, Zabavna); drugo ostane, kot je vpisano.
+String zvrstPesmi(Pesem p) {
+  final z = p.zvrst.trim().toLowerCase();
+  if (z.isEmpty) return '';
+  if (z.contains('narod')) return _nz;
+  if (z.startsWith('zabav')) return 'Zabavna';
+  return p.zvrst.trim();
+}
+
+/// Barvi glavnih zvrsti (drugo vijolično, brez zvrsti sivo).
+Color barvaZvrsti(String z) => switch (z) {
+  _nz => const Color(0xFFFF8F00),
+  'Zabavna' => const Color(0xFF1E88E5),
+  '' => const Color(0xFF64748B),
+  _ => const Color(0xFFAB47BC),
+};
 
 /// Statistika tega večera iz časovnika runde in odigranih pesmi (vse je skupno na špilu prek vodje).
 class StatistikaSpila {
@@ -33,6 +68,7 @@ class StatistikaSpila {
     required this.povprecje,
     required this.vrste,
     required this.harmonike,
+    required this.zvrsti,
     required this.tempo,
   });
 
@@ -119,6 +155,7 @@ class StatistikaSpila {
           : Duration(seconds: razmiki.fold(0, (s, d) => s + d.inSeconds) ~/ razmiki.length),
       vrste: prestej((p) => p.vrsta),
       harmonike: prestej((p) => p.harmonika),
+      zvrsti: prestej((p) => zvrstPesmi(p)),
       tempo: [for (final x in pesmi) num.tryParse(besedilo(x.pesem?.vrstica['Tempo (BPM)']).replaceAll(',', '.'))],
     );
   }
@@ -133,6 +170,9 @@ class StatistikaSpila {
   final Duration? povprecje;
   final Map<String, int> vrste;
   final Map<String, int> harmonike;
+
+  /// Narodno-zabavna in Zabavna (glavni zvrsti) ter ostalo.
+  final Map<String, int> zvrsti;
   final List<num?> tempo;
 }
 
@@ -168,7 +208,6 @@ const _siva = Color(0xFF8A94A6);
 const _zelena = Color(0xFF6EE08A);
 const _rdeca = Color(0xFFFF5252);
 const _oranzna = Color(0xFFFFB74D);
-const _brezVrste = Color(0xFF64748B);
 const _rezervne = [Color(0xFF1E88E5), Color(0xFFAB47BC), Color(0xFF26A69A), Color(0xFFFF7043), Color(0xFF8D6E63)];
 
 class _NadzornaPloscaState extends State<NadzornaPlosca> {
@@ -275,6 +314,8 @@ class _Deli {
           Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Expanded(child: krog('Zvrst', stat.zvrsti, barvaZvrsti, ime: (k) => k == _nz ? 'NZ' : k)),
+              _razmik,
               Expanded(child: krog('Vrste', stat.vrste, (v) => barvaVrste(baza, v))),
               _razmik,
               Expanded(child: krog('Harmonike', stat.harmonike, (v) => barvaHarmonike(baza, v))),
@@ -284,7 +325,7 @@ class _Deli {
         _razmik,
         raste(tempo()),
         _razmik,
-        ?naslednja(),
+        naslednja(),
         _razmik,
         spodaj(),
       ],
@@ -323,6 +364,8 @@ class _Deli {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Expanded(child: krog('Zvrst', stat.zvrsti, barvaZvrsti, ime: (k) => k == _nz ? 'NZ' : k)),
+            _razmik,
             Expanded(child: krog('Vrste', stat.vrste, (v) => barvaVrste(baza, v))),
             _razmik,
             Expanded(child: krog('Harmonike', stat.harmonike, (v) => barvaHarmonike(baza, v))),
@@ -335,7 +378,7 @@ class _Deli {
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(flex: 2, child: naslednja() ?? const SizedBox.shrink()),
+          Expanded(flex: 2, child: naslednja()),
           _razmik,
           Expanded(child: spodaj()),
         ],
@@ -574,8 +617,9 @@ class _Deli {
           'Odigranih',
           '${stat.pesmi.length}',
           [
+            for (final e in stat.zvrsti.entries)
+              if (e.key != 'Brez') '${e.key == _nz ? 'NZ' : e.key.toLowerCase()} ${e.value}',
             if (r.pavza == false) 'v rundi ${stat.vRundi}',
-            if (naUro != null) '${naUro.toStringAsFixed(0)} na uro',
           ].join(' · '),
           key: const ValueKey('plosca-odigranih'),
         ),
@@ -583,22 +627,22 @@ class _Deli {
         ploscica(
           'Povprečna pesem',
           stat.povprecje == null ? '–' : casBesedilo(stat.povprecje!),
-          stat.odseki.where((o) => o.pavza).isEmpty
-              ? 'brez pavze'
-              : 'pavze ${casBesedilo(stat.odseki.where((o) => o.pavza).fold(Duration.zero, (a, o) => a + o.doo.difference(o.od)))}',
+          [
+            if (naUro != null) '${naUro.toStringAsFixed(0)} na uro',
+            stat.odseki.where((o) => o.pavza).isEmpty
+                ? 'brez pavze'
+                : 'pavze ${casBesedilo(stat.odseki.where((o) => o.pavza).fold(Duration.zero, (a, o) => a + o.doo.difference(o.od)))}',
+          ].join(' · '),
         ),
       ],
     );
   }
 
-  /// Pesem brez vrste je siva (pavza je temnejša).
-  Color barvaPesmi(Pesem? p, int i) => (p == null ? null : barvaVrste(baza, p.vrsta)) ?? _brezVrste;
+  /// Na časovnici je pesem v barvi zvrsti (narodno-zabavna ali zabavna); brez zvrsti je siva.
+  Color barvaPesmi(Pesem? p, int i) => barvaZvrsti(p == null ? '' : zvrstPesmi(p));
 
   Widget casovnica() {
-    final vrste = <String, Color>{
-      for (final (i, p) in stat.pesmi.indexed)
-        if (p.pesem != null && p.pesem!.vrsta.isNotEmpty) p.pesem!.vrsta: barvaPesmi(p.pesem, i),
-    };
+    final zvrsti = {for (final k in stat.zvrsti.keys) k: barvaZvrsti(k == 'Brez' ? '' : k)};
     return kartica(
       naslov: 'Časovnica špila',
       child: Column(
@@ -619,8 +663,7 @@ class _Deli {
             spacing: 14,
             runSpacing: 4,
             children: [
-              for (final e in vrste.entries) _Legenda(e.key, e.value),
-              if (stat.pesmi.any((p) => (p.pesem?.vrsta ?? '').isEmpty)) const _Legenda('Brez vrste', _brezVrste),
+              for (final e in zvrsti.entries) _Legenda(e.key == 'Brez' ? 'Brez zvrsti' : e.key, e.value),
               const _Legenda('Pavza', _crte),
             ],
           ),
@@ -629,7 +672,7 @@ class _Deli {
     );
   }
 
-  Widget krog(String naslov, Map<String, int> podatki, Color? Function(String) barva) {
+  Widget krog(String naslov, Map<String, int> podatki, Color? Function(String) barva, {String Function(String)? ime}) {
     final barve = [
       for (final (i, k) in podatki.keys.indexed) k == 'Brez' ? _crte : (barva(k) ?? _rezervne[i % _rezervne.length]),
     ];
@@ -656,7 +699,7 @@ class _Deli {
                       for (final (i, e) in podatki.entries.indexed)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: _Legenda('${e.key} ${e.value}', barve[i], velikost: 14),
+                          child: _Legenda('${ime?.call(e.key) ?? e.key} ${e.value}', barve[i], velikost: 14),
                         ),
                     ],
                   ),
@@ -678,49 +721,99 @@ class _Deli {
     );
   }
 
-  Widget? naslednja() {
+  /// Iskalnik pesmi: izbrana pesem gre na prvo mesto čakalne vrste (naslednja).
+  Future<void> izberiNaslednjo() {
+    final mapa = pesem?.mapa ?? '';
+    return showDialog<void>(
+      context: context,
+      builder: (dialog) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: SizedBox(
+          width: 480,
+          height: min(640, MediaQuery.sizeOf(dialog).height - 64),
+          child: IskalnikPesmi(
+            baza: baza,
+            pesmi: baza.pesmiMape(mapa.isEmpty ? null : mapa),
+            mapa: mapa,
+            pavza: baza.pesem(baza.mapa(mapa)?.pavza ?? ''),
+            trenutna: pesem,
+            vVrsti: {for (final (i, n) in spil.naslednje.indexed) n.pesem: i + 1},
+            odpri: (p) {
+              Navigator.pop(dialog);
+              vCakalnoVrsto(context, spil, baza, p, naPrvo: true);
+            },
+            zapri: () => Navigator.pop(dialog),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget naslednja() {
     final n = spil.prvaNaslednja();
     final p = n == null ? null : baza.pesem(n.pesem);
-    if (p == null) return null;
-    final menjava = menjaHarmoniko(pesem, p);
-    final harmonika = barvaHarmonike(baza, p.harmonika);
+    final menjava = p != null && menjaHarmoniko(pesem, p);
+    final harmonika = p == null ? null : barvaHarmonike(baza, p.harmonika);
     final ostalih = spil.naslednje.length - 1;
-    final vsebina = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(
-        children: [
-          Icon(menjava ? Icons.swap_horiz : Icons.queue_music, size: 28),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  menjava ? 'NASLEDNJA · MENJAVA HARMONIKE' : 'NASLEDNJA',
-                  style: const TextStyle(fontSize: 13, letterSpacing: 1.2),
-                ),
-                Text(
-                  p.naslov,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  [
-                    p.vrsta,
-                    p.harmonika,
-                    p.tonaliteta,
-                    if (n!.kdo.isNotEmpty) 'predlaga ${n.kdo}',
-                  ].where((x) => x.isNotEmpty).join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15),
-                ),
-              ],
+    final vsebina = InkWell(
+      // Dotik odpre čakalno vrsto; izbrana pesem v njej postane naslednja (besedilo se ne odpre).
+      onTap: () => pokaziNaslednje(context, spil, baza, (x) => vCakalnoVrsto(context, spil, baza, x, naPrvo: true)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(menjava ? Icons.swap_horiz : Icons.queue_music, size: 28),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    menjava ? 'NASLEDNJA · MENJAVA HARMONIKE' : 'NASLEDNJA',
+                    style: const TextStyle(fontSize: 13, letterSpacing: 1.2),
+                  ),
+                  Text(
+                    p?.naslov ?? 'Ni izbrane',
+                    key: const ValueKey('plosca-naslednja'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                  ),
+                  if (p != null)
+                    Text(
+                      [
+                        p.vrsta,
+                        p.harmonika,
+                        p.tonaliteta,
+                        if (n!.kdo.isNotEmpty) 'predlaga ${n.kdo}',
+                        if (ostalih > 0) '+$ostalih v vrsti',
+                      ].where((x) => x.isNotEmpty).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (ostalih > 0) Text('+$ostalih v vrsti', style: const TextStyle(fontSize: 15)),
-        ],
+            IconButton.filledTonal(
+              key: const ValueKey('plosca-izberi'),
+              tooltip: 'Izberi naslednjo pesem',
+              iconSize: 28,
+              icon: const Icon(Icons.search),
+              onPressed: izberiNaslednjo,
+            ),
+            if (p != null && lahkoZamenjaVsem(spil, baza)) ...[
+              const SizedBox(width: 8),
+              IconButton.filled(
+                key: const ValueKey('plosca-igraj'),
+                tooltip: 'Igraj zdaj (vsem pokaže naslednjo pesem)',
+                iconSize: 28,
+                icon: const Icon(Icons.skip_next),
+                onPressed: () => pokaziNaPlosci(spil, baza, p.id),
+              ),
+            ],
+          ],
+        ),
       ),
     );
     return ClipRRect(

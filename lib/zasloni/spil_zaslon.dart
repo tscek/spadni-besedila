@@ -455,6 +455,8 @@ class _IzbiraPrivzeteState extends State<_IzbiraPrivzete> {
 
 /// Pokaže zaslon sledenja (če še ni odprt) nad seznamom pesmi.
 void pokaziSledenje(NavigatorState navigator, {required Spil spil, required Baza baza, required Prijava prijava}) {
+  // Na nadzorni plošči se besedilo ne odpre.
+  if (NadzornaPlosca.odprtih.value > 0) return;
   var odprt = false;
   navigator.popUntil((r) {
     odprt = r.settings.name == SledilecZaslon.ime;

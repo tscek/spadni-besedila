@@ -13,6 +13,7 @@ import 'spil/spil.dart';
 import 'efekti.dart';
 import 'uvodi.dart';
 import 'zvok_spila.dart';
+import 'zasloni/nadzorna_plosca.dart';
 import 'zasloni/ohranjevalnik.dart';
 import 'zasloni/pesem_zaslon.dart';
 import 'zasloni/prijava_zaslon.dart';
@@ -144,6 +145,8 @@ Future<void> main(List<String> argumenti) async {
     final p = s == null ? null : baza.pesem(s.pesem);
     if (p == null) return;
     spil.zahtevanaPesem.value = null;
+    // Nadzorna plošča: besedila ne odpre, pesem le pokaže (in pošlje) vsem.
+    if (NadzornaPlosca.odprtih.value > 0) return spil.prikazujem(s!);
     navigator.currentState?.push(
       MaterialPageRoute<void>(
         builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil, stanje: s),

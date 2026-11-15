@@ -16,20 +16,30 @@ import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/zasloni/nadzorna_plosca.dart';
+import 'package:spadni_besedila/zasloni/iskalnik_pesmi.dart';
 import 'package:spadni_besedila/zasloni/naslednje.dart';
+import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 
 const _tabele = {
   'Pesmi': [
     {
       'ID': 'a',
       'Naslov': 'NAJINA NAVEZA',
+      'Zvrst': 'Narodno-zabavna',
       'Vrsta': 'Valček',
       'Harmonika': 'B-Es-As',
       'Tempo (BPM)': 168,
       'Trajanje': '3:20',
     },
-    {'ID': 'b', 'Naslov': 'PLANINSKA LJUBEZEN', 'Vrsta': 'Polka', 'Harmonika': 'C-F-B', 'Tempo (BPM)': 120},
-    {'ID': 'c', 'Naslov': 'ZABAVNA', 'Vrsta': '', 'Tempo (BPM)': 100},
+    {
+      'ID': 'b',
+      'Naslov': 'PLANINSKA LJUBEZEN',
+      'Zvrst': 'Narodno-zabavna',
+      'Vrsta': 'Polka',
+      'Harmonika': 'C-F-B',
+      'Tempo (BPM)': 120,
+    },
+    {'ID': 'c', 'Naslov': 'ZABAVNA', 'Zvrst': 'Zabavna', 'Vrsta': '', 'Tempo (BPM)': 100},
   ],
   'Harmonike': [
     {'ID': 'h1', 'Ime': 'C-F-B', 'Barva': '#F44336', 'Vrstni red': 1},
@@ -95,6 +105,7 @@ void main() {
     expect(stat.vRundi, 2); // c in a v drugi rundi
     expect(stat.vrste, {'Polka': 1, 'Brez': 1, 'Valček': 1});
     expect(stat.harmonike['Brez'], 1);
+    expect(stat.zvrsti, {'Narodno-zabavna': 2, 'Zabavna': 1});
     expect(stat.tempo, [120, 100, 168]);
     expect(stat.zacetek, z);
   });
@@ -140,6 +151,45 @@ void main() {
       expect(NadzornaPlosca.odprtih.value, 0);
     });
   }
+
+  testWidgets('plošča: izbira naslednje in igraj zdaj brez odpiranja besedila', (t) async {
+    final baza = await t.runAsync(_baza);
+    t.view.physicalSize = const Size(1180, 820);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
+    spil.prikazujem(const StanjeSpila(pesem: 'a'));
+    await t.pumpWidget(
+      MaterialApp(
+        home: NadzornaPlosca(spil: spil, baza: baza!),
+      ),
+    );
+    await t.pump();
+    expect(t.widget<Text>(find.byKey(const ValueKey('plosca-naslednja'))).data, 'Ni izbrane');
+
+    // Iskalnik: izbrana pesem postane naslednja.
+    await t.tap(find.byKey(const ValueKey('plosca-izberi')));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    expect(find.byType(IskalnikPesmi), findsOneWidget);
+    await t.tap(find.descendant(of: find.byType(IskalnikPesmi), matching: find.text('ZABAVNA')));
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 300));
+    expect(spil.naslednje.map((n) => n.pesem), ['c']);
+    expect(t.widget<Text>(find.byKey(const ValueKey('plosca-naslednja'))).data, 'ZABAVNA');
+
+    // Igraj zdaj: pesem je trenutna, besedilo se ne odpre.
+    await t.tap(find.byKey(const ValueKey('plosca-igraj')));
+    await t.pump();
+    expect(spil.prikazano?.pesem, 'c');
+    expect(spil.naslednje, isEmpty);
+    expect(find.byType(PesemZaslon), findsNothing);
+    expect(find.byKey(const ValueKey('plosca-naslov')), findsOneWidget);
+    expect(t.widget<Text>(find.byKey(const ValueKey('plosca-naslov'))).data, 'ZABAVNA');
+
+    await t.pumpWidget(const SizedBox());
+  });
 }
 
 class _Prenos implements MidiPrenos {

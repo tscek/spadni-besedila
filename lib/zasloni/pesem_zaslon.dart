@@ -24,6 +24,7 @@ import '../spil/spil.dart';
 import 'besedilo_risanje.dart';
 import 'iskalnik_pesmi.dart';
 import 'midi_zaslon.dart';
+import 'nadzorna_plosca.dart';
 import 'naslednje.dart';
 import 'orodja.dart';
 import 'oznake.dart';
@@ -408,6 +409,15 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   /// Nožno stikalo: gumbi pesmi, uvod, iskalnik in premikanje po seznamu.
   bool _dejanje(DejanjeMidi d) {
+    // Odprta nadzorna plošča: naprej in nazaj zamenjata pesem brez odpiranja besedila.
+    if (NadzornaPlosca.odprtih.value > 0 &&
+        (d == DejanjeMidi.naslednja || d == DejanjeMidi.prejsnja || d == DejanjeMidi.izbrana)) {
+      final spil = widget.spil;
+      if (spil == null) return true;
+      final id = d == DejanjeMidi.prejsnja ? spil.nazaj() : spil.prvaNaslednja()?.pesem;
+      if (id != null) pokaziNaPlosci(spil, widget.baza, id);
+      return true;
+    }
     if (d.gumb > 0) {
       // Gumb na besedilu ali PDF-ju s to številko ima prednost pred gumbom v spodnji vrstici.
       if (NozniGumbi.sprozi(widget.pesem.id, d.gumb)) return true;
