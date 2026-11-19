@@ -28,4 +28,9 @@ void main() {
   });
 
   test('shramba v IndexedDB', () => preizkusi(ShrambaIdb(newIdbFactoryMemory())));
+
+  test('Windows: poti z »\\« so ključi z »/« (PDF-ji se ne prenašajo znova)', () {
+    expect(ShrambaDatoteke.kljucIzPoti(r'pdf\abc.pdf'), 'pdf/abc.pdf');
+    expect(ShrambaDatoteke.kljucIzPoti('pdf/abc.pdf'), 'pdf/abc.pdf');
+  });
 }

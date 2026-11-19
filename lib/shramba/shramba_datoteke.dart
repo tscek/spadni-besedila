@@ -46,6 +46,9 @@ class ShrambaDatoteke implements Shramba {
     if (await f.exists()) await f.delete();
   }
 
+  /// Windows vrne poti z »\«, ključi pa so vedno z »/« (sicer se PDF-ji vsakič prenesejo znova).
+  static String kljucIzPoti(String relativna) => relativna.replaceAll(r'\', '/');
+
   @override
   Future<Set<String>> kljuci(String predpona) async {
     final koren = (await _koren()).path;
@@ -55,7 +58,9 @@ class ShrambaDatoteke implements Shramba {
     return {
       await for (final e in mapa.list(recursive: true))
         if (e is File)
-          if (e.path.substring(koren.length + 1) case final k when k.startsWith(predpona) && !k.endsWith('.del')) k,
+          if (kljucIzPoti(e.path.substring(koren.length + 1)) case final k
+              when k.startsWith(predpona) && !k.endsWith('.del'))
+            k,
     };
   }
 }
