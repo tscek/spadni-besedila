@@ -196,7 +196,7 @@ Future<void> _shrani(BuildContext context, Baza baza, Prijava prijava, Pesem p, 
   final api = apiZaUrejanje(context, prijava, baza: baza);
   if (api == null) return;
   try {
-    await baza.shraniPesem(api, {'ID': p.id, 'Naslov': p.naslov, ...podatki});
+    await baza.shraniPesem(api, {'ID': p.id, 'Naslov': p.naslovVBazi, ...podatki});
     messenger.showSnackBar(SnackBar(content: Text(sporocilo)));
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));

@@ -36,11 +36,15 @@ class Pesem {
     this.pisava = 22,
   });
 
+  /// Naslov, kot je vpisan v bazi (za shranjevanje; [naslov] je z velikimi tiskanimi).
+  String get naslovVBazi => vrstica.containsKey('Naslov') ? besedilo(vrstica['Naslov']) : naslov;
+
   /// [klicaji] je število klicajev pesmi (list Klicaji).
   factory Pesem.izVrstice(Zapis r, {int klicaji = 0}) => Pesem(
     id: besedilo(r['ID']),
     koda: besedilo(r['Koda']),
-    naslov: besedilo(r['Naslov']),
+    // Naslov se povsod prikaže z velikimi tiskanimi; v bazi (vrstica) ostane, kot je vpisan.
+    naslov: besedilo(r['Naslov']).toUpperCase(),
     izvajalec: besedilo(r['Izvajalec']),
     avtorGlasbe: besedilo(r['Avtor glasbe']),
     avtorBesedila: besedilo(r['Avtor besedila']),

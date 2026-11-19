@@ -269,11 +269,6 @@ class _UrejanjePesmiZaslonState extends State<UrejanjePesmiZaslon> with OdprtoUr
           'Opombe': _opombeBesedila.text.trim(),
         });
       }
-      if (widget.baza.neposlano.isNotEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Ni povezave: shranjeno na napravi, poslano bo, ko bo internet.')),
-        );
-      }
       if (mounted) Navigator.pop(context, pesem);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));

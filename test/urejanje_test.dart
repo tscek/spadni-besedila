@@ -82,7 +82,7 @@ void main() {
     await baza.shraniPesem(api, {'ID': 'a', 'Koda': '1002', 'Naslov': 'Popravljena'});
     final nova = await baza.shraniPesem(api, {'Koda': '1500', 'Naslov': 'Čisto nova'});
     expect(nova.id, 'nova');
-    expect(baza.pesmi.map((p) => p.naslov), ['Popravljena', 'Čisto nova', 'Tuja']);
+    expect(baza.pesmi.map((p) => p.naslov), ['POPRAVLJENA', 'ČISTO NOVA', 'TUJA']);
 
     await baza.shraniBesedilo(api, {'Pesem': 'nova', 'Vrsta': 'Besedilo z akordi', 'Besedilo': '[C]La'});
     expect(baza.besedilaPesmi['nova']!.single.vsebina, '[C]La');
@@ -90,11 +90,12 @@ void main() {
     // Spremembe ostanejo tudi po ponovnem zagonu brez interneta.
     final ponovno = Baza(shramba: shramba);
     await ponovno.nalozi();
-    expect(ponovno.pesmi.first.naslov, 'Popravljena');
+    expect(ponovno.pesmi.first.naslov, 'POPRAVLJENA');
     expect(ponovno.besedilaPesmi['nova'], isNotNull);
 
     await baza.shraniBesedilo(api, {'ID': 't1', 'Pesem': 'nova', 'Besedilo': ''});
     expect(baza.besedilaPesmi['nova'], isNull);
+    await baza.pocakajPosiljanje(); // pošilja se v ozadju
     expect(poslano.map((t) => t['akcija']), ['pesem', 'pesem', 'besedilo', 'besedilo']);
   });
 
@@ -210,6 +211,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Belo obleko '), findsOneWidget);
+
+    // Pridržanje v praznem prostoru pod besedilom tudi vklopi risanje.
+    await tester.longPressAt(const Offset(400, 380));
+    await tester.pumpAndSettle();
+    expect(find.text('Končano'), findsOneWidget);
+    await tester.tap(find.text('Končano'));
+    await tester.pumpAndSettle();
+    expect(find.text('Končano'), findsNothing);
 
     // Pridržanje na besedilu vklopi risanje.
     await tester.longPress(find.text('Belo obleko '));

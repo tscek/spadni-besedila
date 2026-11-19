@@ -70,6 +70,8 @@ void main() {
       {'ID': 'a', 'Tempo (BPM)': '120'},
       {'ID': 'b', 'Izvajalec': 'Avseniki'},
     ]);
+    expect(baza.pesem('b')!.izvajalec, 'Avseniki'); // takoj na napravi
+    await baza.pocakajPosiljanje();
     expect(poslano.single['akcija'], 'pesmi');
     expect(poslano.single['pesmi'], [
       {'ID': 'a', 'Tempo (BPM)': '120'},
@@ -98,8 +100,9 @@ void main() {
       {'ID': 'a', 'Zvrst': 'Valček'},
       {'ID': 'c', 'Zvrst': 'Polka'},
     ], napredek: (i, _) => napredek.add(i));
+    await baza.pocakajPosiljanje(); // pesmi se pošiljajo v ozadju
     expect(akcije, ['pesmi', 'pesem', 'pesem']);
-    expect(napredek, [1, 2]);
+    expect(napredek, [2]); // takoj vse na napravi
     expect(baza.pesem('a')!.zvrst, 'Valček');
     expect(baza.pesem('a')!.naslov, 'BELO OBLEKO');
     expect(baza.pesem('c')!.zvrst, 'Polka');

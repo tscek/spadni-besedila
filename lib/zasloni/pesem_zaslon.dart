@@ -131,7 +131,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       final api = apiZaUrejanje(context, widget.prijava, baza: widget.baza);
       if (api == null) return;
       try {
-        await widget.baza.shraniPesem(api, {'ID': _pesem.id, 'Naslov': _pesem.naslov, 'Pisava': v});
+        await widget.baza.shraniPesem(api, {'ID': _pesem.id, 'Naslov': _pesem.naslovVBazi, 'Pisava': v});
       } catch (e) {
         messenger.showSnackBar(SnackBar(content: Text('Shranjevanje ni uspelo: $e')));
         return;
@@ -688,6 +688,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
   /// trojni dotik postavi klicaj. Klicaj je v desnem zgornjem kotu.
   Widget _vsebinaZGestami(BuildContext context) {
     return Listener(
+      // Tudi prazen prostor med in pod vrsticami šteje (pridržanje kjerkoli na strani).
+      behavior: HitTestBehavior.translucent,
       onPointerDown: _dol,
       onPointerMove: _premik,
       onPointerUp: _gor,
@@ -857,8 +859,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
               key: const ValueKey('youtube'),
               tooltip: YoutubePesmi.vAplikaciji ? 'YouTube' : 'Odpri v YouTube',
               isSelected: _youtube == widget.pesem.id,
-              icon: const Icon(Icons.smart_display_outlined),
-              selectedIcon: const Icon(Icons.smart_display, color: Colors.blue),
+              // Napis YT, da je jasno, da gre za YouTube video.
+              icon: const ZnakYt(izbran: false),
+              selectedIcon: const ZnakYt(izbran: true),
               onPressed: () {
                 final p = _pesem;
                 if (!YoutubePesmi.vAplikaciji && YoutubePesmi.predvajalnikZaTest == null) {

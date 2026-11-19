@@ -191,6 +191,7 @@ void main() {
     expect((poslano.single['klicaj'] as Map)['Član'], 'C');
 
     await baza.izbrisiKlicaj(api, k1.id);
+    await baza.pocakajPosiljanje();
     expect(poslano.last['izbrisi'], isTrue);
     expect(baza.pesem('a')!.zaVajo, isFalse);
     expect(baza.neposlano, isEmpty);

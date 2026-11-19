@@ -480,7 +480,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
           children: [
             ..._posodobitev(),
             ..._pogled(),
-            if (baza.neposlano.isNotEmpty && baza.stanje == null && !baza.osvezujem)
+            if (baza.neposlano.isNotEmpty && baza.cakaPovezavo && baza.stanje == null && !baza.osvezujem)
               MaterialBanner(
                 leading: const Icon(Icons.cloud_upload_outlined),
                 content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),

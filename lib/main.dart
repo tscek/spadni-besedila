@@ -35,8 +35,9 @@ Future<void> main(List<String> argumenti) async {
   final baza = Baza();
   final posodobitev = Posodobitev();
   final spil = Spil()..baza = baza;
-  await baza.nalozi();
+  // Nastavitve najprej: lokalna kopija baze takoj upošteva izbrano zasedbo (mape in pesmi druge zasedbe skrite).
   await Nastavitve.aplikacija.nalozi();
+  await baza.nalozi();
   await Odigrane.aplikacija.nalozi();
   await Predloge.aplikacija.nalozi();
   await Runda.aplikacija.nalozi();
@@ -200,6 +201,9 @@ Future<void> _zaslonPrizganObDotiku() async {
   } catch (_) {}
 }
 
+/// Za sporočila, ki ne pripadajo enemu zaslonu (npr. zavrnjena sprememba, poslana v ozadju).
+final sporocila = GlobalKey<ScaffoldMessengerState>();
+
 class SpadniBesedila extends StatelessWidget {
   const SpadniBesedila({
     super.key,
@@ -225,8 +229,11 @@ class SpadniBesedila extends StatelessWidget {
   }
 
   Widget _aplikacija() {
+    baza.obZavrnjenem ??= (sporocilo) =>
+        sporocila.currentState?.showSnackBar(SnackBar(content: Text(sporocilo), duration: const Duration(seconds: 8)));
     return MaterialApp(
       navigatorKey: navigator,
+      scaffoldMessengerKey: sporocila,
       title: 'Špadni besedila',
       debugShowCheckedModeBanner: false,
       // Ob PAVZI ohranjevalnik zaslona z uro in nastopom čez vse zaslone.

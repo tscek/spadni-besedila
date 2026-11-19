@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
@@ -12,6 +13,8 @@ import '../models.dart';
 import '../runda.dart' show casBesedilo;
 import '../zvocnik.dart';
 import '../snemalnik_web.dart' if (dart.library.io) '../snemalnik_io.dart' as datoteka;
+import 'urejanje_uvoda.dart' show vrstaZvoka;
+import 'youtube.dart';
 
 /// Posnet zvok: bajti, MIME vrsta in dolžina.
 typedef Posneto = ({Uint8List bajti, String vrsta, int sekund});
@@ -227,6 +230,43 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
     }
   }
 
+  /// Največja datoteka za nalaganje (skripta sprejme približno 50 MB base64).
+  static const najvecNalozi = 25 * 1024 * 1024;
+
+  /// Naloži obstoječ posnetek iz datoteke (osebni ali skupni, kot je izbrano zgoraj).
+  Future<void> _nalozi() async {
+    await _ustaviPredvajanje();
+    final izbrane = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'webm', 'flac'],
+    );
+    if (izbrane.isEmpty || !mounted) return;
+    final f = izbrane.first;
+    setState(() => _shranjujem = true);
+    try {
+      final bajti = await f.readAsBytes();
+      if (bajti.length > najvecNalozi) {
+        return _sporoci('Datoteka je prevelika (največ ${najvecNalozi ~/ (1024 * 1024)} MB).');
+      }
+      final privzeto = f.name.contains('.') ? f.name.substring(0, f.name.lastIndexOf('.')) : f.name;
+      final ime = await _vprasajIme(privzeto);
+      if (ime == null) return;
+      await widget.baza.dodajPosnetek(
+        widget.api,
+        widget.pesem,
+        bajti,
+        skupno: _skupno,
+        ime: ime,
+        vrsta: vrstaZvoka(f.name),
+        trajanje: 0,
+      );
+    } catch (e) {
+      _sporoci('Posnetka ni bilo mogoče naložiti: $e');
+    } finally {
+      if (mounted) setState(() => _shranjujem = false);
+    }
+  }
+
   /// Naslov posnetka (privzeti je predlagan); null = zavrzi ali prekliči.
   Future<String?> _vprasajIme(String privzeto, {bool zavrzi = false}) async {
     final c = TextEditingController(text: privzeto)
@@ -435,14 +475,34 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                     ],
                   )
                 else
-                  FilledButton.icon(
-                    key: const ValueKey('snemaj'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red, minimumSize: const Size.fromHeight(52)),
-                    onPressed: _shranjujem ? null : _snemaj,
-                    icon: _shranjujem
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.mic),
-                    label: Text(_skupno ? 'Snemaj skupni posnetek' : 'Snemaj osebni posnetek'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          key: const ValueKey('snemaj'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            minimumSize: const Size.fromHeight(52),
+                          ),
+                          onPressed: _shranjujem ? null : _snemaj,
+                          icon: _shranjujem
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.mic),
+                          label: Text(_skupno ? 'Snemaj skupni posnetek' : 'Snemaj osebni posnetek'),
+                        ),
+                      ),
+                      // Obstoječ posnetek iz datoteke (iPad prek vodje ne nalaga).
+                      if (!Config.prekoVodje) ...[
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          key: const ValueKey('nalozi-posnetek'),
+                          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 52)),
+                          onPressed: _shranjujem ? null : _nalozi,
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Naloži'),
+                        ),
+                      ],
+                    ],
                   ),
                 const SizedBox(height: 8),
                 if (posnetki.where((p) => p.id == _predvajam).firstOrNull case final p?) _predvajalnikPanel(context, p),
@@ -483,8 +543,8 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                             subtitle: Text(
                               [
                                 if (_predvajam == p.id)
-                                  '${casBesedilo(_pozicija)} / ${casBesedilo(Duration(seconds: p.trajanje))}'
-                                else
+                                  '${casBesedilo(_pozicija)} / ${casBesedilo(_trajanje > Duration.zero ? _trajanje : Duration(seconds: p.trajanje))}'
+                                else if (p.trajanje > 0)
                                   casBesedilo(Duration(seconds: p.trajanje)),
                                 if (p.velikostKb > 0) '${p.velikostKb} KB',
                                 if (p.clan.isNotEmpty) 'Posnel: ${widget.baza.imeClanaZ(p.clan)}',
@@ -555,7 +615,7 @@ class _OknoPosnetkovState extends State<OknoPosnetkov> {
                         ? null
                         : IconButton(
                             tooltip: 'Odpri na YouTubu',
-                            icon: const Icon(Icons.smart_display_outlined, color: Colors.red),
+                            icon: const ZnakYt(izbran: false),
                             onPressed: () => launchUrl(Uri.parse(povezava), mode: LaunchMode.externalApplication),
                           ),
                   );

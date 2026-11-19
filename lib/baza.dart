@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -190,18 +191,24 @@ class Baza extends ChangeNotifier {
 
   /// Pošlje spremembe, shranjene brez interneta. Ustavi se ob prvi napaki povezave.
   /// Spremembo, ki jo strežnik zavrne, zavrže in vrne opis; vrne null, če je vse poslano.
-  Future<String?> posljiNeposlano(Api api) async {
-    // Hkrati pošilja samo en klic, da se ista sprememba ne pošlje dvakrat.
-    if (_posiljamNeposlano) return null;
-    _posiljamNeposlano = true;
-    try {
-      return await _posljiNeposlano(api);
-    } finally {
-      _posiljamNeposlano = false;
+  Future<String?> posljiNeposlano(Api api) {
+    // Hkrati pošilja samo en klic, da se ista sprememba ne pošlje dvakrat; drugi počaka nanj in nato
+    // poskusi še sam (prejšnji je lahko odnehal brez povezave).
+    if (_posiljam case final tece?) {
+      return tece.then((_) => null, onError: (_) => null).then((_) => posljiNeposlano(api));
     }
+    final f = _posljiNeposlano(api).whenComplete(() => _posiljam = null);
+    return _posiljam = f;
   }
 
-  bool _posiljamNeposlano = false;
+  Future<String?>? _posiljam;
+
+  /// Počaka, da se konča pošiljanje, ki teče v ozadju.
+  Future<void> pocakajPosiljanje() async {
+    try {
+      await _posiljam;
+    } catch (_) {}
+  }
 
   /// Ali kaj čaka na internet (posnetki, ki čakajo na novo skripto, ne zadržijo osvežitve).
   bool get _cakaInternet => neposlano.any((n) => n['cakaSkripto'] != true);
@@ -216,6 +223,8 @@ class Baza extends ChangeNotifier {
         if (n['akcija'] == 'pesem') {
           final odg = await api.shraniPesem(podatki);
           await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
+        } else if (n['akcija'] == 'pesmi') {
+          await _posljiPesmi(api, [for (final p in podatki['pesmi'] as List) (p as Map).cast<String, dynamic>()]);
         } else if (n['akcija'] == 'zaVajo') {
           // Star zapis klicaja (pred klicaji na mestu): samo še pošlje.
           await api.zaVajo(besedilo(podatki['ID']), daNe(podatki['Za vajo']));
@@ -228,8 +237,14 @@ class Baza extends ChangeNotifier {
           if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Klicaji', v.cast<String, dynamic>());
         } else {
           final odg = await api.shraniBesedilo(podatki);
-          if (n['zacasniId'] case final String z) await _zamenjajVrstico('Besedila', null, izbrisi: z);
-          if (odg['izbrisano'] != null) {
+          final zacasni = n['zacasniId'] as String?;
+          if ((zacasni, odg['vrstica']) case (final String zacasni, final Map v)) {
+            // Začasno vrstico zamenja prava v enem zapisu (vmesnega stanja brez besedila ni).
+            _praviId[zacasni] = besedilo(v['ID']);
+            await _zamenjajVrstico('Besedila', v.cast<String, dynamic>(), izbrisi: zacasni);
+          } else if (zacasni != null) {
+            await _zamenjajVrstico('Besedila', null, izbrisi: zacasni);
+          } else if (odg['izbrisano'] != null) {
             await _zamenjajVrstico('Besedila', null, izbrisi: odg['izbrisano'].toString());
           } else {
             await _zamenjajVrstico('Besedila', (odg['vrstica'] as Map).cast<String, dynamic>());
@@ -249,6 +264,7 @@ class Baza extends ChangeNotifier {
             'klicaj' => 'Klicaj',
             'posnetek' => 'Posnetek',
             'nastavitev' => 'Nastavitev',
+            'pesmi' => 'Pesmi',
             _ => 'Pesem',
           }}: $e',
         );
@@ -264,7 +280,7 @@ class Baza extends ChangeNotifier {
     if (neposlano.isNotEmpty) {
       zavrnjene.add('Skripta teh sprememb še ne pozna (uvedi novo različico skripte), ostanejo na napravi');
     }
-    return zavrnjene.isEmpty ? null : 'Strežnik ni sprejel: ${zavrnjene.join('; ')}';
+    return zavrnjene.isEmpty ? null : '$_zavrnil: ${zavrnjene.join('; ')}';
   }
 
   void _uporabi(Map<String, dynamic> podatki) {
@@ -409,7 +425,16 @@ class Baza extends ChangeNotifier {
         }
       }
       await posljiDnevnik(api);
-      final podatki = await api.podatki();
+      var podatki = await api.podatki();
+      if (_cakaInternet) {
+        // Med prenosom shranjene spremembe: najprej na strežnik, sicer bi jih prenos prepisal.
+        await posljiNeposlano(api);
+        if (_cakaInternet) {
+          stanje = '${neposlano.length} sprememb še čaka na internet.';
+          return;
+        }
+        podatki = await api.podatki();
+      }
       await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(podatki));
       _uporabi(podatki);
       try {
@@ -539,7 +564,16 @@ class Baza extends ChangeNotifier {
     return Pesem.izVrstice(vrstica);
   }
 
+  /// Obstoječa pesem se shrani takoj na napravo in pošlje v ozadju; nova pesem počaka na strežnik (dobi ID).
   Future<Pesem> shraniPesem(Api api, Zapis podatki) async {
+    final obstojeca = _vrstica('Pesmi', besedilo(podatki['ID']));
+    if (obstojeca != null) {
+      final vrstica = {...obstojeca, ...podatki};
+      await _dodajNeposlano('pesem', podatki);
+      await _zamenjajVrstico('Pesmi', vrstica);
+      _posljiVOzadju(api);
+      return Pesem.izVrstice(vrstica);
+    }
     final Map<String, dynamic> odg;
     try {
       // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
@@ -564,22 +598,42 @@ class Baza extends ChangeNotifier {
   /// Če skripta še ne pozna akcije »pesmi« ali ni interneta, gre vsaka pesem posebej (cela vrstica).
   Future<void> shraniPesmi(Api api, List<Zapis> spremembe, {void Function(int, int)? napredek}) async {
     if (spremembe.isEmpty) return;
+    // Takoj na napravo (en zapis za vse), na strežnik v ozadju.
+    final tabele = (_podatki['tabele'] as Map<String, dynamic>?) ?? (_podatki['tabele'] = <String, dynamic>{});
+    final vrstice = ((tabele['Pesmi'] as List?) ?? []).cast<Map<String, dynamic>>().toList();
+    for (final s in spremembe) {
+      final i = vrstice.indexWhere((r) => besedilo(r['ID']) == besedilo(s['ID']));
+      if (i >= 0) vrstice[i] = {...vrstice[i], ...s};
+    }
+    tabele['Pesmi'] = vrstice;
+    neposlano.add({
+      'akcija': 'pesmi',
+      'podatki': {'pesmi': spremembe},
+    });
+    await _shraniNeposlano();
+    await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
+    _uporabi(_podatki);
+    notifyListeners();
+    napredek?.call(spremembe.length, spremembe.length);
+    _posljiVOzadju(api);
+  }
+
+  /// Pošlje spremembe več pesmi; stara skripta akcije »pesmi« ne pozna, zato tam vsako posebej s celo vrstico.
+  Future<void> _posljiPesmi(Api api, List<Zapis> spremembe) async {
     try {
       final odg = await api.shraniPesmi(spremembe);
       for (final v in (odg['vrstice'] as List).cast<Map<String, dynamic>>()) {
         await _zamenjajVrstico('Pesmi', v);
       }
-      napredek?.call(spremembe.length, spremembe.length);
       return;
-    } catch (e) {
-      // Stara skripta ali brez interneta: vsaka pesem posebej (brez interneta počaka na napravi).
-      if (!e.toString().contains('Neznana akcija') && !_brezPovezave(e)) rethrow;
+    } on ApiNapaka catch (e) {
+      if (e is NiPovezave || !e.sporocilo.contains('Neznana akcija')) rethrow;
     }
-    for (final (i, s) in spremembe.indexed) {
+    for (final s in spremembe) {
       final stara = _vrstica('Pesmi', besedilo(s['ID']));
       if (stara == null) continue;
-      await shraniPesem(api, {...stara, ...s});
-      napredek?.call(i + 1, spremembe.length);
+      final odg = await api.shraniPesem({...stara, ...s});
+      await _zamenjajVrstico('Pesmi', (odg['vrstica'] as Map).cast<String, dynamic>());
     }
   }
 
@@ -701,20 +755,20 @@ class Baza extends ChangeNotifier {
     neposlano.removeWhere((n) => n['akcija'] == 'nastavitev' && besedilo((n['podatki'] as Map)['Ključ']) == kljuc);
     await shramba.pisiBesedilo(_kljucPodatkov, jsonEncode(_podatki));
     notifyListeners();
-    try {
-      if (api == null) throw NiPovezave();
-      await api.mojaNastavitev(kljuc, vrednost);
+    if (Config.samoKlicaji) {
+      // Neprijavljena naprava (iPad prek vodje) nastavitev ohrani le pri sebi, če je vodja ne sprejme.
       await _shraniNeposlano();
-    } catch (e) {
-      // Neprijavljena naprava (iPad prek vodje) nastavitev ohrani le pri sebi.
-      if (Config.samoKlicaji) return;
-      neposlano.add({
-        'akcija': 'nastavitev',
-        'podatki': {'Ključ': kljuc, 'Vrednost': vrednost},
-        if (e is ApiNapaka && e is! NiPovezave && e.sporocilo.contains('Neznana akcija')) 'cakaSkripto': true,
-      });
-      await _shraniNeposlano();
+      try {
+        await api?.mojaNastavitev(kljuc, vrednost);
+      } catch (_) {}
+      return;
     }
+    neposlano.add({
+      'akcija': 'nastavitev',
+      'podatki': {'Ključ': kljuc, 'Vrednost': vrednost},
+    });
+    await _shraniNeposlano();
+    if (api != null) _posljiVOzadju(api);
   }
 
   /// Skupna postavitev FX panela in XY pada.
@@ -876,7 +930,7 @@ class Baza extends ChangeNotifier {
     neposlano.add({'akcija': 'klicaj', 'podatki': vrstica});
     await _shraniNeposlano();
     await _zamenjajVrstico('Klicaji', vrstica);
-    if (api != null) await _posljiTiho(api);
+    if (api != null) _posljiVOzadju(api);
   }
 
   Future<void> izbrisiKlicaj(Api? api, String id) async {
@@ -893,7 +947,7 @@ class Baza extends ChangeNotifier {
     }
     await _shraniNeposlano();
     await _zamenjajVrstico('Klicaji', null, izbrisi: id);
-    if (api != null) await _posljiTiho(api);
+    if (api != null) _posljiVOzadju(api);
   }
 
   // ---------- Zvočni uvodi in playback ----------
@@ -1006,7 +1060,7 @@ class Baza extends ChangeNotifier {
     neposlano.add({'akcija': 'posnetek', 'podatki': p.vVrstico()});
     await _shraniNeposlano();
     await _zamenjajVrstico('Posnetki', p.vVrstico());
-    if (api != null) await _posljiTiho(api);
+    if (api != null) _posljiVOzadju(api);
     return p;
   }
 
@@ -1057,7 +1111,7 @@ class Baza extends ChangeNotifier {
     }
     await _shraniNeposlano();
     await _zamenjajVrstico('Posnetki', vrstica);
-    if (api != null) await _posljiTiho(api);
+    if (api != null) _posljiVOzadju(api);
   }
 
   /// Ali sme član izbrisati ali preimenovati posnetek (svojega; administrator vse).
@@ -1076,15 +1130,51 @@ class Baza extends ChangeNotifier {
     await _shraniNeposlano();
     await shramba.izbrisi(_kljucPosnetka(id));
     await _zamenjajVrstico('Posnetki', null, izbrisi: id);
-    if (api != null) await _posljiTiho(api);
+    if (api != null) _posljiVOzadju(api);
   }
 
-  Future<void> _posljiTiho(Api api) async {
-    try {
-      await posljiNeposlano(api);
-    } catch (_) {
-      // ostane med neposlanimi
-    }
+  /// Sporočilo, ko strežnik spremembe, poslane v ozadju, ne sprejme (pokaže ga aplikacija).
+  void Function(String sporocilo)? obZavrnjenem;
+
+  /// Zadnje pošiljanje v ozadju ni uspelo (ni interneta): spremembe čakajo na napravi.
+  bool cakaPovezavo = false;
+
+  Timer? _ponovnoPoslji;
+  var _cakanje = const Duration(seconds: 15);
+
+  /// Shranjevanje ne čaka na strežnik: spremembe gredo na napravo in se pošljejo v ozadju.
+  /// Brez interneta poskusi znova (vse redkeje, najdlje na 5 minut).
+  void _posljiVOzadju(Api api) {
+    _ponovnoPoslji?.cancel();
+    _ponovnoPoslji = null;
+    unawaited(() async {
+      String? sporocilo;
+      try {
+        sporocilo = await posljiNeposlano(api);
+      } catch (_) {}
+      if (sporocilo != null && sporocilo.startsWith(_zavrnil)) obZavrnjenem?.call(sporocilo);
+      final caka = _cakaInternet;
+      if (caka != cakaPovezavo) {
+        cakaPovezavo = caka;
+        notifyListeners();
+      }
+      if (!caka) {
+        _cakanje = const Duration(seconds: 15);
+      } else if (!_zaprta) {
+        _ponovnoPoslji = Timer(_cakanje, () => _posljiVOzadju(api));
+        _cakanje = _cakanje * 2 > const Duration(minutes: 5) ? const Duration(minutes: 5) : _cakanje * 2;
+      }
+    }());
+  }
+
+  static const _zavrnil = 'Strežnik ni sprejel';
+  var _zaprta = false;
+
+  @override
+  void dispose() {
+    _zaprta = true;
+    _ponovnoPoslji?.cancel();
+    super.dispose();
   }
 
   /// Vrstica lista Pesmi, kot je v lokalni kopiji.
@@ -1216,34 +1306,24 @@ class Baza extends ChangeNotifier {
     await _zamenjajVrstico('Setliste', null, izbrisi: id);
   }
 
+  /// Besedilo se shrani takoj na napravo (novo dobi začasen ID) in pošlje v ozadju.
   Future<void> shraniBesedilo(Api api, Zapis podatki) async {
-    final Map<String, dynamic> odg;
-    try {
-      // Prejšnje spremembe morajo na strežnik prve; če ne gredo, gre tudi ta v čakalno vrsto.
-      if (_cakaInternet) await posljiNeposlano(api);
-      if (_cakaInternet) throw StateError('Prejšnje spremembe še niso poslane');
-      odg = await api.shraniBesedilo(podatki);
-    } catch (e) {
-      if (!_brezPovezave(e)) rethrow;
-      // Brez interneta: na napravo (novo besedilo dobi začasen ID), na strežnik pozneje.
-      final id = besedilo(podatki['ID']).isEmpty
-          ? '$_zacasni${DateTime.now().microsecondsSinceEpoch}'
-          : besedilo(podatki['ID']);
-      final zapis = {...podatki, 'ID': id};
-      await _dodajNeposlano('besedilo', zapis);
-      if (besedilo(podatki['Besedilo']).isEmpty) {
-        await _zamenjajVrstico('Besedila', null, izbrisi: id);
-      } else {
-        await _zamenjajVrstico('Besedila', {...?_vrstica('Besedila', id), ...zapis});
-      }
-      return;
-    }
-    if (odg['izbrisano'] != null) {
-      await _zamenjajVrstico('Besedila', null, izbrisi: odg['izbrisano'].toString());
+    var id = besedilo(podatki['ID']);
+    // Zaslon ima lahko še začasen ID besedila, ki je medtem že prišlo na strežnik.
+    id = _praviId[id] ?? id;
+    if (id.isEmpty) id = '$_zacasni${DateTime.now().microsecondsSinceEpoch}';
+    final zapis = {...podatki, 'ID': id};
+    await _dodajNeposlano('besedilo', zapis);
+    if (besedilo(podatki['Besedilo']).isEmpty) {
+      await _zamenjajVrstico('Besedila', null, izbrisi: id);
     } else {
-      await _zamenjajVrstico('Besedila', (odg['vrstica'] as Map).cast<String, dynamic>());
+      await _zamenjajVrstico('Besedila', {...?_vrstica('Besedila', id), ...zapis});
     }
+    _posljiVOzadju(api);
   }
+
+  /// Začasni ID besedila → ID, ki ga je dal strežnik.
+  final _praviId = <String, String>{};
 
   /// Shrani (ali izbriše) ukaz, makro, gumb, ime kanala ali harmoniko. Kanali imajo za ID številko kanala.
   /// Mapa v drugo zasedbo ([ukaz] premakni ali kopiraj), izpraznitev ali izbris (pesmi v Arhiv ali [trajno]).

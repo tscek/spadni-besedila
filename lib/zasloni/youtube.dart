@@ -98,3 +98,27 @@ class _YoutubeOknoState extends State<YoutubeOkno> {
     );
   }
 }
+
+/// Znak za YouTube na gumbih: rdeč napis »YT« (izbran je poln).
+class ZnakYt extends StatelessWidget {
+  const ZnakYt({super.key, required this.izbran});
+
+  final bool izbran;
+
+  @override
+  Widget build(BuildContext context) {
+    const rdeca = Color(0xFFFF0000);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: izbran ? rdeca : null,
+        border: Border.all(color: rdeca, width: 2),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        'YT',
+        style: TextStyle(color: izbran ? Colors.white : rdeca, fontWeight: FontWeight.w900, fontSize: 14, height: 1.1),
+      ),
+    );
+  }
+}

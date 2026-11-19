@@ -292,7 +292,7 @@ class _UrejanjeZvokaState extends State<UrejanjeZvoka> {
         await widget.baza.shraniPesem(widget.api, {
           'ID': p.id,
           'Koda': p.koda,
-          'Naslov': p.naslov,
+          'Naslov': p.naslovVBazi,
           if (_uvod && !_nov) ...{
             'Uvod od': double.parse(_obseg.start.toStringAsFixed(1)),
             'Uvod do': _doo == null ? '' : double.parse(_doo!.toStringAsFixed(1)),

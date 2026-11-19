@@ -8,6 +8,7 @@ import '../baza.dart';
 import '../config.dart';
 import '../runda.dart' show casBesedilo;
 import '../snemanje.dart';
+import 'youtube.dart';
 
 /// Ali sme ta naprava voditi snemanje: administrator v aplikaciji (ne iPad prek vodje).
 /// Snema vodja; brez špila snema naprava sama (ne v brskalniku).
@@ -101,7 +102,7 @@ class _PloscaSnemanjaState extends State<PloscaSnemanja> {
                   if (z.povezava() case final url?)
                     IconButton(
                       tooltip: 'Celoten posnetek na YouTubu',
-                      icon: const Icon(Icons.smart_display_outlined, color: Colors.red),
+                      icon: const ZnakYt(izbran: false),
                       onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
                     ),
                 ],

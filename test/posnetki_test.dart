@@ -179,6 +179,7 @@ void main() {
     expect(await baza.zvokPosnetka(api(), baza.posnetki['a']!.firstWhere((x) => x.id == 'p2')), [9, 9]);
 
     await baza.izbrisiPosnetek(api(), p.id);
+    await baza.pocakajPosiljanje();
     expect(poslano.last, containsPair('akcija', 'posnetekIzbrisi'));
     expect(baza.posnetki['a']!.map((x) => x.id), ['p2']);
   });

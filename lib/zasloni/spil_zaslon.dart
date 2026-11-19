@@ -642,12 +642,24 @@ class SledilecZaslon extends StatelessWidget {
           spil: spil,
           stanje: s,
           spodaj: vrstica,
-          // Pesem iz iskalnika se odpre nad sledenjem, da sledilec ostane povezan.
-          odpri: (p) => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil),
-            ),
-          ),
+          odpri: (p) {
+            // S pravico obračanja pesem (npr. s čakalne vrste) zamenja vsem; sledenje ostane.
+            if (baza.obracaZaVse) return spil.zamenjajVsem(StanjeSpila(pesem: p.id));
+            // iPad prek vodje brez pravice: pesem le predlaga, ne odpre je zase (ostane na sledenju).
+            if (Config.samoKlicaji) {
+              if (!spil.naslednje.any((n) => n.pesem == p.id)) spil.dodajNaslednjo(Naslednja(pesem: p.id));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${p.naslov}: samo vodja (ali kdor ima pravico) jo lahko pokaže vsem.')),
+              );
+              return;
+            }
+            // Prijavljen sledilec brez pravice: pesem se odpre nad sledenjem, da ostane povezan.
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PesemZaslon(pesem: p, baza: baza, prijava: prijava, spil: spil),
+              ),
+            );
+          },
         );
       },
     );

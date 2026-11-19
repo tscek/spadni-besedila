@@ -129,7 +129,7 @@ class _UcenjeCasovZaslonState extends State<UcenjeCasovZaslon> {
       await widget.baza.shraniPesem(widget.api, {
         'ID': _p.id,
         'Koda': _p.koda,
-        'Naslov': _p.naslov,
+        'Naslov': _p.naslovVBazi,
         'Playback časi': CasiVrstic(_casi, zamik: _zamik).vBesedilo(),
       });
       messenger.showSnackBar(const SnackBar(content: Text('Časi vrstic so shranjeni.')));
