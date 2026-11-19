@@ -59,17 +59,22 @@ class _OhranjevalnikState extends State<Ohranjevalnik> {
   void initState() {
     super.initState();
     _runda.addListener(_obRundi);
-    NadzornaPlosca.odprtih.addListener(_obRundi);
+    NadzornaPlosca.odprtih.addListener(_obPlosci);
     _obRundi();
   }
 
   @override
   void dispose() {
     _runda.removeListener(_obRundi);
-    NadzornaPlosca.odprtih.removeListener(_obRundi);
+    NadzornaPlosca.odprtih.removeListener(_obPlosci);
     _ura?.cancel();
     super.dispose();
   }
+
+  // Plošča se odpre in zapre med gradnjo zaslona, zato šele po sličici.
+  void _obPlosci() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) _obRundi();
+  });
 
   void _obRundi() {
     if (_prikazan) {
