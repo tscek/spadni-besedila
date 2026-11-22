@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../baza.dart';
 import '../config.dart';
+import '../models.dart';
 import '../runda.dart' show casBesedilo;
 import '../snemanje.dart';
 import 'youtube.dart';
@@ -56,7 +57,7 @@ class _PloscaSnemanjaState extends State<PloscaSnemanja> {
     final s = SnemanjeSpila.aplikacija;
     final tema = Theme.of(context);
     return ListenableBuilder(
-      listenable: s,
+      listenable: Listenable.merge([s, widget.baza]),
       builder: (context, _) {
         final sme = smeSnemati(widget.baza);
         final vrstice = <Widget>[
@@ -90,12 +91,12 @@ class _PloscaSnemanjaState extends State<PloscaSnemanja> {
               label: const Text('Začni snemanje špila'),
             ),
           if (!s.aktivno)
-            if (widget.baza.snemanja.firstOrNull case final z?)
+            if (widget.baza.snemanja.firstOrNull case final z?) ...[
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      'Zadnji posneti špil: ${z.naslov}${z.youtube.isEmpty ? ' (video še ni narejen)' : ''}',
+                      'Zadnji posneti špil: ${z.naslov}${z.youtube.isEmpty ? ' (${z.opisVidea().toLowerCase()})' : ''}',
                       style: tema.textTheme.bodySmall,
                     ),
                   ),
@@ -107,6 +108,20 @@ class _PloscaSnemanjaState extends State<PloscaSnemanja> {
                     ),
                 ],
               ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (widget.baza.smeZahtevatiVideo && z.lahkoNarediVideo())
+                    GumbNarediVideo(baza: widget.baza, snemanje: z),
+                  TextButton.icon(
+                    key: const ValueKey('vsa-snemanja'),
+                    onPressed: () => pokaziSnemanja(context, widget.baza),
+                    icon: const Icon(Icons.video_library_outlined),
+                    label: Text('Vsa snemanja (${widget.baza.snemanja.length})'),
+                  ),
+                ],
+              ),
+            ],
           if (s.cakajo > 0) Text('Na Drive čaka kosov: ${s.cakajo}', style: tema.textTheme.bodySmall),
           if (s.napaka case final n?) Text(n, style: tema.textTheme.bodySmall?.copyWith(color: tema.colorScheme.error)),
         ];
@@ -119,6 +134,128 @@ class _PloscaSnemanjaState extends State<PloscaSnemanja> {
     );
   }
 }
+
+/// Gumb »Naredi video zdaj«: skripta sproži GitHub, ki iz kosov naredi video in ga naloži na YouTube.
+class GumbNarediVideo extends StatefulWidget {
+  const GumbNarediVideo({super.key, required this.baza, required this.snemanje});
+
+  final Baza baza;
+  final Snemanje snemanje;
+
+  @override
+  State<GumbNarediVideo> createState() => _GumbNarediVideoState();
+}
+
+class _GumbNarediVideoState extends State<GumbNarediVideo> {
+  var _posiljam = false;
+
+  Future<void> _naredi() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final api = SnemanjeSpila.aplikacija.api?.call();
+    if (api == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('Za video je potreben internet in prijava.')));
+      return;
+    }
+    setState(() => _posiljam = true);
+    try {
+      await widget.baza.narediVideo(api, widget.snemanje.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Video je zahtevan. Na YouTubu bo v 10 do 30 minutah (nato Osveži).')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Videa ni bilo mogoče zahtevati: $e')));
+    } finally {
+      if (mounted) setState(() => _posiljam = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FilledButton.tonalIcon(
+    key: ValueKey('naredi-video-${widget.snemanje.id}'),
+    onPressed: _posiljam ? null : _naredi,
+    icon: _posiljam
+        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+        : const Icon(Icons.movie_creation_outlined),
+    label: const Text('Naredi video zdaj'),
+  );
+}
+
+/// Seznam vseh snemanj špilov s stanjem videa.
+Future<void> pokaziSnemanja(BuildContext context, Baza baza) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  builder: (context) => ListenableBuilder(
+    listenable: baza,
+    builder: (context, _) {
+      final tema = Theme.of(context);
+      String datum(DateTime? d) {
+        if (d == null) return '';
+        final l = d.toLocal();
+        return '${l.day}. ${l.month}. ${l.year}';
+      }
+
+      return SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('Snemanja špilov', style: tema.textTheme.titleLarge),
+              ),
+              if (baza.snemanja.isEmpty)
+                const Padding(padding: EdgeInsets.all(16), child: Text('Ni še posnetih špilov.')),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final sn in baza.snemanja)
+                      ListTile(
+                        key: ValueKey('snemanje-${sn.id}'),
+                        leading: Icon(
+                          sn.youtube.isNotEmpty
+                              ? Icons.check_circle_outline
+                              : sn.video.startsWith('napaka')
+                              ? Icons.error_outline
+                              : Icons.schedule,
+                          color: sn.youtube.isNotEmpty
+                              ? Colors.green
+                              : sn.video.startsWith('napaka')
+                              ? tema.colorScheme.error
+                              : null,
+                        ),
+                        title: Text(sn.naslov),
+                        subtitle: Text(
+                          [
+                            datum(sn.zacetek),
+                            if (sn.kosi.isNotEmpty) casBesedilo(sn.trajanje),
+                            sn.opisVidea(),
+                          ].where((x) => x.isNotEmpty).join(' · '),
+                        ),
+                        trailing: sn.povezava() != null
+                            ? IconButton(
+                                tooltip: 'Odpri na YouTubu',
+                                icon: const ZnakYt(izbran: false),
+                                onPressed: () =>
+                                    launchUrl(Uri.parse(sn.povezava()!), mode: LaunchMode.externalApplication),
+                              )
+                            : baza.smeZahtevatiVideo && sn.lahkoNarediVideo()
+                            ? GumbNarediVideo(baza: baza, snemanje: sn)
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  ),
+);
 
 /// Nastop iz Nastopov (predlog za naslov snemanja).
 typedef PredlogNastopa = ({String id, String naslov, String zasedba});

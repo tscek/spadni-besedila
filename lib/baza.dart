@@ -67,6 +67,16 @@ class Baza extends ChangeNotifier {
 
   /// Snemanje, v katerem je bila pesem igrana ob [cas].
   Snemanje? snemanjeOb(DateTime cas) => snemanja.where((s) => s.vsebuje(cas)).firstOrNull;
+
+  /// Video lahko zahteva vodja ali administrator (ne iPad prek vodje).
+  bool get smeZahtevatiVideo => (smeVoditi || jeAdministrator) && !Config.prekoVodje;
+
+  /// Video posnetega špila zdaj (GitHub ga naredi v nekaj deset minutah); stanje se zapiše takoj.
+  Future<void> narediVideo(Api api, String id) async {
+    final odg = await api.narediVideo(id);
+    if (odg['vrstica'] case final Map v) await _zamenjajVrstico('Snemanja', v.cast<String, dynamic>());
+  }
+
   KnjiznicaMidi midi = KnjiznicaMidi();
   DateTime? zadnjaOsvezitev;
   Map<String, dynamic> _podatki = {};

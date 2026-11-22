@@ -1,11 +1,14 @@
 name: YouTube
 
 # Posneti špili: iz kosov na Drivu naredi video in ga naloži na YouTube kot zasebnega (tool/youtube/video.py).
-# Teče trikrat na dan in ročno (Run workflow). Brez YouTube skrivnosti video samo naredi in ga priloži gradnji.
+# Teče trikrat na dan, ročno (Run workflow) in iz aplikacije (gumb Naredi video zdaj → skripta → naredi-video).
+# Brez YouTube skrivnosti video samo naredi in ga priloži gradnji.
 on:
   schedule:
     - cron: "15 4,10,16 * * *"
   workflow_dispatch:
+  repository_dispatch:
+    types: [naredi-video]
 
 permissions:
   contents: read

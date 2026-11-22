@@ -655,6 +655,8 @@ class Snemanje {
     this.stanje = '',
     this.youtube = '',
     this.kosi = const [],
+    this.video = '',
+    this.spremenjeno,
   });
 
   factory Snemanje.izVrstice(Zapis r) {
@@ -678,7 +680,41 @@ class Snemanje {
       stanje: besedilo(r['Stanje']),
       youtube: besedilo(r['YouTube ID']),
       kosi: kosi,
+      video: besedilo(r['Video']),
+      spremenjeno: DateTime.tryParse(besedilo(r['Spremenjeno'])),
     );
+  }
+
+  /// Stanje izdelave videa (stolpec Video): zahtevan, obdelava ali »napaka: …«; prazno, ko čaka ali je narejen.
+  final String video;
+  final DateTime? spremenjeno;
+
+  /// Skupna dolžina posnetka.
+  Duration get trajanje => Duration(seconds: kosi.fold(0, (s, k) => s + k.sekund));
+
+  /// Zahtevan ali v obdelavi več kot 3 ure: workflow se je verjetno ustavil, video se sme zahtevati znova.
+  bool _obtical(DateTime zdaj) => spremenjeno != null && zdaj.difference(spremenjeno!) > const Duration(hours: 3);
+
+  /// Opis stanja za seznam snemanj.
+  String opisVidea([DateTime? zdaj]) {
+    final z = zdaj ?? DateTime.now();
+    if (youtube.isNotEmpty) return 'Na YouTubu';
+    if (stanje == 'snema') return 'Snema';
+    if (stanje != 'posneto') return stanje.isEmpty ? 'Ni posneto' : stanje;
+    if (video.startsWith('napaka')) {
+      return 'Napaka pri videu (${video.substring(6).replaceFirst(RegExp(r'^:\s*'), '')})';
+    }
+    if ((video == 'zahtevan' || video == 'obdelava') && _obtical(z)) return 'Video se ni naredil, poskusi znova';
+    if (video == 'zahtevan') return 'Video je zahtevan, kmalu se začne';
+    if (video == 'obdelava') return 'Video se dela';
+    return 'Posneto, čaka na video';
+  }
+
+  /// Ali lahko vodja zahteva video zdaj.
+  bool lahkoNarediVideo([DateTime? zdaj]) {
+    if (youtube.isNotEmpty || stanje != 'posneto' || kosi.isEmpty) return false;
+    if (video == 'zahtevan' || video == 'obdelava') return _obtical(zdaj ?? DateTime.now());
+    return true;
   }
 
   final String id;

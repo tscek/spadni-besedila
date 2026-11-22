@@ -331,6 +331,16 @@ def obdelaj(s: dict, izhod: Path, suho: bool) -> None:
     video.unlink()  # je na YouTubu; ne gre med artefakte gradnje
 
 
+def stanje(s: dict, video: str, suho: bool) -> None:
+    """Stanje videa v listu Snemanja (aplikacija ga pokaže); stara skripta ga ne pozna, zato napaka ne ustavi."""
+    if suho:
+        return
+    try:
+        skripta({'akcija': 'snemanjeStanje', 'id': s['ID'], 'video': video}, poskusov=2)
+    except Exception as e:  # noqa: BLE001
+        print(f'  stanje ni zapisano: {e}', flush=True)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--izhod', type=Path, default=Path('video'))
@@ -348,10 +358,12 @@ def main() -> int:
     napake = 0
     for s in snemanja:
         try:
+            stanje(s, 'obdelava', suho)
             obdelaj(s, a.izhod, suho)
         except Exception as e:  # noqa: BLE001 - en neuspel špil ne ustavi ostalih
             napake += 1
             print(f'::error::{s["ID"]}: {e}', flush=True)
+            stanje(s, f'napaka: {e}', suho)
     return 1 if napake else 0
 
 

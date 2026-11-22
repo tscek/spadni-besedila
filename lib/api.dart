@@ -174,6 +174,9 @@ class Api {
   /// GitHub odstrani vokal iz playbacka (nekaj minut). Vrne {vrstica} s stanjem »čaka«.
   Future<Map<String, dynamic>> odstraniVokal(String pesem) => _post({'akcija': 'odstraniVokal', 'pesem': pesem});
 
+  /// GitHub naj takoj naredi video posnetega špila. Vrne {vrstica} (list Snemanja).
+  Future<Map<String, dynamic>> narediVideo(String id) => _post({'akcija': 'narediVideo', 'id': id});
+
   /// Playback z vokalom nazaj. Vrne {vrstica}.
   Future<Map<String, dynamic>> vrniIzvirnik(String pesem) => _post({'akcija': 'vrniIzvirnik', 'pesem': pesem});
 
