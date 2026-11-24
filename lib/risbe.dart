@@ -475,8 +475,23 @@ class Risbe {
   /// (npr. narisane na drugi tablici istega člana).
   String get _kljucOd => '$_mapa/_od.txt';
 
+  /// Za zaslon Stanje naprave: koliko risb je na napravi, kdaj so bile usklajene, koliko jih čaka na pošiljanje.
+  Future<({int stevilo, String usklajeno, int neposlanih})> povzetek() async {
+    final kljuci = await _shramba.kljuci('$_mapa/');
+    final stevilo = kljuci.where((k) => k.endsWith('.json') && !k.endsWith('/_neposlano.json')).length;
+    return (
+      stevilo: stevilo,
+      usklajeno: (await _shramba.beriBesedilo(_kljucOd)) ?? '',
+      neposlanih: (await _neposlane()).length,
+    );
+  }
+
+  /// Naslednja uskladitev prenese vse risbe s strežnika (ne le spremenjenih).
+  Future<void> pozabiUskladitev() => _shramba.izbrisi(_kljucOd);
+
   /// Prenese risbe s strežnika: le spremenjene od zadnje uskladitve istega člana ([clan]), prvič vse.
-  Future<void> sinhroniziraj(Api a, {String clan = ''}) async {
+  /// Vrne število risb, zapisanih na napravo.
+  Future<int> sinhroniziraj(Api a, {String clan = ''}) async {
     api = a;
     await posljiNeposlane();
     final neposlano = await _neposlane();
@@ -487,7 +502,9 @@ class Risbe {
     final odgovor = await a.risbe(skupne: skupne, od: od);
     final novaSkripta = odgovor['_od'] == true;
     // Starejša skripta ne pozna skupnih risb in vrne osebne: teh ne prepišemo med skupne.
-    if (skupne && odgovor['_skupne'] != true) return;
+    if (skupne && odgovor['_skupne'] != true) {
+      throw StateError('skripta ne vrača skupnih risb (uvedi novo različico)');
+    }
     final streznik = {
       ...(skupne || novaSkripta ? ((odgovor['risbe'] as Map?) ?? const {}).cast<String, dynamic>() : odgovor),
     };
@@ -498,6 +515,7 @@ class Risbe {
       streznik.addAll(((del['risbe'] as Map?) ?? const {}).cast<String, dynamic>());
       zeton = del['zeton'];
     }
+    var zapisanih = 0;
     for (final e in streznik.entries) {
       if (neposlano.contains(e.key) || e.value is! Map) continue;
       final vsebina = (e.value as Map)['vsebina']?.toString() ?? '';
@@ -512,9 +530,11 @@ class Risbe {
       final lokalna = await nalozi(e.key);
       if (nova.spremenjeno.isAfter(lokalna.spremenjeno)) {
         await _shramba.pisiBesedilo(_kljuc(e.key), vsebina);
+        zapisanih++;
       }
     }
     if (novaSkripta && odgovor['cas'] is String) await _shramba.pisiBesedilo(_kljucOd, '$clan|${odgovor['cas']}');
+    return zapisanih;
   }
 }
 

@@ -130,11 +130,11 @@ void main() {
     );
     final shramba = ShrambaDatoteke(() async => mapa);
     final skupne = Risbe(shramba, skupne: true);
-    await skupne.sinhroniziraj(api);
-    expect((await skupne.nalozi('osebna')).prazna, isTrue); // stara skripta vrne osebne: ne prevzame
+    await expectLater(skupne.sinhroniziraj(api), throwsStateError); // stara skripta vrne osebne: javi napako
+    expect((await skupne.nalozi('osebna')).prazna, isTrue); // in jih ne prevzame
 
     novaSkripta = true;
-    await skupne.sinhroniziraj(api);
+    expect(await skupne.sinhroniziraj(api), 1);
     expect((await skupne.nalozi('refren')).prazna, isFalse);
     expect((await Risbe(shramba).nalozi('refren')).prazna, isTrue); // osebne so ločene
 

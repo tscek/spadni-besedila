@@ -24,6 +24,7 @@ import 'orodja.dart';
 import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
+import 'stanje_naprave.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
 import 'fx_panel.dart';
@@ -405,6 +406,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                   ),
                 );
               }
+              if (v == 'stanje') {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => StanjeNapraveZaslon(baza: baza, prijava: widget.prijava, spil: widget.spil),
+                  ),
+                );
+              }
               if (v == 'midi') {
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza)));
               }
@@ -441,6 +449,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               const PopupMenuItem(value: 'midi', child: Text('Nastavitve MIDI')),
               const PopupMenuItem(value: 'midiKnjiznica', child: Text('MIDI ukazi in makri')),
               if (baza.jeAdministrator) const PopupMenuItem(value: 'hitro', child: Text('Hitro urejanje (bulk edit)')),
+              const PopupMenuItem(value: 'stanje', child: Text('Stanje naprave')),
             ],
           ),
         ],
