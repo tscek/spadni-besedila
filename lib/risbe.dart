@@ -491,7 +491,8 @@ class Risbe {
 
   /// Prenese risbe s strežnika: le spremenjene od zadnje uskladitve istega člana ([clan]), prvič vse.
   /// Vrne število risb, zapisanih na napravo.
-  Future<int> sinhroniziraj(Api a, {String clan = ''}) async {
+  /// [obNapredku] dobi število do zdaj prejetih risb (po vsakem delu s strežnika).
+  Future<int> sinhroniziraj(Api a, {String clan = '', void Function(int prejetih)? obNapredku}) async {
     api = a;
     await posljiNeposlane();
     final neposlano = await _neposlane();
@@ -510,10 +511,12 @@ class Risbe {
     };
     // Veliko risb: strežnik jih vrača po delih.
     var zeton = odgovor['zeton'];
+    obNapredku?.call(streznik.length);
     for (var i = 0; zeton is String && zeton.isNotEmpty && i < 200; i++) {
       final del = await a.risbe(skupne: skupne, od: od, zeton: zeton);
       streznik.addAll(((del['risbe'] as Map?) ?? const {}).cast<String, dynamic>());
       zeton = del['zeton'];
+      obNapredku?.call(streznik.length);
     }
     var zapisanih = 0;
     for (final e in streznik.entries) {

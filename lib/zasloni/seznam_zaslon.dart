@@ -48,6 +48,9 @@ class SeznamZaslon extends StatefulWidget {
 }
 
 class _SeznamZaslonState extends State<SeznamZaslon> {
+  /// Opozorilo o članih brez vloge je skrito do naslednjega zagona.
+  bool _skritoBrezVloge = false;
+
   final _iskanje = TextEditingController();
   final _iskanjeFokus = FocusNode();
   final _izbira = GlobalKey<IzbiraPesmiState>();
@@ -500,9 +503,34 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),
                 actions: [TextButton(onPressed: _osvezi, child: const Text('Pošlji'))],
               ),
+            if (baza.brezVloge && !_skritoBrezVloge && baza.zadnjaOsvezitev != null)
+              MaterialBanner(
+                leading: const Icon(Icons.person_off_outlined),
+                content: const Text(
+                  'Nimaš vloge na listu Vloge, zato si v aplikaciji samo gledalec (ne urejaš pesmi in skupnih risb). '
+                  'Povej administratorju.',
+                ),
+                actions: [
+                  TextButton(onPressed: () => setState(() => _skritoBrezVloge = true), child: const Text('V redu')),
+                ],
+              ),
+            if (baza.claniBrezVloge.isNotEmpty && !_skritoBrezVloge)
+              MaterialBanner(
+                leading: const Icon(Icons.person_off_outlined),
+                content: Text('Brez vloge na listu Vloge (samo gledalci): ${baza.claniBrezVloge.join(', ')}'),
+                actions: [
+                  TextButton(onPressed: () => setState(() => _skritoBrezVloge = true), child: const Text('V redu')),
+                ],
+              ),
             if (baza.stanje != null || baza.napaka != null)
               MaterialBanner(
-                content: Text(baza.napaka ?? baza.stanje!),
+                content: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(baza.napaka ?? baza.stanje!),
+                    if (baza.osvezujem) ...[const SizedBox(height: 6), LinearProgressIndicator(value: baza.napredek)],
+                  ],
+                ),
                 leading: Icon(baza.napaka != null ? Icons.error_outline : Icons.downloading),
                 actions: [TextButton(onPressed: baza.osvezujem ? null : _osvezi, child: const Text('Znova'))],
               ),

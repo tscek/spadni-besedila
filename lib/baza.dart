@@ -96,6 +96,15 @@ class Baza extends ChangeNotifier {
   String? stanje;
   String? napaka;
 
+  /// Napredek trenutnega prenosa (0–1) za vrstico pod sporočilom; null = ne vemo, koliko je še.
+  double? napredek;
+
+  /// Administrator: aktivni člani brez vrstice na listu Vloge (pošlje skripta).
+  List<String> get claniBrezVloge => [for (final c in (_podatki['brezVloge'] as List?) ?? const []) c.toString()];
+
+  /// Prijavljen član nima nobene vloge (na listu Vloge ga ni): v aplikaciji je samo gledalec.
+  bool get brezVloge => clanId.isNotEmpty && vloge.isEmpty;
+
   static const _kljucPodatkov = 'baza.json';
   static String _kljucPdf(String driveId) => 'pdf/$driveId.pdf';
 
@@ -472,6 +481,7 @@ class Baza extends ChangeNotifier {
             neuspeli.add(p.driveId);
           }
           koncanih++;
+          napredek = koncanih / manjkajo.length;
           stanje = 'Prenašam PDF-je: $koncanih od ${manjkajo.length} …';
           notifyListeners();
         }
@@ -491,16 +501,23 @@ class Baza extends ChangeNotifier {
         await prenesiEfekte(api);
       }
 
+      napredek = null;
       stanje = 'Usklajujem risbe …';
       notifyListeners();
       String? risbeNapaka;
+      var prenesenihRisb = 0;
+      void obRisbah(int n) {
+        stanje = 'Usklajujem risbe: ${prenesenihRisb + n} prenesenih …';
+        notifyListeners();
+      }
+
       try {
-        await risbe.sinhroniziraj(api, clan: clanId);
+        prenesenihRisb += await risbe.sinhroniziraj(api, clan: clanId, obNapredku: obRisbah);
       } catch (e) {
         risbeNapaka = 'Tvojih risb ni bilo mogoče uskladiti (${_kratko(e)}).';
       }
       try {
-        await risbeSkupne.sinhroniziraj(api);
+        prenesenihRisb += await risbeSkupne.sinhroniziraj(api, obNapredku: obRisbah);
       } catch (e) {
         risbeNapaka = '${risbeNapaka ?? ''} Skupnih risb ni bilo mogoče uskladiti (${_kratko(e)}).'.trim();
       }
@@ -534,6 +551,7 @@ class Baza extends ChangeNotifier {
       stanje = null;
     } finally {
       osvezujem = false;
+      napredek = null;
       notifyListeners();
     }
   }
