@@ -57,6 +57,25 @@ Future<void> _pocakaj(bool Function() pogoj) async {
 }
 
 void main() {
+  test('preizkus pred špilom: vodja dobi poročilo sledilca', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    final sledilec = Spil(iskalec: () => const Stream.empty())..baza = baza;
+    addTearDown(() async {
+      await sledilec.ustavi();
+      await vodja.ustavi();
+    });
+    await vodja.zacniVoditi(baza);
+    sledilec.sledi(Uri.parse('ws://127.0.0.1:${Config.vrataVodje}/ws'));
+    await _pocakaj(() => sledilec.povezan && vodja.sledilcev == 1);
+    vodja.zahtevajPorocila();
+    await _pocakaj(() => vodja.porocila.length == 1);
+    final r = vodja.porocila.values.single;
+    expect(r.kdo, isNotEmpty);
+    expect(r.vsehPdf, 0);
+    expect(r.neposlanih, 0);
+  });
+
   test('rezervni vodja: ko vodja izpade, prevzame vodenje s čakalno vrsto in pesmijo', () async {
     final baza = await _baza();
     final vodja = Spil();

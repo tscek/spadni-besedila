@@ -380,5 +380,6 @@ bool dovoljenoNeprijavljenemu(Map<String, dynamic> j, {bool obracajo = false}) =
     ((j['ukaz'] == 'dodaj' && j['naPrvo'] != true) ||
         (j['ukaz'] == 'prikazi' && obracajo) ||
         j['ukaz'] == 'klicaj' ||
+        j['ukaz'] == 'porocilo' ||
         j['ukaz'] == 'zvok' ||
         (j['ukaz'] == 'odigrane' && j['akcija'] != 'ponastavi'));

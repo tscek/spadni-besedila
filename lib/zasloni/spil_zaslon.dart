@@ -14,6 +14,7 @@ import '../spil/spil.dart';
 import 'nadzorna_plosca.dart';
 import 'naslednje.dart';
 import 'pesem_zaslon.dart';
+import 'preizkus_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
 /// Kaj naprava naredi ob zagonu aplikacije.
@@ -243,6 +244,24 @@ class SpilGumb extends StatelessWidget {
         onTap: () {
           zapri();
           NadzornaPlosca.odpri(Navigator.of(zaslon), spil: spil, baza: baza);
+        },
+      ),
+      ListTile(
+        key: const ValueKey('preizkus'),
+        leading: const Icon(Icons.fact_check_outlined),
+        title: const Text('Preizkus pred špilom'),
+        subtitle: Text(
+          spil.vloga == VlogaSpila.vodja
+              ? 'PDF-ji, risbe, MIDI in povezava vseh naprav'
+              : 'PDF-ji, risbe, MIDI in povezava te naprave',
+        ),
+        onTap: () {
+          zapri();
+          Navigator.of(zaslon).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PreizkusZaslon(baza: baza, spil: spil),
+            ),
+          );
         },
       ),
       if (spil.lahkoPomikaVsem && !Config.prekoVodje)

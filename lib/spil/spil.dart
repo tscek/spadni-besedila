@@ -12,6 +12,7 @@ import '../odigrane.dart';
 import '../runda.dart';
 import '../snemanje.dart';
 import '../zvok_spila.dart';
+import 'preizkus.dart';
 import 'streznik.dart';
 
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
@@ -325,6 +326,12 @@ class Spil extends ChangeNotifier {
 
   /// Sledilec vodji pove, kdo je (za seznam povezanih naprav pri vodji).
   Future<void> _predstaviSe() async {
+    final (ime, naprava) = await _kdoSem();
+    _posljiVodji({'vrsta': 'kdo', 'ime': ime, 'naprava': naprava});
+  }
+
+  /// Ime člana (na iPadu izbrani član) in vrsta naprave.
+  Future<(String, String)> _kdoSem() async {
     var ime = baza?.imeClana ?? '';
     if (ime.isEmpty) {
       try {
@@ -341,7 +348,26 @@ class Spil extends ChangeNotifier {
             TargetPlatform.macOS => 'Mac',
             _ => defaultTargetPlatform.name,
           };
-    _posljiVodji({'vrsta': 'kdo', 'ime': ime, 'naprava': naprava});
+    return (ime, naprava);
+  }
+
+  /// Vodja: poročila naprav ob preizkusu pred špilom (po imenu naprave).
+  final porocila = <String, PorociloNaprave>{};
+
+  /// Vodja: vse povezane naprave naj pošljejo poročilo (tudi tiste, ki se povežejo kasneje).
+  void zahtevajPorocila() {
+    porocila.clear();
+    _streznik?.poslji(jsonEncode({'vrsta': 'preizkus', 'cas': DateTime.now().toIso8601String()}));
+    notifyListeners();
+  }
+
+  Future<void> _posljiPorocilo() async {
+    final b = baza;
+    if (b == null) return;
+    final (ime, naprava) = await _kdoSem();
+    final kdo = [if (ime.isNotEmpty) ime, naprava].join(', ');
+    final r = await porociloTeNaprave(b, kdo: kdo);
+    _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'porocilo', 'porocilo': r.vJson()});
   }
 
   void _posljiVodji(Map<String, dynamic> sporocilo) {
@@ -358,6 +384,12 @@ class Spil extends ChangeNotifier {
       if (p == null) return;
       _streznik?.poslji(jsonEncode({'vrsta': 'pomik', 'pesem': p.pesem, 'pdf': p.pdf, 'polozaj': p.polozaj}));
       if (!pomikamVsem) pomik.value = p;
+      return;
+    }
+    if (j['ukaz'] == 'porocilo' && j['porocilo'] is Map) {
+      final r = PorociloNaprave.izJson((j['porocilo'] as Map).cast<String, dynamic>());
+      porocila[r.kdo] = r;
+      notifyListeners();
       return;
     }
     if (j['ukaz'] == 'prikazi' && j['stanje'] is Map) {
@@ -603,6 +635,8 @@ class Spil extends ChangeNotifier {
           final j = jsonDecode(m as String) as Map<String, dynamic>;
           if (j['vrsta'] == 'utrip') {
             _vodjaUtripa = true;
+          } else if (j['vrsta'] == 'preizkus') {
+            _posljiPorocilo().ignore();
           } else if (j['vrsta'] == 'stanje') {
             final s = StanjeSpila.izJson(j);
             // Pesmi, ki jih odprejo drugi sledilci, ta naprava po želji preskoči (sledi samo vodji).
@@ -714,6 +748,7 @@ class Spil extends ChangeNotifier {
     povezani = const [];
     odpadli.clear();
     _prejPovezani = {};
+    porocila.clear();
     pomikamVsem = false;
     pomik.value = null;
     notifyListeners();
