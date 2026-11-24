@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../baza.dart';
 import '../config.dart';
+import '../nastavitve.dart';
 import '../odigrane.dart';
 import '../runda.dart';
 import '../snemanje.dart';
@@ -16,23 +17,30 @@ import 'streznik.dart';
 /// Kar vodja trenutno kaže: pesem in (če igra po setlisti) mesto v setlisti.
 @immutable
 class StanjeSpila {
-  const StanjeSpila({required this.pesem, this.setlista, this.indeks});
+  const StanjeSpila({required this.pesem, this.setlista, this.indeks, this.odprl = ''});
 
   factory StanjeSpila.izJson(Map<String, dynamic> j) => StanjeSpila(
     pesem: j['pesem'] as String,
     setlista: j['setlista'] as String?,
     indeks: (j['indeks'] as num?)?.toInt(),
+    odprl: j['odprl']?.toString() ?? '',
   );
 
   final String pesem;
   final String? setlista;
   final int? indeks;
 
+  /// Kdo je pesem odprl za vse (sledilec s pravico obračanja); prazno = vodja. Ne šteje pri primerjavi.
+  final String odprl;
+
+  StanjeSpila zOdprl(String kdo) => StanjeSpila(pesem: pesem, setlista: setlista, indeks: indeks, odprl: kdo);
+
   Map<String, dynamic> vJson() => {
     'vrsta': 'stanje',
     'pesem': pesem,
     if (setlista != null) 'setlista': setlista,
     if (indeks != null) 'indeks': indeks,
+    if (odprl.isNotEmpty) 'odprl': odprl,
   };
 
   @override
@@ -271,10 +279,20 @@ class Spil extends ChangeNotifier {
   void zamenjajVsem(StanjeSpila s) {
     if (Config.samoKlicaji && !(baza?.obracanje.neprijavljeni ?? false)) return;
     if (vloga == VlogaSpila.sledilec) {
-      _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.vJson()});
+      final ime = baza?.imeClana ?? '';
+      final kdo = ime.isNotEmpty ? ime : (Config.samoKlicaji ? 'iPad' : 'sledilec');
+      _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.zOdprl(kdo).vJson()});
     } else {
       zahtevanaPesem.value = s;
     }
+  }
+
+  /// Kdo je zadnji odprl pesem za vse (za kratek napis »Odprl: …«); samo, če to ni bila ta naprava.
+  final odprl = ValueNotifier<({String kdo, String pesem})?>(null);
+
+  void _javiOdprl(StanjeSpila s) {
+    if (s.odprl.isEmpty || s.odprl == (baza?.imeClana ?? '')) return;
+    odprl.value = (kdo: s.odprl, pesem: s.pesem);
   }
 
   /// Prva pesem s seznamčka, ki je na vrsti; z [naKonec] false brez tistih za konec setliste.
@@ -331,7 +349,9 @@ class Spil extends ChangeNotifier {
       return;
     }
     if (j['ukaz'] == 'prikazi' && j['stanje'] is Map) {
-      zahtevanaPesem.value = StanjeSpila.izJson((j['stanje'] as Map).cast<String, dynamic>());
+      final s = StanjeSpila.izJson((j['stanje'] as Map).cast<String, dynamic>());
+      zahtevanaPesem.value = s;
+      _javiOdprl(s);
       return;
     }
     _izvedi(j);
@@ -514,7 +534,13 @@ class Spil extends ChangeNotifier {
           if (j['vrsta'] == 'utrip') {
             _vodjaUtripa = true;
           } else if (j['vrsta'] == 'stanje') {
-            stanje = StanjeSpila.izJson(j);
+            final s = StanjeSpila.izJson(j);
+            // Pesmi, ki jih odprejo drugi sledilci, ta naprava po želji preskoči (sledi samo vodji).
+            if (s.odprl.isNotEmpty && s.odprl != (baza?.imeClana ?? '') && !Nastavitve.aplikacija.sprejemamObracanje) {
+              return;
+            }
+            if (s != stanje) _javiOdprl(s);
+            stanje = s;
             notifyListeners();
           } else if (j['vrsta'] == 'pomik') {
             if (!pomikamVsem) pomik.value = _pomikIz(j);

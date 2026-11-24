@@ -16,8 +16,8 @@ import 'shramba/shramba.dart';
 /// Lokalna kopija baze: podatki v baza.json, PDF-ji pod pdf/. Na špilu se bere samo od tu.
 class Baza extends ChangeNotifier {
   Baza({Shramba? shramba}) : shramba = shramba ?? Shramba() {
-    risbe = Risbe(this.shramba);
-    risbeSkupne = Risbe(this.shramba, skupne: true);
+    risbe = Risbe(this.shramba)..obNeposlanih = notifyListeners;
+    risbeSkupne = Risbe(this.shramba, skupne: true)..obNeposlanih = notifyListeners;
     risbeClanov = RisbeClanov(this.shramba);
   }
 
@@ -112,6 +112,9 @@ class Baza extends ChangeNotifier {
   Future<Uint8List?> pdf(String driveId) => shramba.beriBajte(_kljucPdf(driveId));
 
   Future<void> nalozi() async {
+    // Prebere neposlane risbe z naprave (za oblaček čakajočih sprememb).
+    await risbe.posljiNeposlane();
+    await risbeSkupne.posljiNeposlane();
     // Najprej neposlano, da so neposlani posnetki vidni takoj.
     final n = await shramba.beriBesedilo(_kljucNeposlanih);
     if (n != null) neposlano = (jsonDecode(n) as List).cast<Map<String, dynamic>>();
@@ -758,7 +761,8 @@ class Baza extends ChangeNotifier {
   }
 
   /// Ali sme ta naprava (sledilec) obrniti pesem za vse.
-  bool get obracaZaVse => Config.samoKlicaji ? obracanje.neprijavljeni : obracanje.vsi;
+  bool get obracaZaVse =>
+      (Config.samoKlicaji ? obracanje.neprijavljeni : obracanje.vsi) && Nastavitve.aplikacija.posiljamObracanje;
 
   Future<void> shraniObracanje(Api api, {required bool vsi, required bool neprijavljeni}) =>
       _shraniSpil(api, {..._spil, 'vsi': vsi, 'neprijavljeni': neprijavljeni});
@@ -1194,6 +1198,17 @@ class Baza extends ChangeNotifier {
       }
     }());
   }
+
+  /// Gumb ikone čakajočih sprememb: pošlji takoj (ne čakaj na naslednji poskus).
+  void posljiZdaj(Api api) {
+    _cakanje = const Duration(seconds: 15);
+    _posljiVOzadju(api);
+    risbe.posljiNeposlane().ignore();
+    risbeSkupne.posljiNeposlane().ignore();
+  }
+
+  /// Vse spremembe na napravi, ki še niso na strežniku (pesmi, nastavitve, klicaji, risbe).
+  int get steviloNeposlanih => neposlano.length + risbe.steviloNeposlanih + risbeSkupne.steviloNeposlanih;
 
   static const _zavrnil = 'Strežnik ni sprejel';
   var _zaprta = false;

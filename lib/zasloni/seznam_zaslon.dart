@@ -25,6 +25,7 @@ import 'pesem_zaslon.dart';
 import 'setliste_zaslon.dart';
 import 'spil_zaslon.dart';
 import 'stanje_naprave.dart';
+import 'neposlano.dart';
 import 'urejanje_pesmi.dart';
 import 'urejanje_setliste.dart';
 import 'fx_panel.dart';
@@ -361,6 +362,7 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
               : 'Mape',
         ),
         actions: [
+          IkonaNeposlanih(baza: baza, prijava: widget.prijava),
           if (_vMapi) _razvrscanje(),
           RundaGumb(baza: baza),
           // FX (efekti in XY pad) je na dosegu tudi v seznamu (če ni skrit v nastavitvah orodne vrstice).

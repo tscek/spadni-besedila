@@ -143,6 +143,8 @@ class Nastavitve extends ChangeNotifier {
   static const _skrijIgrane = 'skrij_igrane';
   static const _svetla = 'svetla_tema';
   static const _sledenje = 'samodejno_sledenje';
+  static const _posiljam = 'posiljam_obracanje';
+  static const _sprejemam = 'sprejemam_obracanje';
   static const _zaslon = 'zaslon_prizgan';
   static const _usmeritev = 'usmeritev';
   static const _uvodi = 'uvodi';
@@ -222,6 +224,12 @@ class Nastavitve extends ChangeNotifier {
 
   /// Sledilec: pesem, ki jo izbere vodja, se odpre sama.
   bool samodejnoSledenje = true;
+
+  /// Ta naprava (če ji administrator dovoli) odpre pesem vsem; izklopljeno = pesmi odpira le zase.
+  bool posiljamObracanje = true;
+
+  /// Sledilec sprejme pesmi, ki jih za vse odprejo drugi sledilci; izklopljeno = sledi samo vodji.
+  bool sprejemamObracanje = true;
 
   /// Zaslon se med uporabo aplikacije ne ugasne.
   bool zaslonPrizgan = true;
@@ -339,6 +347,8 @@ class Nastavitve extends ChangeNotifier {
     skrijIgrane = p.getBool(_skrijIgrane) ?? d.skrijIgrane;
     svetlaTema = p.getBool(_svetla) ?? d.svetlaTema;
     samodejnoSledenje = p.getBool(_sledenje) ?? d.samodejnoSledenje;
+    posiljamObracanje = p.getBool(_posiljam) ?? d.posiljamObracanje;
+    sprejemamObracanje = p.getBool(_sprejemam) ?? d.sprejemamObracanje;
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
     usmeritev = Usmeritev.values.asNameMap()[p.getString(_usmeritev)] ?? d.usmeritev;
     uvodi = p.getBool(_uvodi) ?? d.uvodi;
@@ -546,6 +556,16 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviSvetloTemo(bool v) {
     svetlaTema = v;
     return _shrani((p) => p.setBool(_svetla, v));
+  }
+
+  Future<void> nastaviPosiljamObracanje(bool v) {
+    posiljamObracanje = v;
+    return _shrani((p) => p.setBool(_posiljam, v));
+  }
+
+  Future<void> nastaviSprejemamObracanje(bool v) {
+    sprejemamObracanje = v;
+    return _shrani((p) => p.setBool(_sprejemam, v));
   }
 
   Future<void> nastaviSamodejnoSledenje(bool v) {

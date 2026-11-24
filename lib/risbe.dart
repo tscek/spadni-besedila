@@ -411,6 +411,9 @@ class Risbe {
   String _kljuc(String pesem) => '$_mapa/$pesem.json';
   String get _kljucNeposlanih => '$_mapa/_neposlano.json';
 
+  /// Risbe, ki še niso na strežniku (0, dokler seznam ni prebran z naprave).
+  int get steviloNeposlanih => _neposlano?.length ?? 0;
+
   Future<Set<String>> _neposlane() async {
     if (_neposlano != null) return _neposlano!;
     final s = await _shramba.beriBesedilo(_kljucNeposlanih);
@@ -418,8 +421,13 @@ class Risbe {
     return _neposlano!;
   }
 
-  Future<void> _zapisiNeposlane() async =>
-      _shramba.pisiBesedilo(_kljucNeposlanih, jsonEncode((await _neposlane()).toList()));
+  /// Klic ob spremembi števila neposlanih risb (oblaček čakajočih sprememb).
+  void Function()? obNeposlanih;
+
+  Future<void> _zapisiNeposlane() async {
+    await _shramba.pisiBesedilo(_kljucNeposlanih, jsonEncode((await _neposlane()).toList()));
+    obNeposlanih?.call();
+  }
 
   Future<Risba> nalozi(String pesem) async {
     final s = await _shramba.beriBesedilo(_kljuc(pesem));
@@ -447,9 +455,12 @@ class Risbe {
 
   /// Pošlje vse lokalne spremembe na strežnik. Neuspešne ostanejo za naslednjič.
   Future<void> posljiNeposlane() async {
-    final a = api;
-    if (a == null) return;
     final neposlano = await _neposlane();
+    final a = api;
+    if (a == null) {
+      if (neposlano.isNotEmpty) obNeposlanih?.call();
+      return;
+    }
     for (final pesem in neposlano.toList()) {
       final vsebina = await _shramba.beriBesedilo(_kljuc(pesem)) ?? '';
       try {

@@ -34,6 +34,7 @@ import 'fx_panel.dart';
 import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
+import 'neposlano.dart';
 import 'urejanje_pesmi.dart';
 import 'youtube.dart';
 
@@ -1196,6 +1197,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
                 onPressed: () => _posnetki!(false),
               ),
             ..._orodja(context, Mesto.zgoraj),
+            IkonaNeposlanih(baza: widget.baza, prijava: widget.prijava),
             const SizedBox(width: 4),
           ]),
         ],

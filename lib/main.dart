@@ -140,6 +140,21 @@ Future<void> main(List<String> argumenti) async {
   }
   final navigator = GlobalKey<NavigatorState>();
   if (!Config.prekoVodje) SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+  // Kdo je odprl pesem za vse (sledilec s pravico obračanja): kratek napis pri vodji in sledilcih.
+  spil.odprl.addListener(() {
+    final o = spil.odprl.value;
+    if (o == null) return;
+    final naslov = baza.pesem(o.pesem)?.naslov ?? '';
+    sporocila.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Odprl: ${o.kdo}${naslov.isEmpty ? '' : ' · $naslov'}'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    spil.odprl.value = null;
+  });
   // Vodja: sledilec s pravico je izbral pesem za vse; odpre se tudi pri vodji (in se tako pošlje vsem).
   spil.zahtevanaPesem.addListener(() {
     final s = spil.zahtevanaPesem.value;

@@ -91,6 +91,18 @@ class NastavitveZaslon extends StatelessWidget {
               onChanged: n.nastaviSamodejnoSledenje,
             ),
             SwitchListTile(
+              title: const Text('Pošiljam obračanje'),
+              subtitle: const Text('Pesem, ki jo odprem na špilu, se odpre vsem (če administrator dovoli)'),
+              value: n.posiljamObracanje,
+              onChanged: n.nastaviPosiljamObracanje,
+            ),
+            SwitchListTile(
+              title: const Text('Sprejemam obračanje drugih'),
+              subtitle: const Text('Pesmi, ki jih za vse odprejo drugi sledilci; izklopljeno = sledim samo vodji'),
+              value: n.sprejemamObracanje,
+              onChanged: n.nastaviSprejemamObracanje,
+            ),
+            SwitchListTile(
               title: const Text('Zaslon ostane prižgan'),
               subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),
               value: n.zaslonPrizgan,
