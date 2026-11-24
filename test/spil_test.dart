@@ -56,6 +56,34 @@ Future<void> _pocakaj(bool Function() pogoj) async {
 }
 
 void main() {
+  test('utrip: sledilec, ki od vodje nekaj sekund ne dobi ničesar, se sam poveže znova', () async {
+    // Vodja, ki pošlje utrip in stanje, potem utihne, ne da bi zaprl povezavo (kot ob izpadu WiFi-ja).
+    final streznik = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final odprte = <WebSocket>[];
+    streznik.listen((z) async {
+      final ws = await WebSocketTransformer.upgrade(z);
+      odprte.add(ws);
+      ws.add('{"vrsta":"utrip"}');
+      ws.add(jsonEncode(StanjeSpila(pesem: 'p${odprte.length}').vJson()));
+      ws.listen((_) {});
+    });
+    final sledilec = Spil();
+    addTearDown(() async {
+      await sledilec.ustavi();
+      for (final ws in odprte) {
+        await ws.close();
+      }
+      await streznik.close(force: true);
+    });
+    sledilec.sledi(Uri.parse('ws://127.0.0.1:${streznik.port}/ws'));
+    await _pocakaj(() => sledilec.povezan && sledilec.stanje?.pesem == 'p1');
+    for (var i = 0; i < 200 && odprte.length < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(odprte.length, 2);
+    await _pocakaj(() => sledilec.povezan && sledilec.stanje?.pesem == 'p2');
+  });
+
   test('naslov vodje iz različnih vnosov', () {
     expect(naslovWebSocket('192.168.1.5').toString(), 'ws://192.168.1.5:${Config.vrataVodje}/ws');
     expect(naslovWebSocket(' http://192.168.1.5:9000/ ').toString(), 'ws://192.168.1.5:9000/ws');

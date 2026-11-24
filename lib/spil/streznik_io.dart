@@ -26,6 +26,7 @@ class StreznikIo implements StreznikVodje {
   void Function(int)? _obSpremembi;
   RawDatagramSocket? _oddajnik;
   Timer? _oddajanje;
+  Timer? _utripanje;
   int _vrata = Config.vrataVodje;
 
   @override
@@ -61,6 +62,7 @@ class StreznikIo implements StreznikVodje {
         } catch (_) {}
       }
     });
+    _utripanje = Timer.periodic(const Duration(seconds: 2), (_) => _utrip());
     await _zacniOddajati(baza.imeClana);
     return 'http://${await lokalniNaslov() ?? 'localhost'}:$_vrata';
   }
@@ -100,6 +102,20 @@ class StreznikIo implements StreznikVodje {
   /// Kdo je na kateri povezavi (iz sporočila »kdo«); brez njega le vrsta odjemalca.
   final _kdo = <WebSocket, String>{};
 
+  /// Utrip vsem sledilcem (vsaki 2 s): sledilec, ki ga nekaj sekund ne dobi, se poveže znova,
+  /// tudi kadar WiFi povezave ne zapre in bi sicer čakal v nedogled.
+  void _utrip() {
+    for (final ws in _odjemalci.toList()) {
+      try {
+        ws.add(_sporociloUtripa);
+      } catch (_) {
+        _odjemalci.remove(ws);
+      }
+    }
+  }
+
+  static const _sporociloUtripa = '{"vrsta":"utrip"}';
+
   @override
   List<String> get povezani => [for (final ws in _odjemalci) _kdo[ws] ?? 'Neznana naprava'];
 
@@ -121,6 +137,8 @@ class StreznikIo implements StreznikVodje {
   Future<void> ustavi() async {
     _oddajanje?.cancel();
     _oddajanje = null;
+    _utripanje?.cancel();
+    _utripanje = null;
     _oddajnik?.close();
     _oddajnik = null;
     for (final ws in _odjemalci.toList()) {

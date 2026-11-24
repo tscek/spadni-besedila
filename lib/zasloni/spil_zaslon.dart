@@ -516,6 +516,11 @@ class SamodejnoSledenje {
       _zadnje = null;
       return;
     }
+    // Med izpadom pozabi zadnjo pesem: po ponovni povezavi skoči na trenutno pesem vodje.
+    if (!spil.povezan) {
+      _zadnje = null;
+      return;
+    }
     final s = spil.stanje;
     if (s == null || s == _zadnje) return;
     _zadnje = s;

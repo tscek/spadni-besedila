@@ -141,6 +141,16 @@ class Spil extends ChangeNotifier {
   StreamSubscription<dynamic>? _poslusam;
   Timer? _ponovnaPovezava;
   Uri? _naslovVodje;
+
+  /// Sledilec: kdaj je od vodje nazadnje prišlo karkoli (utrip vsaki 2 s ali drugo sporočilo).
+  DateTime _zadnjiSignal = DateTime.now();
+
+  /// Vodja pošilja utrip (starejša različica ga ne): šele potem tišina pomeni padlo povezavo.
+  bool _vodjaUtripa = false;
+  Timer? _nadzorUtripa;
+
+  /// Brez signala toliko časa sledilec povezavo zapre in se takoj poveže znova.
+  static const tisinaUtripa = Duration(seconds: 6);
   StreamSubscription<NajdenVodja>? _iskanje;
 
   /// Sledilec: vodje, ki se oglašajo na omrežju (naslov WebSocket → ime), za izbiro, ko jih je več.
@@ -468,6 +478,16 @@ class Spil extends ChangeNotifier {
       _kanal = kanal;
       kanal.ready.then((_) {
         if (_kanal != kanal) return;
+        _zadnjiSignal = DateTime.now();
+        _vodjaUtripa = false;
+        _nadzorUtripa?.cancel();
+        _nadzorUtripa = Timer.periodic(const Duration(seconds: 2), (_) {
+          if (_kanal != kanal || !_vodjaUtripa) return;
+          if (DateTime.now().difference(_zadnjiSignal) > tisinaUtripa) {
+            kanal.sink.close().ignore();
+            _prekinjeno(kanal);
+          }
+        });
         povezan = true;
         prekinjeno = false;
         napaka = null;
@@ -489,8 +509,11 @@ class Spil extends ChangeNotifier {
       }, onError: (Object _) => _prekinjeno(kanal));
       _poslusam = kanal.stream.listen(
         (m) {
+          _zadnjiSignal = DateTime.now();
           final j = jsonDecode(m as String) as Map<String, dynamic>;
-          if (j['vrsta'] == 'stanje') {
+          if (j['vrsta'] == 'utrip') {
+            _vodjaUtripa = true;
+          } else if (j['vrsta'] == 'stanje') {
             stanje = StanjeSpila.izJson(j);
             notifyListeners();
           } else if (j['vrsta'] == 'pomik') {
@@ -540,10 +563,11 @@ class Spil extends ChangeNotifier {
       prekinjeno = true;
       notifyListeners();
     }
+    _nadzorUtripa?.cancel();
     _poslusam?.cancel();
     _kanal = null;
     _ponovnaPovezava?.cancel();
-    if (vloga == VlogaSpila.sledilec) _ponovnaPovezava = Timer(const Duration(seconds: 2), _povezi);
+    if (vloga == VlogaSpila.sledilec) _ponovnaPovezava = Timer(const Duration(seconds: 1), _povezi);
   }
 
   void _ustaviSledenje() {
@@ -556,6 +580,7 @@ class Spil extends ChangeNotifier {
     baza?.obKlicaju = null;
     ZvokSpila.aplikacija.pozabi();
     _ponovnaPovezava?.cancel();
+    _nadzorUtripa?.cancel();
     _poslusam?.cancel();
     _kanal?.sink.close();
     _kanal = null;
