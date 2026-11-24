@@ -35,6 +35,7 @@ import 'posnetki.dart';
 import 'prehod.dart';
 import 'spil_zaslon.dart';
 import 'neposlano.dart';
+import 'utrip_tempa.dart';
 import 'urejanje_pesmi.dart';
 import 'youtube.dart';
 
@@ -931,7 +932,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
         style: slog,
       ),
       InfoVrstice.vrsta => napis(p.vrsta, barva: barvaVrste(widget.baza, p.vrsta)),
-      InfoVrstice.tempo => napis(PoljePesmi.tempo.vrednost(p).isEmpty ? '' : '${PoljePesmi.tempo.vrednost(p)} BPM'),
+      InfoVrstice.tempo => switch (double.tryParse(PoljePesmi.tempo.vrednost(p).replaceAll(',', '.'))) {
+        final bpm? when bpm > 0 && Nastavitve.aplikacija.utripTempa => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UtripTempa(bpm: bpm),
+            const SizedBox(width: 6),
+            ?napis('${PoljePesmi.tempo.vrednost(p)} BPM'),
+          ],
+        ),
+        _ => napis(PoljePesmi.tempo.vrednost(p).isEmpty ? '' : '${PoljePesmi.tempo.vrednost(p)} BPM'),
+      },
       InfoVrstice.trajanje => napis(PoljePesmi.trajanje.vrednost(p)),
       InfoVrstice.ocena => p.ocena == 0 ? null : Zvezdice(ocena: p.ocena),
       InfoVrstice.status => Row(

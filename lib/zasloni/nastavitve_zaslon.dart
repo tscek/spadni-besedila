@@ -114,6 +114,12 @@ class NastavitveZaslon extends StatelessWidget {
                 onChanged: n.nastaviRezervnegaVodjo,
               ),
             SwitchListTile(
+              title: const Text('Utrip tempa'),
+              subtitle: const Text('Pri podatku Tempo (BPM) v vrstici pesmi utripa pika v tempu'),
+              value: n.utripTempa,
+              onChanged: n.nastaviUtripTempa,
+            ),
+            SwitchListTile(
               title: const Text('Zaslon ostane prižgan'),
               subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),
               value: n.zaslonPrizgan,
