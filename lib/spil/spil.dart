@@ -105,6 +105,10 @@ class Spil extends ChangeNotifier {
   /// Vodja: povezane naprave (član, vrsta naprave).
   List<String> povezani = const [];
 
+  /// Vodja: naprave, ki so bile na tem špilu povezane in so izpadle (rdeča pika).
+  final Set<String> odpadli = {};
+  Set<String> _prejPovezani = {};
+
   /// Ta naprava pomika besedilo vsem na špilu (stikalo v meniju Špil, samo na tej napravi).
   bool pomikamVsem = false;
 
@@ -199,6 +203,14 @@ class Spil extends ChangeNotifier {
         }
         sledilcev = n;
         povezani = List.unmodifiable(s.povezani);
+        // Naprave, ki so bile že povezane, ostanejo na seznamu (rdeče), dokler se ne vrnejo.
+        for (final k in odpadli.toList()) {
+          if (povezani.contains(k)) odpadli.remove(k);
+        }
+        for (final k in _prejPovezani) {
+          if (!povezani.contains(k) && k != 'Neznana naprava') odpadli.add(k);
+        }
+        _prejPovezani = {...povezani};
         notifyListeners();
       }, obSporocilu: _odSledilca);
       _streznik = s;
@@ -453,6 +465,11 @@ class Spil extends ChangeNotifier {
       vloga = VlogaSpila.sledilec;
       notifyListeners();
     }
+    _poslusajVodje();
+  }
+
+  /// Posluša vodje, ki se oglašajo na omrežju (sledilec se poveže; rezervni vodja preda vodenje nazaj).
+  void _poslusajVodje() {
     _iskanje ??= _isciVodjo().listen(
       (v) {
         final ws = naslovWebSocket(v.naslov);
@@ -460,6 +477,12 @@ class Spil extends ChangeNotifier {
         if (najdeniVodje[ws] != v.ime) {
           najdeniVodje[ws] = v.ime;
           notifyListeners();
+        }
+        if (ws == _naslovVodje) _zadnjiOglasVodje = DateTime.now();
+        // Rezervni vodja: prvi vodja je spet tu in nihče ne sledi rezervi, zato mu ta naprava spet sledi.
+        if (vloga == VlogaSpila.vodja && ws == prevzetoOd && sledilcev == 0) {
+          _predajNazaj(ws);
+          return;
         }
         // Samodejno samo, dokler ni povezave; z izbranim vodjo ostane povezan, tudi če se oglaša še kdo.
         if (ws != _naslovVodje && vloga == VlogaSpila.sledilec && !povezan) sledi(ws);
@@ -469,6 +492,50 @@ class Spil extends ChangeNotifier {
         notifyListeners();
       },
     );
+  }
+
+  /// Rezervni vodja: koliko časa brez vodje, preden ta naprava prevzame vodenje.
+  static Duration cakanjeRezerve = const Duration(seconds: 10);
+  Timer? _rezerva;
+  bool _bilPovezan = false;
+  DateTime? _zadnjiOglasVodje;
+
+  /// Naslov vodje, od katerega je ta naprava (rezerva) prevzela vodenje.
+  Uri? prevzetoOd;
+
+  /// Kratka obvestila za napis na zaslonu (npr. prevzem vodenja).
+  final obvestilo = ValueNotifier<String?>(null);
+
+  bool get _jeRezerva =>
+      Nastavitve.aplikacija.rezervniVodja && (baza?.smeVoditi ?? false) && !Config.prekoVodje && lahkoVodi;
+
+  Future<void> _prevzemi() async {
+    _rezerva = null;
+    final b = baza;
+    if (b == null || povezan || vloga != VlogaSpila.sledilec || !_jeRezerva) return;
+    // Vodja se še oglaša na omrežju: padla je le ta povezava, zato vodenja ne prevzame.
+    if (_zadnjiOglasVodje case final t? when DateTime.now().difference(t) < const Duration(seconds: 6)) {
+      _rezerva = Timer(cakanjeRezerve, () => _prevzemi().ignore());
+      return;
+    }
+    final stari = _naslovVodje;
+    final vrsta = naslednje;
+    await zacniVoditi(b);
+    if (vloga != VlogaSpila.vodja) return;
+    prevzetoOd = stari;
+    if (vrsta.isNotEmpty) _nastaviNaslednje(vrsta);
+    _poslusajVodje();
+    obvestilo.value = 'Vodja je izpadel: to napravo sem naredil za vodjo (rezervni vodja).';
+    notifyListeners();
+  }
+
+  Future<void> _predajNazaj(Uri ws) async {
+    prevzetoOd = null;
+    final vrsta = naslednje;
+    await ustavi();
+    samodejnoSledi(zadnji: ws);
+    if (naslednje.isEmpty && vrsta.isNotEmpty) naslednje = vrsta;
+    obvestilo.value = 'Prvi vodja je spet tu: ta naprava mu spet sledi.';
   }
 
   /// Vodja: pošlji sledilcem, kaj je zdaj na vrsti.
@@ -498,6 +565,9 @@ class Spil extends ChangeNotifier {
       _kanal = kanal;
       kanal.ready.then((_) {
         if (_kanal != kanal) return;
+        _bilPovezan = true;
+        _rezerva?.cancel();
+        _rezerva = null;
         _zadnjiSignal = DateTime.now();
         _vodjaUtripa = false;
         _nadzorUtripa?.cancel();
@@ -594,6 +664,9 @@ class Spil extends ChangeNotifier {
     _kanal = null;
     _ponovnaPovezava?.cancel();
     if (vloga == VlogaSpila.sledilec) _ponovnaPovezava = Timer(const Duration(seconds: 1), _povezi);
+    if (vloga == VlogaSpila.sledilec && _bilPovezan && _jeRezerva) {
+      _rezerva ??= Timer(cakanjeRezerve, () => _prevzemi().ignore());
+    }
   }
 
   void _ustaviSledenje() {
@@ -607,6 +680,9 @@ class Spil extends ChangeNotifier {
     ZvokSpila.aplikacija.pozabi();
     _ponovnaPovezava?.cancel();
     _nadzorUtripa?.cancel();
+    _rezerva?.cancel();
+    _rezerva = null;
+    _bilPovezan = false;
     _poslusam?.cancel();
     _kanal?.sink.close();
     _kanal = null;
@@ -636,6 +712,8 @@ class Spil extends ChangeNotifier {
     naslov = null;
     sledilcev = 0;
     povezani = const [];
+    odpadli.clear();
+    _prejPovezani = {};
     pomikamVsem = false;
     pomik.value = null;
     notifyListeners();

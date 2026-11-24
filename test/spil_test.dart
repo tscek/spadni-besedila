@@ -12,6 +12,7 @@ import 'package:spadni_besedila/midi/midi.dart';
 import 'package:spadni_besedila/midi/prenos.dart';
 import 'package:spadni_besedila/baza.dart';
 import 'package:spadni_besedila/config.dart';
+import 'package:spadni_besedila/nastavitve.dart';
 import 'package:spadni_besedila/risbe.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
@@ -56,6 +57,34 @@ Future<void> _pocakaj(bool Function() pogoj) async {
 }
 
 void main() {
+  test('rezervni vodja: ko vodja izpade, prevzame vodenje s čakalno vrsto in pesmijo', () async {
+    final baza = await _baza();
+    final vodja = Spil();
+    final rezerva = Spil(iskalec: () => const Stream.empty())..baza = baza;
+    Nastavitve.aplikacija.rezervniVodja = true;
+    Spil.cakanjeRezerve = const Duration(milliseconds: 500);
+    addTearDown(() async {
+      Nastavitve.aplikacija.rezervniVodja = false;
+      Spil.cakanjeRezerve = const Duration(seconds: 10);
+      await rezerva.ustavi();
+      await vodja.ustavi();
+    });
+    await vodja.zacniVoditi(baza);
+    vodja.objavi(const StanjeSpila(pesem: 'a'));
+    vodja.dodajNaslednjo(const Naslednja(pesem: 'a'));
+    rezerva.sledi(Uri.parse('ws://127.0.0.1:${Config.vrataVodje}/ws'));
+    await _pocakaj(() => rezerva.povezan && rezerva.naslednje.length == 1 && rezerva.stanje?.pesem == 'a');
+
+    await vodja.ustavi();
+    for (var i = 0; i < 100 && rezerva.vloga != VlogaSpila.vodja; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(rezerva.vloga, VlogaSpila.vodja);
+    expect(rezerva.naslednje.single.pesem, 'a');
+    expect(rezerva.stanje?.pesem, 'a');
+    expect(rezerva.prevzetoOd, isNotNull);
+  });
+
   test('utrip: sledilec, ki od vodje nekaj sekund ne dobi ničesar, se sam poveže znova', () async {
     // Vodja, ki pošlje utrip in stanje, potem utihne, ne da bi zaprl povezavo (kot ob izpadu WiFi-ja).
     final streznik = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

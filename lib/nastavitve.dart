@@ -145,6 +145,7 @@ class Nastavitve extends ChangeNotifier {
   static const _sledenje = 'samodejno_sledenje';
   static const _posiljam = 'posiljam_obracanje';
   static const _sprejemam = 'sprejemam_obracanje';
+  static const _rezerva = 'rezervni_vodja';
   static const _zaslon = 'zaslon_prizgan';
   static const _usmeritev = 'usmeritev';
   static const _uvodi = 'uvodi';
@@ -230,6 +231,9 @@ class Nastavitve extends ChangeNotifier {
 
   /// Sledilec sprejme pesmi, ki jih za vse odprejo drugi sledilci; izklopljeno = sledi samo vodji.
   bool sprejemamObracanje = true;
+
+  /// Rezervni vodja: ko vodja izpade (10 s), ta naprava sama prevzame vodenje z isto čakalno vrsto.
+  bool rezervniVodja = false;
 
   /// Zaslon se med uporabo aplikacije ne ugasne.
   bool zaslonPrizgan = true;
@@ -349,6 +353,7 @@ class Nastavitve extends ChangeNotifier {
     samodejnoSledenje = p.getBool(_sledenje) ?? d.samodejnoSledenje;
     posiljamObracanje = p.getBool(_posiljam) ?? d.posiljamObracanje;
     sprejemamObracanje = p.getBool(_sprejemam) ?? d.sprejemamObracanje;
+    rezervniVodja = p.getBool(_rezerva) ?? d.rezervniVodja;
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
     usmeritev = Usmeritev.values.asNameMap()[p.getString(_usmeritev)] ?? d.usmeritev;
     uvodi = p.getBool(_uvodi) ?? d.uvodi;
@@ -566,6 +571,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviSprejemamObracanje(bool v) {
     sprejemamObracanje = v;
     return _shrani((p) => p.setBool(_sprejemam, v));
+  }
+
+  Future<void> nastaviRezervnegaVodjo(bool v) {
+    rezervniVodja = v;
+    return _shrani((p) => p.setBool(_rezerva, v));
   }
 
   Future<void> nastaviSamodejnoSledenje(bool v) {

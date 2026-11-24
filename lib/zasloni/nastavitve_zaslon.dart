@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../baza.dart';
+import '../config.dart';
 import '../filtri.dart';
 import '../models.dart';
 import '../nastavitve.dart';
@@ -102,6 +103,16 @@ class NastavitveZaslon extends StatelessWidget {
               value: n.sprejemamObracanje,
               onChanged: n.nastaviSprejemamObracanje,
             ),
+            if (baza.smeVoditi && !Config.prekoVodje)
+              SwitchListTile(
+                title: const Text('Rezervni vodja'),
+                subtitle: const Text(
+                  'Ko vodja na špilu izpade za 10 s, ta naprava sama prevzame vodenje z isto čakalno vrsto. '
+                  'Ko se prvi vodja vrne, mu spet sledi.',
+                ),
+                value: n.rezervniVodja,
+                onChanged: n.nastaviRezervnegaVodjo,
+              ),
             SwitchListTile(
               title: const Text('Zaslon ostane prižgan'),
               subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),

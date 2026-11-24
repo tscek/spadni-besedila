@@ -140,6 +140,13 @@ Future<void> main(List<String> argumenti) async {
   }
   final navigator = GlobalKey<NavigatorState>();
   if (!Config.prekoVodje) SamodejnoSledenje(spil: spil, baza: baza, prijava: prijava, navigator: navigator);
+  // Obvestila špila (npr. rezervni vodja je prevzel vodenje).
+  spil.obvestilo.addListener(() {
+    final o = spil.obvestilo.value;
+    if (o == null) return;
+    sporocila.currentState?.showSnackBar(SnackBar(content: Text(o), duration: const Duration(seconds: 8)));
+    spil.obvestilo.value = null;
+  });
   // Kdo je odprl pesem za vse (sledilec s pravico obračanja): kratek napis pri vodji in sledilcih.
   spil.odprl.addListener(() {
     final o = spil.odprl.value;

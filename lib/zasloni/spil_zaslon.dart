@@ -255,14 +255,18 @@ class SpilGumb extends StatelessWidget {
           onChanged: spil.nastaviPomikamVsem,
         ),
       // Vodja takoj vidi, katere naprave so povezane.
-      if (spil.vloga == VlogaSpila.vodja)
+      // Zelena pika: povezana (vodja jo preverja z utripom); rdeča: bila je povezana in je izpadla.
+      if (spil.vloga == VlogaSpila.vodja) ...[
         for (final (i, kdo) in spil.povezani.indexed)
+          ListTile(key: ValueKey('povezan-$i'), dense: true, leading: const _Pika(povezana: true), title: Text(kdo)),
+        for (final kdo in spil.odpadli)
           ListTile(
-            key: ValueKey('povezan-$i'),
             dense: true,
-            leading: const Icon(Icons.tablet_android),
+            leading: const _Pika(povezana: false),
             title: Text(kdo),
+            subtitle: const Text('Ni več povezan'),
           ),
+      ],
       if (Config.prekoVodje)
         FutureBuilder(
           future: clanNaSpilu(),
@@ -754,6 +758,24 @@ class SledilecZaslon extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Pika stanja povezave naprave pri vodji.
+class _Pika extends StatelessWidget {
+  const _Pika({required this.povezana});
+
+  final bool povezana;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 14,
+    height: 14,
+    margin: const EdgeInsets.all(5),
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: povezana ? Colors.green : Theme.of(context).colorScheme.error,
+    ),
+  );
 }
 
 /// Velik gumb člana s sličico (ali začetnicami) in imenom.

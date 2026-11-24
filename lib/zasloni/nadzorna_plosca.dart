@@ -841,7 +841,9 @@ class _Deli {
   Widget spodaj() {
     final midi = Midi.aplikacija.naprave.where((n) => n.povezana).map((n) => n.ime).toList();
     final povezava = switch (spil.vloga) {
-      VlogaSpila.vodja => 'Vodim · ${spil.povezani.isEmpty ? 'ni sledilcev' : spil.povezani.join(', ')}',
+      VlogaSpila.vodja =>
+        'Vodim · ${spil.povezani.isEmpty ? 'ni sledilcev' : spil.povezani.join(', ')}'
+            '${spil.odpadli.isEmpty ? '' : ' · izpadli: ${spil.odpadli.join(', ')}'}',
       VlogaSpila.sledilec when spil.povezan => 'Sledim vodji ${spil.naslovVodje ?? ''}',
       VlogaSpila.sledilec => 'Povezava z vodjo je padla',
       VlogaSpila.nic => 'Ni povezave z drugimi napravami',
