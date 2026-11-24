@@ -332,6 +332,9 @@ class _PesemZaslonState extends State<PesemZaslon> {
     setState(() => _iskalnik = false);
     if (p.id == widget.pesem.id) return;
     if (widget.odpri case final odpri?) return odpri(p);
+    if (pokaziVsemKotSledilec(context, spil: widget.spil, baza: widget.baza, prijava: widget.prijava, pesem: p)) {
+      return;
+    }
     Navigator.of(context).pushReplacement(
       potDoPesmi(
         (_) => PesemZaslon(

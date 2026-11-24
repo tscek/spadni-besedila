@@ -141,18 +141,23 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
   }
 
   /// Odpre pesem; iskalnik v pesmi išče v odprti mapi (pod »Vse« po vseh), sicer v mapi pesmi.
-  void _odpri(Pesem p, List<Pesem> seznam, {bool izMape = true}) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => PesemZaslon(
-        pesem: p,
-        baza: widget.baza,
-        prijava: widget.prijava,
-        spil: widget.spil,
-        seznam: seznam,
-        mapa: izMape && _pravaMapa ? (_mapa ?? PesemZaslon.vse) : p.mapa,
+  void _odpri(Pesem p, List<Pesem> seznam, {bool izMape = true}) {
+    if (pokaziVsemKotSledilec(context, spil: widget.spil, baza: widget.baza, prijava: widget.prijava, pesem: p)) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PesemZaslon(
+          pesem: p,
+          baza: widget.baza,
+          prijava: widget.prijava,
+          spil: widget.spil,
+          seznam: seznam,
+          mapa: izMape && _pravaMapa ? (_mapa ?? PesemZaslon.vse) : p.mapa,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   void dispose() {

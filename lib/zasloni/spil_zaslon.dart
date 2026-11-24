@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../config.dart';
+import '../models.dart';
 import '../nastavitve.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
@@ -472,6 +473,31 @@ void pokaziSledenje(NavigatorState navigator, {required Spil spil, required Baza
   );
 }
 
+/// Povezan sledilec s pravico obračanja: pesem, ki jo odpre (s seznama, setliste, podrsajem …), pokaže vsem.
+/// Vodja jo odpre in pošlje naprej, ta naprava pa se vrne na zaslon sledenja. Vrne false, če ne velja.
+bool pokaziVsemKotSledilec(
+  BuildContext context, {
+  required Spil? spil,
+  required Baza baza,
+  required Prijava prijava,
+  required Pesem pesem,
+}) {
+  if (spil == null || spil.vloga != VlogaSpila.sledilec || !spil.povezan || !baza.obracaZaVse) return false;
+  spil.zamenjajVsem(StanjeSpila(pesem: pesem.id));
+  final navigator = Navigator.of(context);
+  var odprt = false;
+  navigator.popUntil((r) {
+    odprt = odprt || r.settings.name == SledilecZaslon.ime;
+    return true;
+  });
+  if (odprt) {
+    navigator.popUntil((r) => r.settings.name == SledilecZaslon.ime || r.isFirst);
+  } else {
+    pokaziSledenje(navigator, spil: spil, baza: baza, prijava: prijava);
+  }
+  return true;
+}
+
 /// Sledilec: ko vodja izbere drugo pesem, jo samodejno pokaže, kjerkoli je član v aplikaciji.
 /// Med urejanjem ne zapre zaslona (ne izgubi sprememb), pesem se pokaže ob naslednji menjavi.
 class SamodejnoSledenje {
@@ -613,14 +639,13 @@ class SledilecZaslon extends StatelessWidget {
       builder: (context, _) {
         final s = spil.stanje;
         final p = s == null ? null : baza.pesem(s.pesem);
-        final vrstica = _vrstica(context, s);
         if (p == null) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Špil'),
               actions: [SpilGumb(spil: spil, baza: baza, prijava: prijava)],
             ),
-            bottomNavigationBar: vrstica,
+            bottomNavigationBar: _vrstica(context, s, vedno: true),
             body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -641,7 +666,7 @@ class SledilecZaslon extends StatelessWidget {
           prijava: prijava,
           spil: spil,
           stanje: s,
-          spodaj: vrstica,
+          spodaj: _vrstica(context, s),
           odpri: (p) {
             // S pravico obračanja pesem (npr. s čakalne vrste) zamenja vsem; sledenje ostane.
             if (baza.obracaZaVse) return spil.zamenjajVsem(StanjeSpila(pesem: p.id));
@@ -665,12 +690,15 @@ class SledilecZaslon extends StatelessWidget {
     );
   }
 
-  Widget _vrstica(BuildContext context, StanjeSpila? s) {
+  /// Vrstica sledenja pod pesmijo: samo, ko povezave ni (rdeča ikona) ali ko vodja igra setlisto
+  /// (mesto v setlisti, opomba in naslednja pesem). Sicer je ni, da ne jemlje prostora besedilu.
+  Widget? _vrstica(BuildContext context, StanjeSpila? s, {bool vedno = false}) {
     final tema = Theme.of(context);
     final vrsta = s?.setlista == null ? null : baza.pesmiSetlist[s!.setlista];
     final i = s?.indeks;
     final naslednja = (vrsta != null && i != null && i + 1 < vrsta.length) ? baza.pesem(vrsta[i + 1].pesem) : null;
     final opomba = (vrsta != null && i != null && i < vrsta.length) ? vrsta[i].opomba : '';
+    if (!vedno && spil.povezan && (vrsta == null || i == null)) return null;
     return Material(
       color: tema.colorScheme.surfaceContainer,
       child: SafeArea(

@@ -210,6 +210,7 @@ class SetlistaZaslon extends StatelessWidget {
       return;
     }
     spil.nastaviVrsto(_pesmiPlayliste(baza, s, od: zacetek));
+    if (pokaziVsemKotSledilec(context, spil: spil, baza: baza, prijava: prijava, pesem: pesem)) return;
     final pesmi = [for (final v in vrsta) ?baza.pesem(v.pesem)];
     Navigator.of(context).push(
       MaterialPageRoute(
