@@ -46,6 +46,10 @@ class Api {
   Future<Map<String, dynamic>> posljiPogled(String vsebina) => _post({'akcija': 'pogled', 'vsebina': vsebina});
 
   /// Nastavitve špila (samo administrator). Vrne {spil}.
+  /// Administrator: vloge člana po zasedbah in (če je podan) dostop do aplikacije.
+  Future<Map<String, dynamic>> shraniClanVloge(String clan, List<Map<String, dynamic>> vloge, {bool? dostop}) =>
+      _post({'akcija': 'clanVloge', 'clan': clan, 'vloge': vloge, 'dostop': ?dostop});
+
   Future<Map<String, dynamic>> shraniSpil(String vsebina) => _post({'akcija': 'spil', 'vsebina': vsebina});
 
   /// Osebna nastavitev prijavljenega člana (npr. hitri filtri). Vrne {kljuc, vrednost}.

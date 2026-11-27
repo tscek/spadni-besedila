@@ -3,9 +3,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:spadni_besedila/models.dart';
 import 'package:spadni_besedila/nastavitve.dart';
+import 'package:spadni_besedila/baza.dart';
+import 'package:spadni_besedila/zasloni/nastavitve_zaslon.dart';
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 
 void main() {
+  testWidgets('nastavitve po skupinah in iskanje', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final n = Nastavitve();
+    Nastavitve.aplikacija = n;
+    await tester.runAsync(n.nalozi);
+    await tester.pumpWidget(MaterialApp(home: NastavitveZaslon(baza: Baza())));
+    expect(find.byKey(const ValueKey('skupina-Prikaz')), findsOneWidget);
+    expect(find.byKey(const ValueKey('skupina-Administrator')), findsNothing); // ni administrator
+    expect(find.text('Svetla tema'), findsNothing);
+
+    // Iskanje pokaže stikalo neposredno.
+    await tester.enterText(find.byKey(const ValueKey('nastavitve-isci')), 'tema');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Svetla tema'));
+    await tester.pumpAndSettle();
+    expect(n.svetlaTema, isTrue);
+
+    // Skupina se odpre na svoji strani.
+    await tester.enterText(find.byKey(const ValueKey('nastavitve-isci')), '');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('skupina-Špil')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sledi pesmim vodje'), findsOneWidget);
+    expect(find.text('Rezervni vodja'), findsNothing); // ne sme voditi
+  });
+
   test('nastavitve pogleda administratorja: izvoz in prevzem, osebne ostanejo', () async {
     SharedPreferences.setMockInitialValues({});
     final admin = Nastavitve();

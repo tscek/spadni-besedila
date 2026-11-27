@@ -12,340 +12,611 @@ import '../nastavitve.dart';
 import '../prijava.dart';
 import '../snemanje.dart';
 import '../uvodi.dart';
+import 'clani_vloge.dart';
 import 'efekti_zaslon.dart';
 import 'deli_aplikacijo.dart';
 import 'pdf_risanje.dart';
 import 'midi_zaslon.dart';
 import 'tipkovnica_zaslon.dart';
 
-/// Osebne nastavitve na tej napravi.
-class NastavitveZaslon extends StatelessWidget {
+/// Ena nastavitev: besedilo za iskanje in gradnja vrstice (ali več vrstic).
+typedef _Postavka = ({String iskanje, List<Widget> Function(BuildContext context) vrstice});
+
+/// Skupina nastavitev (svoja stran).
+typedef _Skupina = ({String ime, IconData ikona, String opis, List<_Postavka> postavke});
+
+/// Nastavitve: prva stran je seznam skupin (vsaka odpre svojo stran) in iskanje po vseh nastavitvah.
+class NastavitveZaslon extends StatefulWidget {
   const NastavitveZaslon({super.key, required this.baza, this.prijava});
 
   final Baza baza;
 
-  /// Za deljenje aplikacije (samo administrator).
+  /// Za deljenje aplikacije in urejanje članov (samo administrator).
   final Prijava? prijava;
 
   @override
-  Widget build(BuildContext context) {
+  State<NastavitveZaslon> createState() => _NastavitveZaslonState();
+}
+
+class _NastavitveZaslonState extends State<NastavitveZaslon> {
+  final _iskanje = TextEditingController();
+
+  Baza get baza => widget.baza;
+
+  @override
+  void dispose() {
+    _iskanje.dispose();
+    super.dispose();
+  }
+
+  static _Postavka _p(String iskanje, List<Widget> Function(BuildContext context) vrstice) =>
+      (iskanje: iskanje, vrstice: vrstice);
+
+  List<_Skupina> _skupine() {
     final n = Nastavitve.aplikacija;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Nastavitve')),
-      body: ListenableBuilder(
-        listenable: n,
-        builder: (context, _) => ListView(
-          children: [
-            if (prijava case final prijava? when baza.jeAdministrator) ...[
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Deli aplikacijo'),
-                subtitle: const Text('Povezave za Android, Windows in splet (vidi le administrator)'),
-                onTap: () => deliAplikacijo(context, Api(prijava.zeton)),
-              ),
-              ListTile(
-                leading: const Icon(Icons.palette_outlined),
-                title: const Text('Pošlji moje nastavitve pogleda vsem'),
-                subtitle: const Text(
-                  'Vrstice, barve, pisava, seznam, iskalnik, orodja. Ostali jih ob osvežitvi lahko prevzamejo.',
-                ),
-                onTap: () => _posljiPogled(context, Api(prijava.zeton), baza),
-              ),
-              _ObracanjeZaVse(baza: baza, api: Api(prijava.zeton)),
-              _Tyros(baza: baza, api: Api(prijava.zeton)),
+    final prijava = widget.prijava;
+    final admin = prijava != null && baza.jeAdministrator;
+    return [
+      (
+        ime: 'Prikaz',
+        ikona: Icons.visibility_outlined,
+        opis: 'Tema, akordi, PDF, zaslon, utrip tempa',
+        postavke: [
+          _p(
+            'Svetla tema',
+            (c) => [
+              SwitchListTile(title: const Text('Svetla tema'), value: n.svetlaTema, onChanged: n.nastaviSvetloTemo),
             ],
-            const ListTile(title: Text('Velja samo za to napravo.')),
-            ListTile(
-              title: const Text('Povečave PDF-jev'),
-              subtitle: const Text(
-                'Ščip na PDF-ju se zapomni za tisto pesem. Pisavo besedila nastavi urednik pri pesmi in je enaka za vse.',
-              ),
-              trailing: TextButton(onPressed: n.ponastaviPovecavePesmi, child: const Text('Ponastavi')),
-            ),
-            SwitchListTile(
-              title: const Text('Akordi nad besedilom'),
-              subtitle: const Text(
-                'Izklopi, če akordov ne potrebuješ (npr. pevci). Risbe na besedilu se lahko zamaknejo.',
-              ),
-              value: n.akordi,
-              onChanged: n.nastaviAkorde,
-            ),
-            SwitchListTile(
-              key: const ValueKey('skrij-igrane'),
-              title: const Text('V iskalniku skrij igrane pesmi'),
-              subtitle: const Text('Ob listanju jih ni; ko vpišeš besedo, jih iskalnik najde.'),
-              value: n.skrijIgrane,
-              onChanged: n.nastaviSkrijIgrane,
-            ),
-            SwitchListTile(
-              title: const Text('Najprej PDF'),
-              subtitle: const Text('Pri pesmi z besedilom in PDF-jem se najprej pokaže PDF'),
-              value: n.pdfNajprej,
-              onChanged: n.nastaviPdfNajprej,
-            ),
-            SwitchListTile(title: const Text('Svetla tema'), value: n.svetlaTema, onChanged: n.nastaviSvetloTemo),
-            const Divider(),
-            SwitchListTile(
-              title: const Text('Sledi pesmim vodje'),
-              subtitle: const Text('Ko slediš, se pesem, ki jo izbere vodja, odpre sama'),
-              value: n.samodejnoSledenje,
-              onChanged: n.nastaviSamodejnoSledenje,
-            ),
-            SwitchListTile(
-              title: const Text('Pošiljam obračanje'),
-              subtitle: const Text('Pesem, ki jo odprem na špilu, se odpre vsem (če administrator dovoli)'),
-              value: n.posiljamObracanje,
-              onChanged: n.nastaviPosiljamObracanje,
-            ),
-            SwitchListTile(
-              title: const Text('Sprejemam obračanje drugih'),
-              subtitle: const Text('Pesmi, ki jih za vse odprejo drugi sledilci; izklopljeno = sledim samo vodji'),
-              value: n.sprejemamObracanje,
-              onChanged: n.nastaviSprejemamObracanje,
-            ),
-            if (baza.smeVoditi && !Config.prekoVodje)
+          ),
+          _p(
+            'Akordi nad besedilom pevci',
+            (c) => [
               SwitchListTile(
-                title: const Text('Rezervni vodja'),
+                title: const Text('Akordi nad besedilom'),
                 subtitle: const Text(
-                  'Ko vodja na špilu izpade za 10 s, ta naprava sama prevzame vodenje z isto čakalno vrsto. '
-                  'Ko se prvi vodja vrne, mu spet sledi.',
+                  'Izklopi, če akordov ne potrebuješ (npr. pevci). Risbe na besedilu se lahko zamaknejo.',
                 ),
-                value: n.rezervniVodja,
-                onChanged: n.nastaviRezervnegaVodjo,
+                value: n.akordi,
+                onChanged: n.nastaviAkorde,
               ),
-            SwitchListTile(
-              title: const Text('Utrip tempa'),
-              subtitle: const Text('Pri podatku Tempo (BPM) v vrstici pesmi utripa pika v tempu'),
-              value: n.utripTempa,
-              onChanged: n.nastaviUtripTempa,
-            ),
-            SwitchListTile(
-              title: const Text('Zaslon ostane prižgan'),
-              subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),
-              value: n.zaslonPrizgan,
-              onChanged: n.nastaviZaslonPrizgan,
-            ),
-            ListTile(
-              title: const Text('Usmeritev zaslona'),
-              subtitle: const Text('Zaklep na tej napravi (Android; na iPadu v nadzornem centru)'),
-              trailing: DropdownButton<Usmeritev>(
-                key: const ValueKey('usmeritev'),
-                value: n.usmeritev,
-                onChanged: (u) => u == null ? null : n.nastaviUsmeritev(u),
-                items: [for (final u in Usmeritev.values) DropdownMenuItem(value: u, child: Text(u.ime))],
+            ],
+          ),
+          _p(
+            'Najprej PDF',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Najprej PDF'),
+                subtitle: const Text('Pri pesmi z besedilom in PDF-jem se najprej pokaže PDF'),
+                value: n.pdfNajprej,
+                onChanged: n.nastaviPdfNajprej,
               ),
-            ),
-            ListTile(
-              key: const ValueKey('nastavitve-tipkovnica'),
-              title: const Text('Tipkovnica'),
-              subtitle: const Text('Bližnjice za tipkovnico in nožno stikalo BT (npr. i = iskalnik)'),
-              trailing: const Icon(Icons.keyboard_outlined),
-              onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const TipkovnicaZaslon())),
-            ),
-            const ListTile(title: Text('Vloga na špilu'), subtitle: Text('Vodja, sledilec ali sama: gumb Špil')),
-            const Divider(),
-            const ListTile(
-              title: Text('Orodni vrstici pri pesmi'),
-              subtitle: Text('Kaj je zgoraj, kaj v vrstici spodaj in kaj skrito'),
-            ),
-            for (final o in Orodje.values)
+            ],
+          ),
+          _p(
+            'Povečave PDF-jev ščip ponastavi',
+            (c) => [
               ListTile(
-                title: Text(o.opis),
-                trailing: DropdownButton<Mesto>(
-                  value: n.mesto(o),
-                  onChanged: (m) => m == null ? null : n.nastaviOrodje(o, m),
-                  items: [for (final m in Mesto.values) DropdownMenuItem(value: m, child: Text(m.ime))],
+                title: const Text('Povečave PDF-jev'),
+                subtitle: const Text(
+                  'Ščip na PDF-ju se zapomni za tisto pesem. Pisavo besedila nastavi urednik pri pesmi in je enaka za vse.',
                 ),
+                trailing: TextButton(onPressed: n.ponastaviPovecavePesmi, child: const Text('Ponastavi')),
               ),
-            const Divider(),
-            const ListTile(
-              title: Text('Vrstica pod orodno vrstico pri pesmi'),
-              subtitle: Text(
-                'Trije deli; prazni se umaknejo, kratki (npr. tonaliteta) vzamejo le svojo širino, '
-                'daljši (npr. naslov) preostanek. Vse »Nič« skrije vrstico.',
-              ),
-            ),
-            for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
+            ],
+          ),
+          _p(
+            'Usmeritev zaslona pokončno ležeče',
+            (c) => [
               ListTile(
-                title: Text(ime),
-                trailing: DropdownButton<InfoVrstice>(
-                  value: n.zgoraj[i],
-                  onChanged: (v) => v == null ? null : n.nastaviZgoraj(i, v),
-                  items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
+                title: const Text('Usmeritev zaslona'),
+                subtitle: const Text('Zaklep na tej napravi (Android; na iPadu v nadzornem centru)'),
+                trailing: DropdownButton<Usmeritev>(
+                  key: const ValueKey('usmeritev'),
+                  value: n.usmeritev,
+                  onChanged: (u) => u == null ? null : n.nastaviUsmeritev(u),
+                  items: [for (final u in Usmeritev.values) DropdownMenuItem(value: u, child: Text(u.ime))],
                 ),
               ),
-            IzbiraBarve(
-              naslov: 'Barva vrstice z naslovom',
-              barva: n.barvaZgoraj,
-              izberi: (b) => n.nastaviBarvoVrstice(zgoraj: true, barva: b),
-            ),
-            const Divider(),
-            ListTile(
-              title: const Text('Oblački na besedilu'),
-              subtitle: const Text('V zgornjem levem ali desnem kotu pesmi, zloženi navzdol'),
-              trailing: TextButton.icon(
-                key: const ValueKey('dodaj-oblacek'),
-                icon: const Icon(Icons.add),
-                label: const Text('Dodaj'),
-                onPressed: () async {
-                  final o = await _urediOblacek(context, const Oblacek(vsebina: InfoVrstice.tonaliteta));
-                  if (o != null) await n.nastaviOblacke([...n.oblacki, o]);
-                },
+            ],
+          ),
+          _p(
+            'Zaslon ostane prižgan ugasne',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Zaslon ostane prižgan'),
+                subtitle: const Text('Med uporabo aplikacije se zaslon ne ugasne'),
+                value: n.zaslonPrizgan,
+                onChanged: n.nastaviZaslonPrizgan,
               ),
-            ),
-            for (final (i, o) in n.oblacki.indexed)
+            ],
+          ),
+          _p(
+            'Utrip tempa BPM',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Utrip tempa'),
+                subtitle: const Text('Pri podatku Tempo (BPM) v vrstici pesmi utripa pika v tempu'),
+                value: n.utripTempa,
+                onChanged: n.nastaviUtripTempa,
+              ),
+            ],
+          ),
+        ],
+      ),
+      (
+        ime: 'Pesem na zaslonu',
+        ikona: Icons.article_outlined,
+        opis: 'Orodni vrstici, vrstica z naslovom, oblački, spodnja vrstica',
+        postavke: [
+          _p(
+            'Orodni vrstici pri pesmi orodja zgoraj spodaj skrito',
+            (c) => [
+              const ListTile(
+                title: Text('Orodni vrstici pri pesmi', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Kaj je zgoraj, kaj v vrstici spodaj in kaj skrito'),
+              ),
+              for (final o in Orodje.values)
+                ListTile(
+                  title: Text(o.opis),
+                  trailing: DropdownButton<Mesto>(
+                    value: n.mesto(o),
+                    onChanged: (m) => m == null ? null : n.nastaviOrodje(o, m),
+                    items: [for (final m in Mesto.values) DropdownMenuItem(value: m, child: Text(m.ime))],
+                  ),
+                ),
+            ],
+          ),
+          _p(
+            'Vrstica pod orodno vrstico naslov barva vrstice',
+            (c) => [
+              const ListTile(
+                title: Text('Vrstica pod orodno vrstico pri pesmi', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  'Trije deli; prazni se umaknejo, kratki (npr. tonaliteta) vzamejo le svojo širino, '
+                  'daljši (npr. naslov) preostanek. Vse »Nič« skrije vrstico.',
+                ),
+              ),
+              for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
+                ListTile(
+                  title: Text(ime),
+                  trailing: DropdownButton<InfoVrstice>(
+                    value: n.zgoraj[i],
+                    onChanged: (v) => v == null ? null : n.nastaviZgoraj(i, v),
+                    items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
+                  ),
+                ),
+              IzbiraBarve(
+                naslov: 'Barva vrstice z naslovom',
+                barva: n.barvaZgoraj,
+                izberi: (b) => n.nastaviBarvoVrstice(zgoraj: true, barva: b),
+              ),
+            ],
+          ),
+          _p(
+            'Oblački na besedilu tonaliteta',
+            (c) => [
               ListTile(
-                leading: CircleAvatar(
-                  radius: 12,
-                  backgroundColor: o.barva == null ? Theme.of(context).colorScheme.primaryContainer : Color(o.barva!),
+                title: const Text('Oblački na besedilu', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('V zgornjem levem ali desnem kotu pesmi, zloženi navzdol'),
+                trailing: TextButton.icon(
+                  key: const ValueKey('dodaj-oblacek'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Dodaj'),
+                  onPressed: () async {
+                    final o = await _urediOblacek(c, const Oblacek(vsebina: InfoVrstice.tonaliteta));
+                    if (o != null) await n.nastaviOblacke([...n.oblacki, o]);
+                  },
                 ),
-                title: Text(o.vsebina.ime),
-                subtitle: Text('${Oblacek.velikosti[o.velikost]} · ${o.levo ? 'levo' : 'desno'}'),
-                onTap: () async {
-                  final nov = await _urediOblacek(context, o);
-                  if (nov != null) await n.nastaviOblacke([...n.oblacki]..[i] = nov);
-                },
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Višje',
-                      icon: const Icon(Icons.arrow_upward),
-                      onPressed: i == 0
-                          ? null
-                          : () => n.nastaviOblacke(
-                              [...n.oblacki]
-                                ..removeAt(i)
-                                ..insert(i - 1, o),
-                            ),
-                    ),
-                    IconButton(
-                      tooltip: 'Odstrani',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => n.nastaviOblacke([...n.oblacki]..removeAt(i)),
-                    ),
+              ),
+              for (final (i, o) in n.oblacki.indexed)
+                ListTile(
+                  leading: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: o.barva == null ? Theme.of(c).colorScheme.primaryContainer : Color(o.barva!),
+                  ),
+                  title: Text(o.vsebina.ime),
+                  subtitle: Text('${Oblacek.velikosti[o.velikost]} · ${o.levo ? 'levo' : 'desno'}'),
+                  onTap: () async {
+                    final nov = await _urediOblacek(c, o);
+                    if (nov != null) await n.nastaviOblacke([...n.oblacki]..[i] = nov);
+                  },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Višje',
+                        icon: const Icon(Icons.arrow_upward),
+                        onPressed: i == 0
+                            ? null
+                            : () => n.nastaviOblacke(
+                                [...n.oblacki]
+                                  ..removeAt(i)
+                                  ..insert(i - 1, o),
+                              ),
+                      ),
+                      IconButton(
+                        tooltip: 'Odstrani',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => n.nastaviOblacke([...n.oblacki]..removeAt(i)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          _p(
+            'Spodnja vrstica pri pesmi barva spodnje vrstice',
+            (c) => [
+              const ListTile(
+                title: Text('Spodnja vrstica pri pesmi', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Trije deli; prazni se umaknejo. Iskanje je vedno desno'),
+              ),
+              for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
+                ListTile(
+                  title: Text(ime),
+                  trailing: DropdownButton<InfoVrstice>(
+                    value: n.spodaj[i],
+                    onChanged: (v) => v == null ? null : n.nastaviSpodaj(i, v),
+                    items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
+                  ),
+                ),
+              IzbiraBarve(
+                naslov: 'Barva spodnje vrstice',
+                barva: n.barvaSpodaj,
+                izberi: (b) => n.nastaviBarvoVrstice(zgoraj: false, barva: b),
+              ),
+            ],
+          ),
+        ],
+      ),
+      (
+        ime: 'Seznami in iskalnik',
+        ikona: Icons.list_alt,
+        opis: 'Vrstica na seznamu, iskalnik, čakalna vrsta, odigrane pesmi',
+        postavke: [
+          _p(
+            'Vrstica na seznamu pesmi podatki playliste',
+            (c) => [
+              ListTile(
+                title: const Text('Vrstica na seznamu pesmi in v playlistah'),
+                subtitle: _cipi(n.poljaSeznama, n.nastaviPoljaSeznama, {PoljePesmi.naslov, PoljePesmi.spremenjeno}),
+              ),
+            ],
+          ),
+          _p(
+            'Ikoni besedila in PDF-ja na seznamu',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Ikoni besedila in PDF-ja na seznamu'),
+                value: n.ikoneSeznama,
+                onChanged: n.nastaviIkoneSeznama,
+              ),
+            ],
+          ),
+          _p(
+            'Iskalnik pesmi podatki pod naslovom',
+            (c) => [
+              ListTile(
+                title: const Text('Iskalnik pesmi: podatki pod naslovom'),
+                subtitle: _cipi(n.poljaIskalnika, n.nastaviPoljaIskalnika, {
+                  PoljePesmi.naslov,
+                  PoljePesmi.spremenjeno,
+                  PoljePesmi.koda,
+                }),
+              ),
+            ],
+          ),
+          _p(
+            'V iskalniku skrij igrane pesmi',
+            (c) => [
+              SwitchListTile(
+                key: const ValueKey('skrij-igrane'),
+                title: const Text('V iskalniku skrij igrane pesmi'),
+                subtitle: const Text('Ob listanju jih ni; ko vpišeš besedo, jih iskalnik najde.'),
+                value: n.skrijIgrane,
+                onChanged: n.nastaviSkrijIgrane,
+              ),
+            ],
+          ),
+          _p(
+            'Napis v čakalni vrsti harmonika utripa',
+            (c) => [
+              ListTile(
+                title: const Text('Napis v čakalni vrsti'),
+                subtitle: _cipi(n.poljaVrste, n.nastaviPoljaVrste, {PoljePesmi.spremenjeno}),
+              ),
+              const ListTile(
+                dense: true,
+                subtitle: Text('Če je izbrana harmonika, napis utripa v barvi harmonike, ko jo je treba zamenjati.'),
+              ),
+            ],
+          ),
+          _p(
+            'Pesem je odigrana ko je odprta dnevnik igranja minute',
+            (c) => [
+              ListTile(
+                title: const Text('Pesem je odigrana, ko je odprta'),
+                subtitle: const Text(
+                  'Siva ikona predvajanja na vseh seznamih (velja 12 ur); takrat gre pesem tudi v dnevnik igranja',
+                ),
+                trailing: DropdownButton<int>(
+                  value: n.minuteOdigrane,
+                  onChanged: (v) => v == null ? null : n.nastaviMinuteOdigrane(v),
+                  items: [
+                    for (final m in const [0, 1, 2, 3, 4, 5, 10])
+                      DropdownMenuItem(value: m, child: Text(m == 0 ? 'nikoli' : '$m min')),
                   ],
                 ),
               ),
-            const Divider(),
-            const ListTile(
-              title: Text('Spodnja vrstica pri pesmi'),
-              subtitle: Text('Trije deli; prazni se umaknejo. Iskanje je vedno desno'),
-            ),
-            for (final (i, ime) in [(0, 'Levo'), (1, 'Sredina'), (2, 'Desno')])
-              ListTile(
-                title: Text(ime),
-                trailing: DropdownButton<InfoVrstice>(
-                  value: n.spodaj[i],
-                  onChanged: (v) => v == null ? null : n.nastaviSpodaj(i, v),
-                  items: [for (final v in InfoVrstice.values) DropdownMenuItem(value: v, child: Text(v.ime))],
+            ],
+          ),
+        ],
+      ),
+      (
+        ime: 'Špil',
+        ikona: Icons.cast_connected,
+        opis: 'Sledenje, obračanje, rezervni vodja, runda in pavza',
+        postavke: [
+          _p(
+            'Vloga na špilu vodja sledilec',
+            (c) => [
+              const ListTile(title: Text('Vloga na špilu'), subtitle: Text('Vodja, sledilec ali sama: gumb Špil')),
+            ],
+          ),
+          _p(
+            'Sledi pesmim vodje samodejno sledenje',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Sledi pesmim vodje'),
+                subtitle: const Text('Ko slediš, se pesem, ki jo izbere vodja, odpre sama'),
+                value: n.samodejnoSledenje,
+                onChanged: n.nastaviSamodejnoSledenje,
+              ),
+            ],
+          ),
+          _p(
+            'Pošiljam obračanje',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Pošiljam obračanje'),
+                subtitle: const Text('Pesem, ki jo odprem na špilu, se odpre vsem (če administrator dovoli)'),
+                value: n.posiljamObracanje,
+                onChanged: n.nastaviPosiljamObracanje,
+              ),
+            ],
+          ),
+          _p(
+            'Sprejemam obračanje drugih',
+            (c) => [
+              SwitchListTile(
+                title: const Text('Sprejemam obračanje drugih'),
+                subtitle: const Text('Pesmi, ki jih za vse odprejo drugi sledilci; izklopljeno = sledim samo vodji'),
+                value: n.sprejemamObracanje,
+                onChanged: n.nastaviSprejemamObracanje,
+              ),
+            ],
+          ),
+          if (baza.smeVoditi && !Config.prekoVodje)
+            _p(
+              'Rezervni vodja',
+              (c) => [
+                SwitchListTile(
+                  title: const Text('Rezervni vodja'),
+                  subtitle: const Text(
+                    'Ko vodja na špilu izpade za 10 s, ta naprava sama prevzame vodenje z isto čakalno vrsto. '
+                    'Ko se prvi vodja vrne, mu spet sledi.',
+                  ),
+                  value: n.rezervniVodja,
+                  onChanged: n.nastaviRezervnegaVodjo,
                 ),
+              ],
+            ),
+          if (admin)
+            _p(
+              'Vsak lahko obrne pesem za vse neprijavljene iPadi',
+              (c) => [_ObracanjeZaVse(baza: baza, api: Api(prijava.zeton))],
+            ),
+          _p(
+            'Runda in pavza gumba v oknu ure',
+            (c) => [
+              const ListTile(title: Text('Runda in pavza'), subtitle: Text('Gumba v oknu ure zgoraj')),
+              _GumbRundeNastavitev(baza: baza, pavza: true),
+              _GumbRundeNastavitev(baza: baza, pavza: false),
+            ],
+          ),
+        ],
+      ),
+      (
+        ime: 'Zvok',
+        ikona: Icons.volume_up_outlined,
+        opis: 'Uvodi, playback, zvočni efekti (FX), izhodi in vhod',
+        postavke: [
+          _p(
+            'Zvok uvodi playback zvočni efekti FX izhod vhod snemanje hrani lokalno',
+            (c) => [_ZvokNastavitve(baza: baza, prijava: prijava)],
+          ),
+        ],
+      ),
+      (
+        ime: 'MIDI in tipkovnica',
+        ikona: Icons.piano,
+        opis: 'Nastavitve MIDI, Tyros, tipkovnica in nožno stikalo',
+        postavke: [
+          _p(
+            'Nastavitve MIDI naprave kanali',
+            (c) => [
+              ListTile(
+                leading: const Icon(Icons.piano),
+                title: const Text('Nastavitve MIDI'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () =>
+                    Navigator.of(c).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza))),
               ),
-            IzbiraBarve(
-              naslov: 'Barva spodnje vrstice',
-              barva: n.barvaSpodaj,
-              izberi: (b) => n.nastaviBarvoVrstice(zgoraj: false, barva: b),
-            ),
-            ListTile(
-              title: const Text('Iskalnik pesmi: podatki pod naslovom'),
-              subtitle: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final polje in PoljePesmi.values)
-                    if (polje != PoljePesmi.naslov && polje != PoljePesmi.spremenjeno && polje != PoljePesmi.koda)
-                      FilterChip(
-                        label: Text(polje.ime),
-                        selected: n.poljaIskalnika.contains(polje),
-                        onSelected: (da) => n.nastaviPoljaIskalnika([
-                          for (final x in PoljePesmi.values)
-                            if (x == polje ? da : n.poljaIskalnika.contains(x)) x,
-                        ]),
-                      ),
-                ],
+            ],
+          ),
+          if (admin) _p('Tyros MIDI kanal banka', (c) => [_Tyros(baza: baza, api: Api(prijava.zeton))]),
+          _p(
+            'Tipkovnica bližnjice nožno stikalo BT',
+            (c) => [
+              ListTile(
+                key: const ValueKey('nastavitve-tipkovnica'),
+                leading: const Icon(Icons.keyboard_outlined),
+                title: const Text('Tipkovnica'),
+                subtitle: const Text('Bližnjice za tipkovnico in nožno stikalo BT (npr. i = iskalnik)'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(c, MaterialPageRoute<void>(builder: (_) => const TipkovnicaZaslon())),
               ),
+            ],
+          ),
+        ],
+      ),
+      if (admin)
+        (
+          ime: 'Administrator',
+          ikona: Icons.admin_panel_settings_outlined,
+          opis: 'Člani in vloge, deli aplikacijo, nastavitve pogleda za vse',
+          postavke: [
+            _p(
+              'Člani in vloge dostop urejevalec gledalec sme voditi',
+              (c) => [
+                ListTile(
+                  key: const ValueKey('nastavitve-clani'),
+                  leading: const Icon(Icons.people_outline),
+                  title: const Text('Člani in vloge'),
+                  subtitle: const Text('Dostop do aplikacije in vloge po zasedbah'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    c,
+                    MaterialPageRoute<void>(
+                      builder: (_) => ClaniVlogeZaslon(baza: baza, prijava: prijava),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const Divider(),
-            ListTile(
-              title: const Text('Vrstica na seznamu pesmi'),
-              subtitle: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final polje in PoljePesmi.values)
-                    if (polje != PoljePesmi.naslov && polje != PoljePesmi.spremenjeno)
-                      FilterChip(
-                        label: Text(polje.ime),
-                        selected: n.poljaSeznama.contains(polje),
-                        onSelected: (da) => n.nastaviPoljaSeznama([
-                          for (final x in PoljePesmi.values)
-                            if (x == polje ? da : n.poljaSeznama.contains(x)) x,
-                        ]),
-                      ),
-                ],
-              ),
+            _p(
+              'Deli aplikacijo povezave Android Windows splet',
+              (c) => [
+                ListTile(
+                  leading: const Icon(Icons.share),
+                  title: const Text('Deli aplikacijo'),
+                  subtitle: const Text('Povezave za Android, Windows in splet'),
+                  onTap: () => deliAplikacijo(c, Api(prijava.zeton)),
+                ),
+              ],
             ),
-            SwitchListTile(
-              title: const Text('Ikoni besedila in PDF-ja na seznamu'),
-              value: n.ikoneSeznama,
-              onChanged: n.nastaviIkoneSeznama,
-            ),
-            ListTile(
-              title: const Text('Napis v čakalni vrsti'),
-              subtitle: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final polje in PoljePesmi.values)
-                    if (polje != PoljePesmi.spremenjeno)
-                      FilterChip(
-                        label: Text(polje.ime),
-                        selected: n.poljaVrste.contains(polje),
-                        onSelected: (da) => n.nastaviPoljaVrste([
-                          for (final x in PoljePesmi.values)
-                            if (x == polje ? da : n.poljaVrste.contains(x)) x,
-                        ]),
-                      ),
-                ],
-              ),
-            ),
-            const ListTile(
-              dense: true,
-              subtitle: Text('Če je izbrana harmonika, napis utripa v barvi harmonike, ko jo je treba zamenjati.'),
-            ),
-            ListTile(
-              title: const Text('Pesem je odigrana, ko je odprta'),
-              subtitle: const Text(
-                'Siva ikona predvajanja na vseh seznamih (velja 12 ur); takrat gre pesem tudi v dnevnik igranja',
-              ),
-              trailing: DropdownButton<int>(
-                value: n.minuteOdigrane,
-                onChanged: (v) => v == null ? null : n.nastaviMinuteOdigrane(v),
-                items: [
-                  for (final m in const [0, 1, 2, 3, 4, 5, 10])
-                    DropdownMenuItem(value: m, child: Text(m == 0 ? 'nikoli' : '$m min')),
-                ],
-              ),
-            ),
-            const Divider(),
-            _ZvokNastavitve(baza: baza, prijava: prijava),
-            const Divider(),
-            const ListTile(title: Text('Runda in pavza'), subtitle: Text('Gumba v oknu ure zgoraj')),
-            _GumbRundeNastavitev(baza: baza, pavza: true),
-            _GumbRundeNastavitev(baza: baza, pavza: false),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.piano),
-              title: const Text('Nastavitve MIDI'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () =>
-                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MidiNastavitveZaslon(baza: baza))),
+            _p(
+              'Pošlji moje nastavitve pogleda vsem',
+              (c) => [
+                ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('Pošlji moje nastavitve pogleda vsem'),
+                  subtitle: const Text(
+                    'Vrstice, barve, pisava, seznam, iskalnik, orodja. Ostali jih ob osvežitvi lahko prevzamejo.',
+                  ),
+                  onTap: () => _posljiPogled(c, Api(prijava.zeton), baza),
+                ),
+              ],
             ),
           ],
         ),
-      ),
-    );
+    ];
   }
+
+  /// Čipi za izbiro podatkov pesmi (vrstni red kot v PoljePesmi).
+  static Widget _cipi(
+    List<PoljePesmi> izbrana,
+    Future<void> Function(List<PoljePesmi>) nastavi,
+    Set<PoljePesmi> brez,
+  ) => Wrap(
+    spacing: 6,
+    runSpacing: 6,
+    children: [
+      for (final polje in PoljePesmi.values)
+        if (!brez.contains(polje))
+          FilterChip(
+            label: Text(polje.ime),
+            selected: izbrana.contains(polje),
+            onSelected: (da) => nastavi([
+              for (final x in PoljePesmi.values)
+                if (x == polje ? da : izbrana.contains(x)) x,
+            ]),
+          ),
+    ],
+  );
+
+  static List<Widget> _vrstice(BuildContext context, List<_Postavka> postavke) => [
+    for (final (i, p) in postavke.indexed) ...[if (i > 0) const Divider(height: 1), ...p.vrstice(context)],
+  ];
+
+  void _odpriSkupino(_Skupina s) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: Text(s.ime)),
+        body: ListenableBuilder(
+          listenable: Nastavitve.aplikacija,
+          // Skupino zgradi znova, da vrstice pokažejo novo stanje.
+          builder: (context, _) {
+            final zdaj = _skupine().where((x) => x.ime == s.ime).firstOrNull ?? s;
+            return ListView(children: _vrstice(context, zdaj.postavke));
+          },
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Nastavitve')),
+    body: ListenableBuilder(
+      listenable: Listenable.merge([Nastavitve.aplikacija, _iskanje]),
+      builder: (context, _) {
+        final skupine = _skupine();
+        final q = poenostavi(_iskanje.text.trim());
+        return ListView(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: TextField(
+                key: const ValueKey('nastavitve-isci'),
+                controller: _iskanje,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Išči nastavitev (npr. tema, MIDI, sledi)',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: _iskanje.text.isEmpty
+                      ? null
+                      : IconButton(icon: const Icon(Icons.clear), onPressed: _iskanje.clear),
+                ),
+              ),
+            ),
+            if (q.isEmpty) ...[
+              const ListTile(dense: true, subtitle: Text('Velja samo za to napravo (razen pri administratorju).')),
+              for (final s in skupine)
+                ListTile(
+                  key: ValueKey('skupina-${s.ime}'),
+                  leading: Icon(s.ikona),
+                  title: Text(s.ime),
+                  subtitle: Text(s.opis),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _odpriSkupino(s),
+                ),
+            ] else
+              for (final s in skupine)
+                if (s.postavke.where((p) => poenostavi('${p.iskanje} ${s.ime}').contains(q)).toList() case final zadetki
+                    when zadetki.isNotEmpty) ...[
+                  ListTile(
+                    dense: true,
+                    title: Text(s.ime, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+                  ),
+                  ..._vrstice(context, zadetki),
+                ],
+          ],
+        );
+      },
+    ),
+  );
 }
 
 /// Napis, barva in MIDI ukaz enega gumba v oknu runde.

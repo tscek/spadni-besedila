@@ -99,8 +99,38 @@ class Baza extends ChangeNotifier {
   /// Napredek trenutnega prenosa (0–1) za vrstico pod sporočilom; null = ne vemo, koliko je še.
   double? napredek;
 
-  /// Administrator: aktivni člani brez vrstice na listu Vloge (pošlje skripta).
-  List<String> get claniBrezVloge => [for (final c in (_podatki['brezVloge'] as List?) ?? const []) c.toString()];
+  /// Administrator: vsi člani z dostopom in zasedbami ter vse vloge (pošlje skripta samo administratorju).
+  /// Null, če ga skripta ne pošlje (ni administrator ali starejša skripta).
+  ({
+    List<({String id, String ime, bool dostop, List<String> zasedbe})> clani,
+    List<({String clan, String skupina, String vloga, bool smeVoditi})> vloge,
+  })?
+  get urejanjeClanov {
+    final u = _podatki['urejanjeClanov'];
+    if (u is! Map) return null;
+    return (
+      clani: [
+        for (final c in (u['clani'] as List?) ?? const [])
+          if (c is Map)
+            (
+              id: besedilo(c['ID']),
+              ime: besedilo(c['Ime']),
+              dostop: c['Aktiven'] == true,
+              zasedbe: [for (final z in (c['Zasedbe'] as List?) ?? const []) z.toString()],
+            ),
+      ],
+      vloge: [
+        for (final v in (u['vloge'] as List?) ?? const [])
+          if (v is Map)
+            (
+              clan: besedilo(v['Član']),
+              skupina: besedilo(v['Skupina']),
+              vloga: besedilo(v['Vloga']),
+              smeVoditi: daNe(v['Sme voditi']),
+            ),
+      ],
+    );
+  }
 
   /// Prijavljen član nima nobene vloge (na listu Vloge ga ni): v aplikaciji je samo gledalec.
   bool get brezVloge => clanId.isNotEmpty && vloge.isEmpty;
