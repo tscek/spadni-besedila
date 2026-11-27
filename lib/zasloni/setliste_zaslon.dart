@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../baza.dart';
+import '../config.dart';
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
 import '../models.dart';
@@ -89,9 +90,8 @@ class SetlisteZaslon extends StatelessWidget {
                               ...baza.skupine.where((k) => k.id == s.skupina).map((k) => k.ime),
                           ].join(' · '),
                         ),
-                        // Playlista postane čakalna vrsta; naslednja pesem je vedno s čakalne vrste.
+                        // Odpiranje playliste čakalne vrste ne spremeni (za to je gumb »Daj v čakalno vrsto«).
                         onTap: () {
-                          spil?.nastaviVrsto(_pesmiPlayliste(baza, s));
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => SetlistaZaslon(setlista: s, baza: baza, prijava: prijava, spil: spil),
@@ -105,6 +105,39 @@ class SetlisteZaslon extends StatelessWidget {
       },
     );
   }
+}
+
+/// Gumb »Daj v čakalno vrsto«: pesmi playliste zamenjajo čakalno vrsto pri vseh (po potrditvi).
+Future<void> playlistaVCakalnoVrsto(BuildContext context, Spil spil, Baza baza, Setlista s) async {
+  final pesmi = _pesmiPlayliste(baza, s);
+  if (pesmi.isEmpty) return;
+  final messenger = ScaffoldMessenger.of(context);
+  if (spil.vloga == VlogaSpila.sledilec && !spil.povezan) {
+    messenger.showSnackBar(const SnackBar(content: Text('Ni povezave z vodjo, čakalna vrsta ni spremenjena.')));
+    return;
+  }
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Daj v čakalno vrsto'),
+      content: Text(
+        spil.naslednje.isEmpty
+            ? '${pesmi.length} pesmi playliste ${s.ime} gre v čakalno vrsto za vse.'
+            : 'Čakalna vrsta (${spil.naslednje.length} pesmi) se pri vseh zamenja s ${pesmi.length} pesmimi playliste ${s.ime}.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Prekliči')),
+        FilledButton(
+          key: const ValueKey('playlista-v-vrsto-potrdi'),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Zamenjaj'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  spil.nastaviVrsto(pesmi);
+  messenger.showSnackBar(SnackBar(content: Text('V čakalni vrsti: ${s.ime} (${pesmi.length} pesmi)')));
 }
 
 /// ID-ji pesmi playliste od [od] naprej (brez pesmi, ki jih ni več v repertoarju).
@@ -178,6 +211,19 @@ class SetlistaZaslon extends StatelessWidget {
                     [if (s.datum != null) datumBesedilo(s.datum!), s.opombe].where((x) => x.isNotEmpty).join(' · '),
                   ),
                 ),
+              if (spil case final spil? when vrsta.isNotEmpty && !Config.samoKlicaji)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      key: const ValueKey('playlista-v-vrsto'),
+                      onPressed: () => playlistaVCakalnoVrsto(context, spil, baza, s),
+                      icon: const Icon(Icons.queue_music),
+                      label: const Text('Daj v čakalno vrsto'),
+                    ),
+                  ),
+                ),
               for (final (i, v) in vrsta.indexed)
                 if (baza.pesem(v.pesem) case final p?)
                   Builder(
@@ -207,7 +253,7 @@ class SetlistaZaslon extends StatelessWidget {
     );
   }
 
-  /// Igranje od pesmi [zacetek]: ta in vse za njo gredo v čakalno vrsto, odpre se kot vsaka pesem.
+  /// Igranje od pesmi [zacetek]: pesem se odpre kot vsaka druga (čakalna vrsta ostane ista).
   /// Brez špila (npr. v testih) ostane igranje po setlisti.
   void _igraj(BuildContext context, Setlista s, int zacetek) {
     final spil = this.spil;
@@ -221,7 +267,6 @@ class SetlistaZaslon extends StatelessWidget {
       );
       return;
     }
-    spil.nastaviVrsto(_pesmiPlayliste(baza, s, od: zacetek));
     if (pokaziVsemKotSledilec(context, spil: spil, baza: baza, prijava: prijava, pesem: pesem)) return;
     final pesmi = [for (final v in vrsta) ?baza.pesem(v.pesem)];
     Navigator.of(context).push(
@@ -371,7 +416,7 @@ class _IgranjeZaslonState extends State<IgranjeZaslon> {
         if (j >= 0) return _pojdi(j);
         final spil = widget.spil;
         if (spil == null) return _vrini(izbrana);
-        vCakalnoVrsto(context, spil, widget.baza, izbrana, naPrvo: true);
+        vCakalnoVrsto(context, spil, widget.baza, izbrana);
       },
       pesem: p,
       baza: widget.baza,

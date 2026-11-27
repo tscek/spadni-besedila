@@ -246,6 +246,11 @@ Future<void> _naPlaylisto(BuildContext context, Baza baza, Prijava prijava, Pese
 /// Iskalnik v pesmi: pesem gre v čakalno vrsto (dotik na konec, pridržanje na prvo mesto).
 Future<void> vCakalnoVrsto(BuildContext context, Spil spil, Baza baza, Pesem p, {bool naPrvo = false}) async {
   final messenger = ScaffoldMessenger.of(context);
+  // Sledilec brez povezave: vrsta je pri vodji, zato pesmi ne more dodati (ne izgubi se tiho).
+  if (spil.vloga == VlogaSpila.sledilec && !spil.povezan) {
+    messenger.showSnackBar(const SnackBar(content: Text('Ni povezave z vodjo, pesem ni dodana.')));
+    return;
+  }
   // Pesem, ki je že v vrsti, se z dotikom ne doda še enkrat (s pridržanjem pa gre na prvo mesto).
   final i = spil.naslednje.indexWhere((n) => n.pesem == p.id);
   if (i >= 0 && !naPrvo) {
@@ -368,45 +373,151 @@ class _UtripajocaVrsticaState extends State<UtripajocaVrstica> with SingleTicker
   );
 }
 
-/// Seznamček naslednjih pesmi: dotik odpre pesem, X jo odstrani (vsak).
+/// Seznamček naslednjih pesmi (skupen vsem): dotik odpre pesem, X jo odstrani, pridržan koš izprazni vrsto.
 Future<void> pokaziNaslednje(BuildContext context, Spil spil, Baza baza, void Function(Pesem) odpri) =>
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (context) => SafeArea(
-        child: ListenableBuilder(
-          listenable: spil,
-          builder: (context, _) {
-            return ListView(
-              shrinkWrap: true,
-              children: [
-                const ListTile(title: Text('Čakalna vrsta')),
-                if (spil.naslednje.isEmpty) const ListTile(title: Text('Čakalna vrsta je prazna.')),
-                for (var i = 0; i < spil.naslednje.length; i++)
-                  if (baza.pesem(spil.naslednje[i].pesem) case final p?)
-                    ListTile(
-                      leading: const Icon(Icons.queue_music),
-                      title: NaslovZOznakami(pesem: p),
-                      subtitle: Text(
-                        [
-                          napisVrste(p).replaceFirst(p.naslov, '').replaceFirst(RegExp(r'^ · '), ''),
-                          _opis(spil.naslednje[i]),
-                        ].where((x) => x.isNotEmpty).join(' · '),
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        odpri(p);
-                      },
-                      trailing: Config.samoKlicaji
-                          ? null
-                          : IconButton(
-                              tooltip: 'Odstrani',
-                              icon: const Icon(Icons.close),
-                              onPressed: () => spil.odstraniNaslednjo(i),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+          child: ListenableBuilder(
+            listenable: Listenable.merge([spil, baza, Nastavitve.aplikacija]),
+            builder: (context, _) {
+              return ListView(
+                shrinkWrap: true,
+                children: [
+                  ListTile(
+                    title: const Text('Čakalna vrsta'),
+                    trailing: spil.naslednje.isEmpty || Config.samoKlicaji
+                        ? null
+                        : PridrziGumb(
+                            key: const ValueKey('pocisti-vrsto'),
+                            tooltip: 'Počisti čakalno vrsto',
+                            onPotrjeno: spil.pocistiNaslednje,
+                          ),
+                  ),
+                  if (spil.naslednje.isEmpty) const ListTile(title: Text('Čakalna vrsta je prazna.')),
+                  for (var i = 0; i < spil.naslednje.length; i++)
+                    if (baza.pesem(spil.naslednje[i].pesem) case final p?)
+                      Builder(
+                        builder: (context) {
+                          // Isti podatki kot na seznamu pesmi; nad njimi, kdo jo je dodal.
+                          final d = podatkiVrsticePesmi(context, baza, p, pred: _opis(spil.naslednje[i]));
+                          return ListTile(
+                            key: ValueKey('vrsta-${p.id}'),
+                            leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
+                            title: NaslovZOznakami(pesem: p),
+                            subtitle: d.podnaslov,
+                            onTap: () {
+                              Navigator.pop(context);
+                              odpri(p);
+                            },
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                d.zadaj,
+                                if (!Config.samoKlicaji)
+                                  IconButton(
+                                    tooltip: 'Odstrani',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => spil.odstraniNaslednjo(i),
+                                  ),
+                              ],
                             ),
-                    ),
-              ],
-            );
-          },
+                          );
+                        },
+                      ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
+
+/// Gumb, ki ga je treba pridržati ([trajanje]); med držanjem se od leve napolni z rdečo.
+/// Ob prezgodnjem spustu se praznjenje vrne nazaj in nič se ne zgodi.
+class PridrziGumb extends StatefulWidget {
+  const PridrziGumb({
+    super.key,
+    required this.onPotrjeno,
+    this.tooltip,
+    this.ikona = Icons.delete_sweep_outlined,
+    this.trajanje = const Duration(milliseconds: 1500),
+  });
+
+  final VoidCallback onPotrjeno;
+  final String? tooltip;
+  final IconData ikona;
+  final Duration trajanje;
+
+  @override
+  State<PridrziGumb> createState() => _PridrziGumbState();
+}
+
+class _PridrziGumbState extends State<PridrziGumb> with SingleTickerProviderStateMixin {
+  late final AnimationController _polnjenje = AnimationController(vsync: this, duration: widget.trajanje)
+    ..addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        HapticFeedback.mediumImpact();
+        widget.onPotrjeno();
+        _polnjenje.value = 0;
+      }
+    });
+
+  @override
+  void dispose() {
+    _polnjenje.dispose();
+    super.dispose();
+  }
+
+  void _spusti() {
+    if (_polnjenje.isAnimating) _polnjenje.animateBack(0, duration: const Duration(milliseconds: 200));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context).colorScheme;
+    final gumb = Listener(
+      onPointerDown: (_) => _polnjenje.forward(),
+      onPointerUp: (_) => _spusti(),
+      onPointerCancel: (_) => _spusti(),
+      child: AnimatedBuilder(
+        animation: _polnjenje,
+        builder: (context, _) => ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: CustomPaint(
+            painter: _Polnilo(delez: _polnjenje.value, barva: tema.error.withValues(alpha: 0.85)),
+            child: Container(
+              width: 56,
+              height: 40,
+              decoration: BoxDecoration(
+                border: Border.all(color: tema.error),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(widget.ikona, color: _polnjenje.value > 0.5 ? tema.onError : tema.error),
+            ),
+          ),
+        ),
+      ),
+    );
+    return widget.tooltip == null ? gumb : Tooltip(message: widget.tooltip!, child: gumb);
+  }
+}
+
+class _Polnilo extends CustomPainter {
+  _Polnilo({required this.delez, required this.barva});
+
+  final double delez;
+  final Color barva;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (delez <= 0) return;
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width * delez, size.height), Paint()..color = barva);
+  }
+
+  @override
+  bool shouldRepaint(_Polnilo old) => old.delez != delez || old.barva != barva;
+}

@@ -67,7 +67,7 @@ void main() {
     expect(s.naslednje, isEmpty);
     expect(s.imaNazaj, isTrue);
     expect(s.nazaj(), 'a');
-    // Pesem, iz katere smo šli nazaj, je spet naslednja.
-    expect(s.naslednje.single.pesem, 'b');
+    // Nazaj ne spreminja skupne čakalne vrste.
+    expect(s.naslednje, isEmpty);
   });
 }

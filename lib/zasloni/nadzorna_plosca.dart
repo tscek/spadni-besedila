@@ -738,7 +738,12 @@ class _Deli {
             pavza: baza.pesem(baza.mapa(mapa)?.pavza ?? ''),
             trenutna: pesem,
             vVrsti: {for (final (i, n) in spil.naslednje.indexed) n.pesem: i + 1},
+            // Dotik na konec čakalne vrste, pridržanje na prvo mesto (kot povsod).
             odpri: (p) {
+              Navigator.pop(dialog);
+              vCakalnoVrsto(context, spil, baza, p);
+            },
+            pridrzi: (p) {
               Navigator.pop(dialog);
               vCakalnoVrsto(context, spil, baza, p, naPrvo: true);
             },

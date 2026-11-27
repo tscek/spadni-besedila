@@ -16,6 +16,7 @@ import 'package:spadni_besedila/runda.dart';
 import 'package:spadni_besedila/shramba/shramba.dart';
 import 'package:spadni_besedila/spil/spil.dart';
 import 'package:spadni_besedila/spil/streznik.dart';
+import 'package:spadni_besedila/zasloni/naslednje.dart';
 import 'package:spadni_besedila/zasloni/pesem_zaslon.dart';
 import 'package:spadni_besedila/zasloni/setliste_zaslon.dart';
 import 'package:spadni_besedila/zasloni/spil_zaslon.dart';
@@ -247,7 +248,7 @@ void main() {
     expect(vodja.pomik.value, isNull);
   });
 
-  testWidgets('playlista postane čakalna vrsta, pesem se odpre kot vsaka druga', (tester) async {
+  testWidgets('playlista gre v čakalno vrsto samo z gumbom (po potrditvi), nazaj ne spreminja vrste', (tester) async {
     late Baza baza;
     await tester.runAsync(() async => baza = (await _baza()).$1);
     final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
@@ -260,30 +261,72 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Poroka'));
     await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), ['b']); // odpiranje playliste vrste ne zamenja
+
+    await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prekliči'));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), ['b']);
+    await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto-potrdi')));
+    await tester.pumpAndSettle();
     expect(spil.naslednje.map((n) => n.pesem), ['c', 'a', 'b']); // stara vrsta je zamenjana
 
-    await tester.tap(find.text('BELO OBLEKO'));
+    await tester.tap(find.text('ČEŠNJE'));
     await tester.pumpAndSettle();
     expect(find.byType(IgranjeZaslon), findsNothing);
-    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
-    expect(spil.naslednje.map((n) => n.pesem), ['b']); // od izbrane naprej, odprta gre z vrste
-    // V iskalniku sta na vrhu le pesmi, ki sta še na vrsti (odprta in prejšnje ne).
-    await tester.tap(find.byTooltip('Išči pesem'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('v-playlisti')), findsOneWidget);
-    await tester.tap(find.byTooltip('Zapri'));
-    await tester.pumpAndSettle();
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), ['a', 'b']); // odprta gre z vrste
 
     await _naprej(tester);
-    expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
-    expect(spil.naslednje, isEmpty);
-    // Nazaj: prejšnja pesem, trenutna spet na začetek vrste.
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
+    expect(spil.naslednje.map((n) => n.pesem), ['b']);
+    // Nazaj: prejšnja pesem, vrsta ostane ista.
     Midi.aplikacija.sprozi(DejanjeMidi.prejsnja);
     await tester.pumpAndSettle();
-    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
+    expect(vNaslovu('ČEŠNJE'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), ['b']);
     await _naprej(tester);
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
+
+    // Puščica nazaj gre vedno na seznam (tu playlista), ne na prejšnjo pesem.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('playlista-v-vrsto')), findsOneWidget);
+  });
+
+  testWidgets('čakalna vrsta: pridržan koš jo izprazni, kratek dotik ne', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
+    spil.dodajNaslednjo(const Naslednja(pesem: 'b', kdo: 'Nina'));
+    spil.dodajNaslednjo(const Naslednja(pesem: 'a'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) =>
+              TextButton(onPressed: () => pokaziNaslednje(context, spil, baza, (_) {}), child: const Text('odpri')),
+        ),
+      ),
+    );
+    await tester.tap(find.text('odpri'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nina'), findsOneWidget); // kdo jo je dodal
+    expect(find.text('1.'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pocisti-vrsto')));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje, hasLength(2));
+    final g = await tester.startGesture(tester.getCenter(find.byKey(const ValueKey('pocisti-vrsto'))));
+    await tester.pump(const Duration(milliseconds: 800));
+    expect(spil.naslednje, hasLength(2));
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 800));
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(spil.naslednje, isEmpty);
+    expect(find.text('Čakalna vrsta je prazna.'), findsOneWidget);
   });
 
   testWidgets('igranje po setlisti: naslednja in prejšnja pesem', (tester) async {

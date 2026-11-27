@@ -265,12 +265,11 @@ class Spil extends ChangeNotifier {
   /// Ali je kam nazaj (vsaj ena prej pokazana pesem).
   bool get imaNazaj => _zgodovina.length >= 2;
 
-  /// Prejšnja pokazana pesem; trenutna gre nazaj na začetek čakalne vrste, da je spet naslednja.
+  /// Prejšnja pokazana pesem. Čakalne vrste ne spremeni (vrsta je skupna vsem in jo spreminja
+  /// samo dodajanje, odstranjevanje in čiščenje).
   String? nazaj() {
     if (_zgodovina.length < 2) return null;
-    final zdaj = _zgodovina.removeLast();
-    // Neprijavljen sledilec ne sme na prvo mesto vrste.
-    if (!Config.samoKlicaji) dodajNaslednjo(Naslednja(pesem: zdaj), naPrvo: true);
+    _zgodovina.removeLast();
     return _zgodovina.last;
   }
 

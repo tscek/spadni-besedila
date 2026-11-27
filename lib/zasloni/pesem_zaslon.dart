@@ -11,7 +11,7 @@ import '../chordpro.dart' as cp;
 import '../config.dart';
 import '../midi/midi.dart';
 import '../midi/ukazi.dart';
-import '../tipkovnica.dart' show Listanje;
+import '../tipkovnica.dart' show Listanje, Tipkovnica;
 import '../models.dart';
 import '../nastavitve.dart';
 import '../efekti.dart';
@@ -248,6 +248,49 @@ class _PesemZaslonState extends State<PesemZaslon> {
     _naloziPdf();
     ZvokSpila.aplikacija.addListener(_obZvoku);
     _obZvoku();
+    HardwareKeyboard.instance.addHandler(_obTipki);
+  }
+
+  /// Poti (zasloni), na katerih je odprta pesem; nazaj gre mimo vseh na prvi zaslon brez pesmi (seznam).
+  static final _poti = <Route<dynamic>, int>{};
+  Route<dynamic>? _pot;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final r = ModalRoute.of(context);
+    if (r == _pot) return;
+    _odjaviPot();
+    _pot = r;
+    if (r != null) _poti[r] = (_poti[r] ?? 0) + 1;
+  }
+
+  void _odjaviPot() {
+    final r = _pot;
+    if (r == null) return;
+    final n = (_poti[r] ?? 1) - 1;
+    n <= 0 ? _poti.remove(r) : _poti[r] = n;
+    _pot = null;
+  }
+
+  /// Puščica nazaj, Back na Androidu in Esc: vedno na seznam (ne na prejšnjo pesem).
+  void _naSeznam() {
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => !_poti.containsKey(r) || r.isFirst);
+  }
+
+  /// Esc na računalniku: zapre iskalnik, sicer gre na seznam.
+  bool _obTipki(KeyEvent e) {
+    if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape || !mounted) return false;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    final t = Tipkovnica.aplikacija;
+    if (t.ucim != null || t.bliznjice.containsKey(e.logicalKey.keyId)) return false;
+    if (_iskalnik) {
+      setState(() => _iskalnik = false);
+    } else {
+      _naSeznam();
+    }
+    return true;
   }
 
   void _naloziPdf() {
@@ -264,6 +307,8 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_obTipki);
+    _odjaviPot();
     _odigrana?.cancel();
     _pridrzanje?.cancel();
     ZvokSpila.aplikacija.removeListener(_obZvoku);
@@ -504,7 +549,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       _odpri(widget.baza.pesem(izbrana.pesem)!, smer: 1);
       return true;
     }
-    // Nazaj po pokazanih pesmih (tudi ko je čakalna vrsta že prazna); trenutna gre spet na začetek vrste.
+    // Nazaj po pokazanih pesmih (tudi ko je čakalna vrsta že prazna); čakalna vrsta ostane ista.
     final spil = widget.spil;
     if (d == DejanjeMidi.prejsnja && spil != null && widget.odpri == null && spil.imaNazaj) {
       final p = widget.baza.pesem(spil.nazaj() ?? '');
@@ -654,11 +699,17 @@ class _PesemZaslonState extends State<PesemZaslon> {
 
   @override
   Widget build(BuildContext context) {
-    return NaMidi(
-      dejanje: _dejanje,
-      child: ListenableBuilder(
-        listenable: Listenable.merge([widget.baza, Midi.aplikacija, Nastavitve.aplikacija, ?widget.spil]),
-        builder: (context, _) => _zaslon(context),
+    return PopScope(
+      canPop: ModalRoute.of(context)?.isFirst ?? true,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _naSeznam();
+      },
+      child: NaMidi(
+        dejanje: _dejanje,
+        child: ListenableBuilder(
+          listenable: Listenable.merge([widget.baza, Midi.aplikacija, Nastavitve.aplikacija, ?widget.spil]),
+          builder: (context, _) => _zaslon(context),
+        ),
       ),
     );
   }
