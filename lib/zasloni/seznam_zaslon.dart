@@ -49,9 +49,6 @@ class SeznamZaslon extends StatefulWidget {
 }
 
 class _SeznamZaslonState extends State<SeznamZaslon> {
-  /// Opozorilo o članih brez vloge je skrito do naslednjega zagona.
-  bool _skritoBrezVloge = false;
-
   final _iskanje = TextEditingController();
   final _iskanjeFokus = FocusNode();
   final _izbira = GlobalKey<IzbiraPesmiState>();
@@ -505,25 +502,6 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
                 content: Text('Spremembe, ki čakajo na internet: ${baza.neposlano.length}'),
                 actions: [TextButton(onPressed: _osvezi, child: const Text('Pošlji'))],
               ),
-            if (baza.brezVloge && !_skritoBrezVloge && baza.zadnjaOsvezitev != null)
-              MaterialBanner(
-                leading: const Icon(Icons.person_off_outlined),
-                content: const Text(
-                  'Nimaš vloge na listu Vloge, zato si v aplikaciji samo gledalec (ne urejaš pesmi in skupnih risb). '
-                  'Povej administratorju.',
-                ),
-                actions: [
-                  TextButton(onPressed: () => setState(() => _skritoBrezVloge = true), child: const Text('V redu')),
-                ],
-              ),
-            if (baza.claniBrezVloge.isNotEmpty && !_skritoBrezVloge)
-              MaterialBanner(
-                leading: const Icon(Icons.person_off_outlined),
-                content: Text('Brez vloge na listu Vloge (samo gledalci): ${baza.claniBrezVloge.join(', ')}'),
-                actions: [
-                  TextButton(onPressed: () => setState(() => _skritoBrezVloge = true), child: const Text('V redu')),
-                ],
-              ),
             if (baza.stanje != null || baza.napaka != null)
               MaterialBanner(
                 content: Column(
@@ -708,24 +686,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
 
   /// Vrstica seznama s podatki, izbranimi v nastavitvah; vse vrstice so enako visoke.
   Widget _vrstica(BuildContext context, Pesem p, bool izbrana, List<Pesem> seznam) {
-    final n = Nastavitve.aplikacija;
-    final polja = n.poljaSeznama.where((x) => x != PoljePesmi.naslov);
-    final deli = poljaVPodnaslovu(context, widget.baza, p, polja.toList());
-    final imaPodnaslov = polja.any((x) => x != PoljePesmi.status && x != PoljePesmi.ocena);
+    final v = podatkiVrsticePesmi(context, widget.baza, p);
     return ListTile(
       selected: izbrana,
       selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
       title: NaslovZOznakami(pesem: p),
-      subtitle: imaPodnaslov ? Text.rich(TextSpan(children: deli), maxLines: 1, overflow: TextOverflow.ellipsis) : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (polja.contains(PoljePesmi.ocena) && p.ocena > 0) Zvezdice(ocena: p.ocena, velikost: 14),
-          if (polja.contains(PoljePesmi.status)) IkonaStatusa(p.status),
-          if (n.ikoneSeznama && widget.baza.besedilaPesmi.containsKey(p.id)) const Icon(Icons.notes, size: 18),
-          if (n.ikoneSeznama && widget.baza.pdfjiPesmi.containsKey(p.id)) const Icon(Icons.picture_as_pdf, size: 18),
-        ],
-      ),
+      subtitle: v.podnaslov,
+      trailing: v.zadaj,
       onTap: () => _odpri(p, seznam),
       onLongPress: () => meniPesmi(context, widget.spil, widget.baza, widget.prijava, p),
     );

@@ -87,6 +87,9 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
   final Map<String, Map<String, Object>> _spremembe = {};
   final Set<String> _izbrane = {};
   final Set<FilterHitrega> _filtri = {};
+
+  /// Filtri stolpcev: stolpec → dovoljeni napisi ('' = prazno).
+  final Map<String, Set<String>> _filtriStolpcev = {};
   final _iskanje = TextEditingController();
   String? _razvrsti;
   bool _narascajoce = true;
@@ -215,7 +218,8 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
                 ((besedila[p.id] ?? const []).isEmpty && (pdfji[p.id] ?? const []).isEmpty)) &&
             (!_filtri.contains(FilterHitrega.brezAvtorjev) || (p.avtorGlasbe.isEmpty && p.avtorBesedila.isEmpty)) &&
             (!_filtri.contains(FilterHitrega.brezTempa) || besedilo(p.vrstica['Tempo (BPM)']).isEmpty) &&
-            (!_filtri.contains(FilterHitrega.brezTonalitete) || p.tonaliteta.isEmpty))
+            (!_filtri.contains(FilterHitrega.brezTonalitete) || p.tonaliteta.isEmpty) &&
+            _filtriStolpcev.entries.every((e) => e.value.contains(_napis(e.key, _vrednost(p, e.key)))))
           p,
     ];
     final r = _razvrsti;
@@ -233,6 +237,97 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
 
     l.sort((a, b) => _narascajoce ? primerjaj(a, b) : primerjaj(b, a));
     return l;
+  }
+
+  /// Okno s kljukicami: katere vrednosti stolpca so vidne (z iskanjem po vrednostih).
+  Future<void> _filtrirajStolpec(String stolpec) async {
+    final stevec = <String, int>{};
+    for (final p in _baza.pesmi) {
+      if (p.vArhivu && !_filtri.contains(FilterHitrega.arhiv)) continue;
+      final v = _napis(stolpec, _vrednost(p, stolpec));
+      stevec[v] = (stevec[v] ?? 0) + 1;
+    }
+    final vrednosti = stevec.keys.toList()
+      ..sort((a, b) {
+        if (a.isEmpty != b.isEmpty) return a.isEmpty ? -1 : 1;
+        final na = num.tryParse(a.replaceAll(',', '.'));
+        final nb = num.tryParse(b.replaceAll(',', '.'));
+        return na != null && nb != null ? na.compareTo(nb) : poenostavi(a).compareTo(poenostavi(b));
+      });
+    final izbrane = <String>{...(_filtriStolpcev[stolpec] ?? stevec.keys)};
+    var isci = '';
+    final rezultat = await showDialog<Set<String>?>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, nastavi) {
+          final vidne = [
+            for (final v in vrednosti)
+              if (isci.isEmpty || poenostavi(v).contains(poenostavi(isci))) v,
+          ];
+          return AlertDialog(
+            title: Text('Filter: $stolpec'),
+            content: SizedBox(
+              width: 360,
+              height: 420,
+              child: Column(
+                children: [
+                  TextField(
+                    key: const ValueKey('hitro-filter-isci'),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Išči vrednost',
+                      isDense: true,
+                    ),
+                    onChanged: (v) => nastavi(() => isci = v),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(onPressed: () => nastavi(() => izbrane.addAll(vidne)), child: const Text('Vse')),
+                      TextButton(onPressed: () => nastavi(() => izbrane.removeAll(vidne)), child: const Text('Nobena')),
+                    ],
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final v in vidne)
+                          CheckboxListTile(
+                            key: ValueKey('hitro-filter-vrednost-$v'),
+                            dense: true,
+                            value: izbrane.contains(v),
+                            title: Text(v.isEmpty ? '(prazno)' : v, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            secondary: Text('${stevec[v]}'),
+                            onChanged: (x) => nastavi(() => x == true ? izbrane.add(v) : izbrane.remove(v)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, <String>{'__brez__'}),
+                child: const Text('Brez filtra'),
+              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Prekliči')),
+              FilledButton(
+                key: const ValueKey('hitro-filter-potrdi'),
+                onPressed: () => Navigator.pop(context, izbrane),
+                child: const Text('Uporabi'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (rezultat == null || !mounted) return;
+    setState(() {
+      if (rezultat.contains('__brez__') || rezultat.length == stevec.length) {
+        _filtriStolpcev.remove(stolpec);
+      } else {
+        _filtriStolpcev[stolpec] = rezultat;
+      }
+    });
   }
 
   void _razvrstiPo(String? stolpec) => setState(() {
@@ -578,6 +673,21 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
                         onSelected: (v) => setState(() => v ? _filtri.add(f) : _filtri.remove(f)),
                       ),
                     ),
+                  if (_filtriStolpcev.isNotEmpty || _filtri.isNotEmpty)
+                    ActionChip(
+                      key: const ValueKey('hitro-pocisti-filtre'),
+                      avatar: const Icon(Icons.filter_alt_off, size: 16),
+                      label: Text(
+                        _filtriStolpcev.isEmpty
+                            ? 'Počisti filtre'
+                            : 'Počisti filtre (${_filtriStolpcev.keys.join(', ')})',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(() {
+                        _filtri.clear();
+                        _filtriStolpcev.clear();
+                      }),
+                    ),
                 ],
               ),
             ),
@@ -725,6 +835,16 @@ class _HitroUrejanjeZaslonState extends State<HitroUrejanjeZaslon> {
                     ),
                   ),
                   _puscica(s.ime),
+                  const Spacer(),
+                  InkWell(
+                    key: ValueKey('hitro-lijak-${s.ime}'),
+                    onTap: () => _filtrirajStolpec(s.ime),
+                    child: Icon(
+                      _filtriStolpcev.containsKey(s.ime) ? Icons.filter_alt : Icons.filter_alt_outlined,
+                      size: 16,
+                      color: _filtriStolpcev.containsKey(s.ime) ? barve.primary : barve.outline,
+                    ),
+                  ),
                 ],
               ),
             ),

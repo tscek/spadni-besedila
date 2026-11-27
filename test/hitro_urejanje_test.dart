@@ -168,6 +168,22 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('BELO OBLEKO'), findsNothing);
     expect(find.text('CVETKA'), findsOneWidget);
+
+    // Filter stolpca: samo tempo 120 (BELO OBLEKO), nato Počisti filtre.
+    await t.tap(find.byKey(const ValueKey('hitro-filter-brezBesedila')));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const ValueKey('hitro-lijak-Tempo (BPM)')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Nobena'));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(const ValueKey('hitro-filter-vrednost-120')));
+    await t.tap(find.byKey(const ValueKey('hitro-filter-potrdi')));
+    await t.pumpAndSettle();
+    expect(find.text('BELO OBLEKO'), findsOneWidget);
+    expect(find.text('CVETKA'), findsNothing);
+    await t.tap(find.byKey(const ValueKey('hitro-pocisti-filtre')));
+    await t.pumpAndSettle();
+    expect(find.text('CVETKA'), findsOneWidget);
   });
 
   testWidgets('pesem iz hitrega urejanja: naprej po vrstnem redu tabele', (t) async {

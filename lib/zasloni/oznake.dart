@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../baza.dart';
 import '../models.dart';
+import '../nastavitve.dart';
 import '../odigrane.dart';
 
 /// Ikona in barva statusa pesmi.
@@ -229,4 +230,33 @@ double sirinaBesedila(String besedilo, TextStyle? slog) {
   final w = tp.width;
   tp.dispose();
   return w;
+}
+
+/// Podatki pesmi kot v vrstici seznama pesmi (Nastavitve → Vrstica na seznamu pesmi): podnaslov in desni del.
+/// [pred] gre pred podatke v podnaslovu (npr. opomba playliste).
+({Widget? podnaslov, Widget zadaj}) podatkiVrsticePesmi(BuildContext context, Baza baza, Pesem p, {String pred = ''}) {
+  final n = Nastavitve.aplikacija;
+  final polja = n.poljaSeznama.where((x) => x != PoljePesmi.naslov).toList();
+  final deli = poljaVPodnaslovu(context, baza, p, polja);
+  final imaPodatke = polja.any((x) => x != PoljePesmi.status && x != PoljePesmi.ocena) && deli.isNotEmpty;
+  final vrstice = <Widget>[
+    if (pred.isNotEmpty) Text(pred, maxLines: 1, overflow: TextOverflow.ellipsis),
+    if (imaPodatke) Text.rich(TextSpan(children: deli), maxLines: 1, overflow: TextOverflow.ellipsis),
+  ];
+  return (
+    podnaslov: vrstice.isEmpty
+        ? null
+        : vrstice.length == 1
+        ? vrstice.single
+        : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: vrstice),
+    zadaj: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (polja.contains(PoljePesmi.ocena) && p.ocena > 0) Zvezdice(ocena: p.ocena, velikost: 14),
+        if (polja.contains(PoljePesmi.status)) IkonaStatusa(p.status),
+        if (n.ikoneSeznama && baza.besedilaPesmi.containsKey(p.id)) const Icon(Icons.notes, size: 18),
+        if (n.ikoneSeznama && baza.pdfjiPesmi.containsKey(p.id)) const Icon(Icons.picture_as_pdf, size: 18),
+      ],
+    ),
+  );
 }

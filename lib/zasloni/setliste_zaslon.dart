@@ -179,15 +179,27 @@ class SetlistaZaslon extends StatelessWidget {
                   ),
                 ),
               for (final (i, v) in vrsta.indexed)
-                ListTile(
-                  leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
-                  title: switch (baza.pesem(v.pesem)) {
-                    final p? => NaslovZOznakami(pesem: p),
-                    null => const Text('(pesmi ni več v repertoarju)'),
-                  },
-                  subtitle: v.opomba.isEmpty ? null : Text(v.opomba),
-                  onTap: () => _igraj(context, s, i),
-                ),
+                if (baza.pesem(v.pesem) case final p?)
+                  Builder(
+                    builder: (context) {
+                      // Isti podatki kot na seznamu pesmi; opomba playliste nad njimi.
+                      final d = podatkiVrsticePesmi(context, baza, p, pred: v.opomba);
+                      return ListTile(
+                        leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
+                        title: NaslovZOznakami(pesem: p),
+                        subtitle: d.podnaslov,
+                        trailing: d.zadaj,
+                        onTap: () => _igraj(context, s, i),
+                      );
+                    },
+                  )
+                else
+                  ListTile(
+                    leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
+                    title: const Text('(pesmi ni več v repertoarju)'),
+                    subtitle: v.opomba.isEmpty ? null : Text(v.opomba),
+                    onTap: () => _igraj(context, s, i),
+                  ),
             ],
           ),
         );
