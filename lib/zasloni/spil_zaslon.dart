@@ -38,6 +38,7 @@ Future<void> zacniPrivzetoVlogo(Spil spil, Baza baza) async {
     case PrivzetaVloga.sledilec:
       spil.samodejnoSledi(zadnji: naslovWebSocket(prefs.getString(_kljucVodje) ?? ''));
     default:
+      if (Nastavitve.aplikacija.samodejnoPovezi && !Config.prekoVodje) spil.isciVodjoVOzadju();
   }
 }
 

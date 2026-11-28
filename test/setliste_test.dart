@@ -248,7 +248,7 @@ void main() {
     expect(vodja.pomik.value, isNull);
   });
 
-  testWidgets('playlista gre v čakalno vrsto samo z gumbom (po potrditvi), nazaj ne spreminja vrste', (tester) async {
+  testWidgets('playlista gre v čakalno vrsto samo z gumbom, nazaj vrne pesem iz vrste', (tester) async {
     late Baza baza;
     await tester.runAsync(() async => baza = (await _baza()).$1);
     final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
@@ -270,6 +270,8 @@ void main() {
     expect(spil.naslednje.map((n) => n.pesem), ['b']);
     await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('playlista-zamenjaj')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto-potrdi')));
     await tester.pumpAndSettle();
     expect(spil.naslednje.map((n) => n.pesem), ['c', 'a', 'b']); // stara vrsta je zamenjana
@@ -283,11 +285,13 @@ void main() {
     await _naprej(tester);
     expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
     expect(spil.naslednje.map((n) => n.pesem), ['b']);
-    // Nazaj: prejšnja pesem, vrsta ostane ista.
+    // Nazaj: prejšnja pesem; trenutna je prišla iz vrste, zato je spet naslednja.
     Midi.aplikacija.sprozi(DejanjeMidi.prejsnja);
     await tester.pumpAndSettle();
     expect(vNaslovu('ČEŠNJE'), findsOneWidget);
-    expect(spil.naslednje.map((n) => n.pesem), ['b']);
+    expect(spil.naslednje.map((n) => n.pesem), ['a', 'b']);
+    await _naprej(tester);
+    expect(vNaslovu('BELO OBLEKO'), findsOneWidget);
     await _naprej(tester);
     expect(vNaslovu('BOG TE ŽIVI'), findsOneWidget);
 
@@ -305,9 +309,11 @@ void main() {
     spil.dodajNaslednjo(const Naslednja(pesem: 'a'));
     await tester.pumpWidget(
       MaterialApp(
-        home: Builder(
-          builder: (context) =>
-              TextButton(onPressed: () => pokaziNaslednje(context, spil, baza, (_) {}), child: const Text('odpri')),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) =>
+                TextButton(onPressed: () => pokaziNaslednje(context, spil, baza, (_) {}), child: const Text('odpri')),
+          ),
         ),
       ),
     );
@@ -326,7 +332,51 @@ void main() {
     await g.up();
     await tester.pumpAndSettle();
     expect(spil.naslednje, isEmpty);
-    expect(find.text('Čakalna vrsta je prazna.'), findsOneWidget);
+    // Razveljavi vrne vrsto, kot je bila (tudi kdo je dodal).
+    await tester.tap(find.text('Razveljavi'));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => (n.pesem, n.kdo)), [('b', 'Nina'), ('a', '')]);
+  });
+
+  testWidgets('playlista: dodaj na konec brez podvajanja, od pridržane pesmi naprej', (tester) async {
+    late Baza baza;
+    await tester.runAsync(() async => baza = (await _baza()).$1);
+    final spil = Spil(streznik: () => null, iskalec: () => const Stream.empty());
+    spil.dodajNaslednjo(const Naslednja(pesem: 'b'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SetlistaZaslon(setlista: baza.setliste.first, baza: baza, prijava: Prijava(), spil: spil),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('trajanje-playliste')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('playlista-v-vrsto')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('playlista-dodaj')));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), ['b', 'c', 'a']);
+
+    spil.pocistiNaslednje();
+    await tester.longPress(find.text('BELO OBLEKO'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('playlista-dodaj')));
+    await tester.pumpAndSettle();
+    expect(spil.naslednje.map((n) => n.pesem), ['a', 'b']);
+  });
+
+  test('čakalna vrsta: premik, dodaj vse in nazaj samo po pravem koraku nazaj', () {
+    final s = Spil();
+    s.dodajVse(['a', 'b', 'c']);
+    s.premakniNaslednjo(2, 0);
+    expect(s.naslednje.map((n) => n.pesem), ['c', 'a', 'b']);
+    s.prikazujem(const StanjeSpila(pesem: 'x'));
+    s.prikazujem(const StanjeSpila(pesem: 'c')); // iz vrste
+    s.prikazujem(const StanjeSpila(pesem: 'x')); // spet x, a ne z nazaj: vrsta ostane
+    expect(s.naslednje.map((n) => n.pesem), ['a', 'b']);
+    s.prikazujem(const StanjeSpila(pesem: 'a')); // iz vrste
+    expect(s.nazaj(), 'x');
+    s.prikazujem(const StanjeSpila(pesem: 'x'));
+    expect(s.naslednje.map((n) => n.pesem), ['a', 'b']); // a je spet naslednja
   });
 
   testWidgets('igranje po setlisti: naslednja in prejšnja pesem', (tester) async {

@@ -1286,7 +1286,7 @@ class _PesemZaslonState extends State<PesemZaslon> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ?vrsticaNaslednjih(context, widget.spil, widget.baza, _odpri, trenutna: p),
+          ?vrsticaNaslednjih(context, widget.spil, widget.baza, _odpri, trenutna: p, prijava: widget.prijava),
           ?_vrsticaGumbov(context),
           if (!_risem) _spodnjaVrstica(context),
           ?widget.spodaj,

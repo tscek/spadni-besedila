@@ -4,11 +4,14 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../baza.dart';
 import '../config.dart';
+import '../filtri.dart' show sekundeTrajanja;
 import '../models.dart';
 import '../nastavitve.dart';
+import '../odigrane.dart';
 import '../prijava.dart';
 import '../spil/spil.dart';
 import 'oznake.dart';
+import 'setliste_zaslon.dart' show novaPlaylistaIz;
 import 'spil_zaslon.dart';
 import 'urejanje_pesmi.dart';
 
@@ -282,7 +285,14 @@ bool menjaHarmoniko(Pesem? trenutna, Pesem? naslednja) =>
 
 /// Vrstica nad spodnjim robom: kaj je naslednje na seznamčku; dotik odpre celoten seznamček.
 /// Če je v napisu harmonika in jo je treba za naslednjo pesem zamenjati, napis utripa v barvi harmonike.
-Widget? vrsticaNaslednjih(BuildContext context, Spil? spil, Baza baza, void Function(Pesem) odpri, {Pesem? trenutna}) {
+Widget? vrsticaNaslednjih(
+  BuildContext context,
+  Spil? spil,
+  Baza baza,
+  void Function(Pesem) odpri, {
+  Pesem? trenutna,
+  Prijava? prijava,
+}) {
   if (spil == null || spil.naslednje.isEmpty) return null;
   final prva = spil.prvaNaslednja() ?? spil.naslednje.first;
   final p = baza.pesem(prva.pesem);
@@ -295,7 +305,7 @@ Widget? vrsticaNaslednjih(BuildContext context, Spil? spil, Baza baza, void Func
     overflow: TextOverflow.ellipsis,
   );
   final vsebina = InkWell(
-    onTap: () => pokaziNaslednje(context, spil, baza, odpri),
+    onTap: () => pokaziNaslednje(context, spil, baza, odpri, prijava: prijava),
     child: SizedBox(
       height: 40,
       child: Row(
@@ -373,68 +383,188 @@ class _UtripajocaVrsticaState extends State<UtripajocaVrstica> with SingleTicker
   );
 }
 
-/// Seznamček naslednjih pesmi (skupen vsem): dotik odpre pesem, X jo odstrani, pridržan koš izprazni vrsto.
-Future<void> pokaziNaslednje(BuildContext context, Spil spil, Baza baza, void Function(Pesem) odpri) =>
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-          child: ListenableBuilder(
-            listenable: Listenable.merge([spil, baza, Nastavitve.aplikacija]),
-            builder: (context, _) {
-              return ListView(
-                shrinkWrap: true,
+/// Skupno trajanje pesmi (iz stolpca Trajanje) in predvidena ura konca, npr. »5 pesmi · 18 min · konec ok. 22:40«.
+String napisTrajanja(Baza baza, List<String> pesmi, {DateTime? zdaj}) {
+  var sekund = 0;
+  var brez = 0;
+  for (final id in pesmi) {
+    final t = sekundeTrajanja(besedilo(baza.pesem(id)?.vrstica['Trajanje']));
+    if (t == null || t <= 0) {
+      brez++;
+    } else {
+      sekund += t;
+    }
+  }
+  final minut = (sekund / 60).round();
+  final konec = (zdaj ?? DateTime.now()).add(Duration(seconds: sekund));
+  return [
+    '${pesmi.length} pesmi',
+    if (sekund > 0) minut >= 60 ? '${minut ~/ 60} h ${minut % 60} min' : '$minut min',
+    if (sekund > 0) 'konec ok. ${konec.hour}:${konec.minute.toString().padLeft(2, '0')}',
+    if (brez > 0 && sekund > 0) 'brez trajanja: $brez',
+  ].join(' · ');
+}
+
+/// Seznamček naslednjih pesmi (skupen vsem): dotik odpre pesem, X jo odstrani, vlečenje za ročico premakne,
+/// pridržan koš izprazni vrsto (z Razveljavi).
+Future<void> pokaziNaslednje(
+  BuildContext context,
+  Spil spil,
+  Baza baza,
+  void Function(Pesem) odpri, {
+  Prijava? prijava,
+}) {
+  final messenger = ScaffoldMessenger.of(context);
+  final glavni = context;
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        child: ListenableBuilder(
+          listenable: Listenable.merge([spil, baza, Nastavitve.aplikacija, Odigrane.aplikacija]),
+          builder: (context, _) {
+            final vrsta = spil.naslednje;
+            final ureja = !Config.samoKlicaji;
+            void pocisti() {
+              final stara = spil.naslednje;
+              spil.pocistiNaslednje();
+              // Seznamček se zapre, da je Razveljavi vidno (snackbar je pod oknom).
+              Navigator.pop(context);
+              messenger.showSnackBar(
+                SnackBar(
+                  duration: const Duration(seconds: 10),
+                  content: const Text('Čakalna vrsta je počiščena.'),
+                  action: SnackBarAction(label: 'Razveljavi', onPressed: () => spil.obnoviVrsto(stara)),
+                ),
+              );
+            }
+
+            return ReorderableListView(
+              shrinkWrap: true,
+              buildDefaultDragHandles: false,
+              onReorderItem: (od, na) {
+                if (od != na) spil.premakniNaslednjo(od, na);
+              },
+              header: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
                     title: const Text('Čakalna vrsta'),
-                    trailing: spil.naslednje.isEmpty || Config.samoKlicaji
+                    subtitle: vrsta.isEmpty
                         ? null
-                        : PridrziGumb(
-                            key: const ValueKey('pocisti-vrsto'),
-                            tooltip: 'Počisti čakalno vrsto',
-                            onPotrjeno: spil.pocistiNaslednje,
+                        : Text(
+                            napisTrajanja(baza, [for (final n in vrsta) n.pesem]),
+                            key: const ValueKey('trajanje-vrste'),
+                          ),
+                    trailing: vrsta.isEmpty || !ureja
+                        ? null
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (prijava != null && baza.smeUrejati)
+                                IconButton(
+                                  key: const ValueKey('vrsta-v-playlisto'),
+                                  tooltip: 'Shrani kot playlisto',
+                                  icon: const Icon(Icons.save_outlined),
+                                  onPressed: () {
+                                    final d = DateTime.now();
+                                    Navigator.pop(context);
+                                    novaPlaylistaIz(
+                                      glavni,
+                                      baza: baza,
+                                      prijava: prijava,
+                                      spil: spil,
+                                      pesmi: [for (final n in vrsta) n.pesem],
+                                      ime: 'Čakalna vrsta ${d.day}. ${d.month}. ${d.year}',
+                                    );
+                                  },
+                                ),
+                              const SizedBox(width: 8),
+                              PridrziGumb(
+                                key: const ValueKey('pocisti-vrsto'),
+                                tooltip: 'Počisti čakalno vrsto',
+                                onPotrjeno: pocisti,
+                              ),
+                            ],
                           ),
                   ),
-                  if (spil.naslednje.isEmpty) const ListTile(title: Text('Čakalna vrsta je prazna.')),
-                  for (var i = 0; i < spil.naslednje.length; i++)
-                    if (baza.pesem(spil.naslednje[i].pesem) case final p?)
-                      Builder(
-                        builder: (context) {
-                          // Isti podatki kot na seznamu pesmi; nad njimi, kdo jo je dodal.
-                          final d = podatkiVrsticePesmi(context, baza, p, pred: _opis(spil.naslednje[i]));
-                          return ListTile(
-                            key: ValueKey('vrsta-${p.id}'),
-                            leading: SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
-                            title: NaslovZOznakami(pesem: p),
-                            subtitle: d.podnaslov,
-                            onTap: () {
-                              Navigator.pop(context);
-                              odpri(p);
-                            },
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                d.zadaj,
-                                if (!Config.samoKlicaji)
-                                  IconButton(
-                                    tooltip: 'Odstrani',
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => spil.odstraniNaslednjo(i),
-                                  ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                  if (vrsta.isEmpty) const ListTile(title: Text('Čakalna vrsta je prazna.')),
                 ],
-              );
-            },
-          ),
+              ),
+              children: [
+                for (var i = 0; i < vrsta.length; i++)
+                  Builder(
+                    key: ValueKey('vrsta-${vrsta[i].pesem}'),
+                    builder: (context) {
+                      final p = baza.pesem(vrsta[i].pesem);
+                      final odigrana = Odigrane.aplikacija.je(vrsta[i].pesem);
+                      // Isti podatki kot na seznamu pesmi; nad njimi, kdo jo je dodal.
+                      final d = p == null ? null : podatkiVrsticePesmi(context, baza, p, pred: _opis(vrsta[i]));
+                      return ListTile(
+                        leading: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (ureja)
+                              ReorderableDragStartListener(
+                                index: i,
+                                child: const Padding(
+                                  padding: EdgeInsets.only(right: 4),
+                                  child: Icon(Icons.drag_indicator),
+                                ),
+                              ),
+                            SizedBox(width: 28, child: Text('${i + 1}.', textAlign: TextAlign.right)),
+                          ],
+                        ),
+                        title: Row(
+                          children: [
+                            if (odigrana)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Tooltip(
+                                  message: 'Na tem špilu že odigrana',
+                                  child: Icon(
+                                    Icons.check_circle,
+                                    key: ValueKey('odigrana-${vrsta[i].pesem}'),
+                                    size: 18,
+                                    color: Theme.of(context).colorScheme.tertiary,
+                                  ),
+                                ),
+                              ),
+                            Flexible(child: p == null ? Text(vrsta[i].pesem) : NaslovZOznakami(pesem: p)),
+                          ],
+                        ),
+                        subtitle: d?.podnaslov,
+                        onTap: p == null
+                            ? null
+                            : () {
+                                Navigator.pop(context);
+                                odpri(p);
+                              },
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ?d?.zadaj,
+                            if (ureja)
+                              IconButton(
+                                tooltip: 'Odstrani',
+                                icon: const Icon(Icons.close),
+                                onPressed: () => spil.odstraniNaslednjo(i),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
         ),
       ),
-    );
+    ),
+  );
+}
 
 /// Gumb, ki ga je treba pridržati ([trajanje]); med držanjem se od leve napolni z rdečo.
 /// Ob prezgodnjem spustu se praznjenje vrne nazaj in nič se ne zgodi.

@@ -337,7 +337,13 @@ class _SeznamZaslonState extends State<SeznamZaslon> {
       bottomNavigationBar: ListenableBuilder(
         listenable: widget.spil,
         builder: (context, _) =>
-            vrsticaNaslednjih(context, widget.spil, baza, (p) => _odpri(p, pesmi, izMape: false)) ??
+            vrsticaNaslednjih(
+              context,
+              widget.spil,
+              baza,
+              (p) => _odpri(p, pesmi, izMape: false),
+              prijava: widget.prijava,
+            ) ??
             const SizedBox.shrink(),
       ),
       floatingActionButton: _vMapi

@@ -62,7 +62,7 @@ class Naslednja {
   const Naslednja({required this.pesem, this.kdo = '', this.naKonec = false});
 
   factory Naslednja.izJson(Map<String, dynamic> j) =>
-      Naslednja(pesem: j['pesem'] as String, kdo: j['kdo'] as String? ?? '', naKonec: j['naKonec'] == true);
+      Naslednja(pesem: j['pesem']?.toString() ?? '', kdo: j['kdo']?.toString() ?? '', naKonec: j['naKonec'] == true);
 
   final String pesem;
   final String kdo;
@@ -247,17 +247,38 @@ class Spil extends ChangeNotifier {
 
   /// Zaslon s pesmijo pove, kaj kaže; vodja to pošlje sledilcem.
   /// Pesem, ki se odpre, gre s seznamčka naslednjih (pri vodji ali brez špila).
+  ///
+  /// Nazaj na prejšnjo pesem: trenutna gre spet na prvo mesto vrste, če je prišla iz nje. To naredi samo
+  /// vodja (ali naprava brez špila), torej pesem, ki jo vidijo vsi; sledilec, ki pogleda nazaj le pri sebi,
+  /// skupne vrste ne spremeni.
   void prikazujem(StanjeSpila s) {
     _prikazano = s;
-    if (_zgodovina.lastOrNull != s.pesem) {
+    final n = _zgodovina.length;
+    final nazaj = _nazajNa == s.pesem;
+    _nazajNa = null;
+    if (nazaj && n >= 2 && _zgodovina[n - 2] == s.pesem) {
+      final zdaj = _zgodovina.removeLast();
+      final izVrste = _izVrste.remove(zdaj);
+      if (izVrste != null && vloga != VlogaSpila.sledilec && !naslednje.any((x) => x.pesem == zdaj)) {
+        _nastaviNaslednje([izVrste, ...naslednje]);
+      }
+    } else if (_zgodovina.lastOrNull != s.pesem) {
       _zgodovina.add(s.pesem);
       if (_zgodovina.length > 200) _zgodovina.removeAt(0);
     }
     if (vloga == VlogaSpila.vodja) objavi(s);
-    if (vloga != VlogaSpila.sledilec && naslednje.any((n) => n.pesem == s.pesem)) {
-      _nastaviNaslednje([...naslednje.where((n) => n.pesem != s.pesem)]);
+    if (vloga != VlogaSpila.sledilec) {
+      final i = naslednje.indexWhere((x) => x.pesem == s.pesem);
+      if (i >= 0) {
+        _izVrste[s.pesem] = naslednje[i];
+        if (_izVrste.length > 200) _izVrste.remove(_izVrste.keys.first);
+        _nastaviNaslednje([...naslednje]..removeAt(i));
+      }
     }
   }
+
+  /// Pesmi, ki so prišle iz čakalne vrste (da se ob nazaj vrnejo vanjo).
+  final Map<String, Naslednja> _izVrste = {};
 
   /// Pesmi, ki jih je ta naprava pokazala (za nazaj s podrsajem ali nožnim stikalom).
   final List<String> _zgodovina = [];
@@ -265,18 +286,31 @@ class Spil extends ChangeNotifier {
   /// Ali je kam nazaj (vsaj ena prej pokazana pesem).
   bool get imaNazaj => _zgodovina.length >= 2;
 
-  /// Prejšnja pokazana pesem. Čakalne vrste ne spremeni (vrsta je skupna vsem in jo spreminja
-  /// samo dodajanje, odstranjevanje in čiščenje).
-  String? nazaj() {
-    if (_zgodovina.length < 2) return null;
-    _zgodovina.removeLast();
-    return _zgodovina.last;
-  }
+  /// Prejšnja pokazana pesem. Ko se odpre, [prikazujem] trenutno vrne v čakalno vrsto, če je prišla iz nje.
+  String? nazaj() => _nazajNa = _zgodovina.length < 2 ? null : _zgodovina[_zgodovina.length - 2];
+
+  /// Pesem, na katero gre ta naprava nazaj (ko se odpre, je to korak nazaj, ne nova pesem).
+  String? _nazajNa;
 
   /// Doda pesem v čakalno vrsto (lahko vsak): na konec ali z [naPrvo] na prvo mesto.
   /// Pesem, ki je že v vrsti, se premakne. Sledilec jo pošlje vodji, ta pa vrsto vsem.
   void dodajNaslednjo(Naslednja n, {bool naPrvo = false}) =>
       _spremeni({'ukaz': 'dodaj', ...n.vJson(), if (naPrvo) 'naPrvo': true});
+
+  /// Doda [pesmi] na konec vrste; pesmi, ki so že v vrsti, ostanejo na svojem mestu.
+  void dodajVse(List<String> pesmi, {String kdo = ''}) =>
+      _spremeni({'ukaz': 'dodajVse', 'pesmi': pesmi, if (kdo.isNotEmpty) 'kdo': kdo});
+
+  /// Premakne pesem z mesta [od] na mesto [na] (vlečenje v čakalni vrsti).
+  void premakniNaslednjo(int od, int na) =>
+      _spremeni({'ukaz': 'premakni', 'i': od, 'na': na, 'pesem': naslednje[od].pesem});
+
+  /// Vrne vrsto, kot je bila (razveljavi čiščenje ali zamenjavo).
+  void obnoviVrsto(List<Naslednja> vrsta) => _spremeni({
+    'ukaz': 'nastavi',
+    'pesmi': [for (final n in vrsta) n.pesem],
+    'vrsta': [for (final n in vrsta) n.vJson()],
+  });
 
   /// Odstrani [i]-to pesem s seznamčka.
   void odstraniNaslednjo(int i) => _spremeni({'ukaz': 'odstrani', 'i': i, 'pesem': naslednje[i].pesem});
@@ -293,7 +327,12 @@ class Spil extends ChangeNotifier {
     if (vloga == VlogaSpila.sledilec) {
       final ime = baza?.imeClana ?? '';
       final kdo = ime.isNotEmpty ? ime : (Config.samoKlicaji ? 'iPad' : 'sledilec');
-      _posljiVodji({'vrsta': 'ukaz', 'ukaz': 'prikazi', 'stanje': s.zOdprl(kdo).vJson()});
+      _posljiVodji({
+        'vrsta': 'ukaz',
+        'ukaz': 'prikazi',
+        'stanje': s.zOdprl(kdo).vJson(),
+        if (_nazajNa == s.pesem) 'nazaj': true,
+      });
     } else {
       zahtevanaPesem.value = s;
     }
@@ -393,6 +432,8 @@ class Spil extends ChangeNotifier {
     }
     if (j['ukaz'] == 'prikazi' && j['stanje'] is Map) {
       final s = StanjeSpila.izJson((j['stanje'] as Map).cast<String, dynamic>());
+      // Sledilec je šel nazaj: trenutna pesem se vrne v vrsto, če je prišla iz nje.
+      if (j['nazaj'] == true) _nazajNa = s.pesem;
       zahtevanaPesem.value = s;
       _javiOdprl(s);
       return;
@@ -420,6 +461,23 @@ class Spil extends ChangeNotifier {
         if (i >= 0) _nastaviNaslednje([...naslednje]..removeAt(i));
       case 'pocisti':
         _nastaviNaslednje([]);
+      case 'dodajVse' when u['pesmi'] is List:
+        final ze = {for (final n in naslednje) n.pesem};
+        final kdo = u['kdo']?.toString() ?? '';
+        _nastaviNaslednje([
+          ...naslednje,
+          for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
+            if (p.isNotEmpty && !ze.contains(p)) Naslednja(pesem: p, kdo: kdo),
+        ]);
+      case 'premakni':
+        final i = indeks();
+        final na = (u['na'] as num?)?.toInt() ?? -1;
+        if (i >= 0 && na >= 0 && na < naslednje.length && na != i) {
+          final v = [...naslednje];
+          final n = v.removeAt(i);
+          v.insert(na, n);
+          _nastaviNaslednje(v);
+        }
       case 'runda':
         Runda.aplikacija.izvedi(u);
       case 'odigrane':
@@ -440,6 +498,12 @@ class Spil extends ChangeNotifier {
         }
       case 'zvok':
         ZvokSpila.aplikacija.odSledilca(u);
+      case 'nastavi' when u['vrsta'] is List:
+        final ze = <String>{};
+        _nastaviNaslednje([
+          for (final j in (u['vrsta'] as List).whereType<Map>())
+            if (Naslednja.izJson(j.cast<String, dynamic>()) case final n when n.pesem.isNotEmpty && ze.add(n.pesem)) n,
+        ]);
       case 'nastavi' when u['pesmi'] is List:
         _nastaviNaslednje([
           for (final p in (u['pesmi'] as List).map((x) => x.toString()).toSet())
@@ -499,6 +563,14 @@ class Spil extends ChangeNotifier {
     _poslusajVodje();
   }
 
+  /// Vodje, s katerimi se je naprava brez vloge že sama povezala (po izklopu se ne poveže znova).
+  final Set<Uri> _samodejnoZe = {};
+
+  /// Naprava brez vloge posluša, ali je na WiFi-ju vodja (glej [Nastavitve.samodejnoPovezi]).
+  void isciVodjoVOzadju() {
+    if (vloga == VlogaSpila.nic) _poslusajVodje();
+  }
+
   /// Posluša vodje, ki se oglašajo na omrežju (sledilec se poveže; rezervni vodja preda vodenje nazaj).
   void _poslusajVodje() {
     _iskanje ??= _isciVodjo().listen(
@@ -517,6 +589,11 @@ class Spil extends ChangeNotifier {
         }
         // Samodejno samo, dokler ni povezave; z izbranim vodjo ostane povezan, tudi če se oglaša še kdo.
         if (ws != _naslovVodje && vloga == VlogaSpila.sledilec && !povezan) sledi(ws);
+        // Naprava brez vloge: z vodjo na WiFi-ju se poveže sama (vsakič le enkrat, da ročni izklop velja).
+        if (vloga == VlogaSpila.nic && Nastavitve.aplikacija.samodejnoPovezi && _samodejnoZe.add(ws)) {
+          samodejnoSledi(zadnji: ws);
+          obvestilo.value = 'Na WiFi-ju je vodja${v.ime.isEmpty ? '' : ' ${v.ime}'}: sledim mu.';
+        }
       },
       onError: (Object e) {
         napaka = 'Iskanje vodje ne deluje: $e';

@@ -146,6 +146,7 @@ class Nastavitve extends ChangeNotifier {
   static const _posiljam = 'posiljam_obracanje';
   static const _sprejemam = 'sprejemam_obracanje';
   static const _rezerva = 'rezervni_vodja';
+  static const _samodejnoPovezi = 'samodejno_povezi';
   static const _utripTempa = 'utrip_tempa';
   static const _zaslon = 'zaslon_prizgan';
   static const _usmeritev = 'usmeritev';
@@ -235,6 +236,9 @@ class Nastavitve extends ChangeNotifier {
 
   /// Rezervni vodja: ko vodja izpade (10 s), ta naprava sama prevzame vodenje z isto čakalno vrsto.
   bool rezervniVodja = false;
+
+  /// Naprava brez vloge (Sama) se sama poveže z vodjo, ki ga najde na istem WiFi-ju.
+  bool samodejnoPovezi = true;
 
   /// Pri podatku »Tempo (BPM)« v vrstici pesmi utripa pika v tempu.
   bool utripTempa = true;
@@ -358,6 +362,7 @@ class Nastavitve extends ChangeNotifier {
     posiljamObracanje = p.getBool(_posiljam) ?? d.posiljamObracanje;
     sprejemamObracanje = p.getBool(_sprejemam) ?? d.sprejemamObracanje;
     rezervniVodja = p.getBool(_rezerva) ?? d.rezervniVodja;
+    samodejnoPovezi = p.getBool(_samodejnoPovezi) ?? d.samodejnoPovezi;
     utripTempa = p.getBool(_utripTempa) ?? d.utripTempa;
     zaslonPrizgan = p.getBool(_zaslon) ?? d.zaslonPrizgan;
     usmeritev = Usmeritev.values.asNameMap()[p.getString(_usmeritev)] ?? d.usmeritev;
@@ -581,6 +586,11 @@ class Nastavitve extends ChangeNotifier {
   Future<void> nastaviUtripTempa(bool v) {
     utripTempa = v;
     return _shrani((p) => p.setBool(_utripTempa, v));
+  }
+
+  Future<void> nastaviSamodejnoPovezi(bool v) {
+    samodejnoPovezi = v;
+    return _shrani((p) => p.setBool(_samodejnoPovezi, v));
   }
 
   Future<void> nastaviRezervnegaVodjo(bool v) {

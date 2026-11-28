@@ -385,6 +385,21 @@ class _NastavitveZaslonState extends State<NastavitveZaslon> {
               ),
             ],
           ),
+          if (!Config.prekoVodje)
+            _p(
+              'Samodejno sledi vodji na WiFi-ju',
+              (c) => [
+                SwitchListTile(
+                  key: const ValueKey('samodejno-povezi'),
+                  title: const Text('Samodejno sledi vodji na WiFi-ju'),
+                  subtitle: const Text(
+                    'Brez izbrane vloge se naprava sama poveže z vodjo, ki ga najde na istem WiFi-ju',
+                  ),
+                  value: n.samodejnoPovezi,
+                  onChanged: n.nastaviSamodejnoPovezi,
+                ),
+              ],
+            ),
           _p(
             'Sprejemam obračanje drugih',
             (c) => [

@@ -8,7 +8,15 @@ import 'urejanje_pesmi.dart';
 
 /// Nova setlista ali urejanje obstoječe. Ob shranjevanju vrne [Setlista], ob brisanju null.
 class UrejanjeSetlisteZaslon extends StatefulWidget {
-  const UrejanjeSetlisteZaslon({super.key, required this.baza, required this.api, this.setlista, this.mapa});
+  const UrejanjeSetlisteZaslon({
+    super.key,
+    required this.baza,
+    required this.api,
+    this.setlista,
+    this.mapa,
+    this.zacetnePesmi = const [],
+    this.zacetnoIme = '',
+  });
 
   final Baza baza;
   final Api api;
@@ -16,6 +24,10 @@ class UrejanjeSetlisteZaslon extends StatefulWidget {
 
   /// Mapa nove playliste (obstoječa ostane v svoji).
   final String? mapa;
+
+  /// Nova playlista z že izbranimi pesmimi (npr. iz čakalne vrste ali odigranih pesmi).
+  final List<String> zacetnePesmi;
+  final String zacetnoIme;
 
   @override
   State<UrejanjeSetlisteZaslon> createState() => _UrejanjeSetlisteZaslonState();
@@ -28,7 +40,7 @@ class _Vnos {
 }
 
 class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with OdprtoUrejanje {
-  late final _ime = TextEditingController(text: widget.setlista?.ime ?? '')..addListener(_spremenjeno);
+  late final _ime = TextEditingController(text: widget.setlista?.ime ?? widget.zacetnoIme)..addListener(_spremenjeno);
   late final _opombe = TextEditingController(text: widget.setlista?.opombe ?? '')..addListener(_spremenjeno);
   late DateTime? _datum = widget.setlista?.datum;
   late String _skupina =
@@ -36,8 +48,11 @@ class _UrejanjeSetlisteZaslonState extends State<UrejanjeSetlisteZaslon> with Od
   late final List<_Vnos> _pesmi = [
     for (final v in widget.baza.pesmiSetlist[widget.setlista?.id] ?? const <SetlistaPesem>[])
       if (widget.baza.pesem(v.pesem) case final p?) _Vnos(p, v.opomba),
+    if (widget.setlista == null)
+      for (final id in widget.zacetnePesmi)
+        if (widget.baza.pesem(id) case final p?) _Vnos(p),
   ];
-  bool _spremembe = false;
+  late bool _spremembe = widget.setlista == null && widget.zacetnePesmi.isNotEmpty;
   bool _shranjujem = false;
 
   /// Mapa playliste; pri izbiri pesmi so najprej pesmi iz nje.
